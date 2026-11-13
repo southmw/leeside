@@ -86,9 +86,10 @@ try {
   if (ready) {
     const first = await page.evaluate(() => ({ ...window.__game, canvas: { ...window.__game.canvas } }));
     await page.waitForTimeout(500);
-    const second = await page.evaluate(() => window.__game.frame);
+    const later = await page.evaluate(() => ({ frame: window.__game.frame, tick: window.__game.tick }));
 
-    check("frames keep rendering", second > first.frame, `frame ${first.frame} -> ${second}`);
+    check("frames keep rendering", later.frame > first.frame, `frame ${first.frame} -> ${later.frame}`);
+    check("simulation keeps stepping", later.tick > first.tick, `tick ${first.tick} -> ${later.tick}`);
     check(
       "drawing buffer matches the window",
       first.canvas.width >= 1280 && first.canvas.height >= 720,

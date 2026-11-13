@@ -7,6 +7,10 @@ export interface GameDebug {
   ready: boolean;
   /** Number of frames rendered so far. */
   frame: number;
+  /** Number of fixed simulation steps run so far. */
+  tick: number;
+  /** Simulated time in seconds (tick count times the step length). */
+  simSeconds: number;
   /** Size of the drawing buffer in device pixels. */
   canvas: { width: number; height: number };
 }
@@ -22,6 +26,8 @@ export function installDebugApi(): GameDebug {
   const debug: GameDebug = {
     ready: false,
     frame: 0,
+    tick: 0,
+    simSeconds: 0,
     canvas: { width: 0, height: 0 },
   };
   if (import.meta.env.DEV) {
