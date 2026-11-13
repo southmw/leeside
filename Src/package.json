@@ -1,0 +1,20 @@
+{
+  "name": "leeside",
+  "private": true,
+  "version": "0.1.0",
+  "description": "LEESIDE - a third-person survival action RPG for desktop browsers",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}
