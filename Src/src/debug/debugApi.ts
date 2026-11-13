@@ -11,6 +11,8 @@ export interface GameDebug {
   tick: number;
   /** Simulated time in seconds (tick count times the step length). */
   simSeconds: number;
+  /** Number of entities in the ECS world. */
+  entityCount: number;
   /** Size of the drawing buffer in device pixels. */
   canvas: { width: number; height: number };
 }
@@ -28,6 +30,7 @@ export function installDebugApi(): GameDebug {
     frame: 0,
     tick: 0,
     simSeconds: 0,
+    entityCount: 0,
     canvas: { width: 0, height: 0 },
   };
   if (import.meta.env.DEV) {
