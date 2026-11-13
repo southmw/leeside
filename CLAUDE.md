@@ -119,10 +119,10 @@ ToyProject/
 | `npm run typecheck` | 타입 검사 | 사용 가능 |
 | `npm run build` | 배포용 빌드 (타입 검사 포함) | 사용 가능 |
 | `npm test` | 단위 테스트 (`Src/tests/`의 `*.test.ts`) | 사용 가능 |
-| `npm run smoke` | 스모크 테스트 | 0.4 단계에서 추가 |
-| `npm run check` | 위 검증을 모두 실행. **커밋 전에 통과해야 한다** | 0.4 단계에서 추가 |
+| `npm run smoke` | 스모크 테스트. 설치된 Edge 또는 Chrome으로 게임을 열어 오류가 없는지 확인 | 사용 가능 |
+| `npm run check` | 위 검증을 모두 실행. **커밋 전에 통과해야 한다** | 사용 가능 |
 
-`check`가 생기기 전에는 그때까지 있는 검증 명령을 모두 통과시킨 뒤 커밋한다.
+스모크 테스트의 화면 캡처는 `Src/test-results/smoke.png`에 남는다. 화면이 제대로 그려졌는지 볼 때 이 파일을 연다.
 
 ### 코드를 짤 때 지킬 것
 

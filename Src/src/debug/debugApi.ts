@@ -1,0 +1,31 @@
+/**
+ * Read-only view of the running game, exposed as `window.__game` in development builds.
+ * The smoke test and manual debugging read state through it. It is never present in production builds.
+ */
+export interface GameDebug {
+  /** True once the first frame has been rendered. */
+  ready: boolean;
+  /** Number of frames rendered so far. */
+  frame: number;
+  /** Size of the drawing buffer in device pixels. */
+  canvas: { width: number; height: number };
+}
+
+declare global {
+  interface Window {
+    __game?: GameDebug;
+  }
+}
+
+/** Creates the debug object and attaches it to `window` in development builds only. */
+export function installDebugApi(): GameDebug {
+  const debug: GameDebug = {
+    ready: false,
+    frame: 0,
+    canvas: { width: 0, height: 0 },
+  };
+  if (import.meta.env.DEV) {
+    window.__game = debug;
+  }
+  return debug;
+}
