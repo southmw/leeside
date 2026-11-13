@@ -118,7 +118,7 @@ ToyProject/
 | `npm run dev` | 개발 서버 | 사용 가능 |
 | `npm run typecheck` | 타입 검사 | 사용 가능 |
 | `npm run build` | 배포용 빌드 (타입 검사 포함) | 사용 가능 |
-| `npm test` | 단위 테스트 | 0.2 단계에서 추가 |
+| `npm test` | 단위 테스트 (`Src/tests/`의 `*.test.ts`) | 사용 가능 |
 | `npm run smoke` | 스모크 테스트 | 0.4 단계에서 추가 |
 | `npm run check` | 위 검증을 모두 실행. **커밋 전에 통과해야 한다** | 0.4 단계에서 추가 |
 

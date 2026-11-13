@@ -1,0 +1,10 @@
+# Keep line endings identical on every machine.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.glb binary
+*.ktx2 binary
+*.ogg binary
+*.mp3 binary
+*.wasm binary
