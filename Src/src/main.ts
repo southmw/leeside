@@ -2,6 +2,9 @@ import { createTransform, createWorld } from "./core/ecs";
 import { startGameLoop } from "./core/gameLoop";
 import { installDebugApi } from "./debug/debugApi";
 import { createSpinSystem } from "./gameplay/spinSystem";
+import { createEmptyActions } from "./input/actions";
+import { createInputSystem } from "./input/inputSystem";
+import { createLocalInput } from "./input/localInput";
 import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
 import { createBoxMesh, createTestScene } from "./render/testScene";
@@ -32,12 +35,21 @@ world.add({
   spin: { speed: BOX_SPIN_SPEED },
 });
 
+// Stand-in for the player until the character exists (step 1.2). It only carries input.
+const player = world.add({ localPlayer: true, input: createEmptyActions() });
+const inputSystem = createInputSystem(world, createLocalInput());
+
 fitToWindow(renderer, camera);
 window.addEventListener("resize", () => fitToWindow(renderer, camera));
 
 startGameLoop({
   update(dt) {
+    inputSystem();
     spinSystem(dt);
+
+    if (player.input) {
+      Object.assign(debug.input, player.input);
+    }
 
     debug.tick += 1;
     debug.simSeconds += dt;

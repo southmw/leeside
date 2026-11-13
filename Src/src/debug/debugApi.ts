@@ -1,3 +1,5 @@
+import { createEmptyActions, type PlayerActions } from "../input/actions";
+
 /**
  * Read-only view of the running game, exposed as `window.__game` in development builds.
  * The smoke test and manual debugging read state through it. It is never present in production builds.
@@ -13,6 +15,8 @@ export interface GameDebug {
   simSeconds: number;
   /** Number of entities in the ECS world. */
   entityCount: number;
+  /** The local player's actions as of the latest simulation step. */
+  input: PlayerActions;
   /** Size of the drawing buffer in device pixels. */
   canvas: { width: number; height: number };
 }
@@ -31,6 +35,7 @@ export function installDebugApi(): GameDebug {
     tick: 0,
     simSeconds: 0,
     entityCount: 0,
+    input: createEmptyActions(),
     canvas: { width: 0, height: 0 },
   };
   if (import.meta.env.DEV) {

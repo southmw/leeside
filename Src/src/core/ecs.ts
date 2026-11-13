@@ -1,5 +1,6 @@
 import { World } from "miniplex";
 import type { Object3D } from "three";
+import type { PlayerActions } from "../input/actions";
 
 /**
  * Entity component definitions.
@@ -30,6 +31,13 @@ export interface Entity {
   transform?: Transform;
   renderable?: Renderable;
   spin?: Spin;
+  /**
+   * This step's actions for a player-controlled entity. Each player entity owns its own copy,
+   * so systems never assume there is only one player.
+   */
+  input?: PlayerActions;
+  /** Marks the entity controlled from this machine's devices. */
+  localPlayer?: true;
 }
 
 export type GameWorld = World<Entity>;

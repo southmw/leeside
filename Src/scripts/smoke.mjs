@@ -98,6 +98,38 @@ try {
     );
   }
 
+  if (ready) {
+    // Keyboard input must reach the local player's actions.
+    const readInput = () => page.evaluate(() => ({ ...window.__game.input }));
+    const settle = () => page.waitForTimeout(150);
+
+    await page.keyboard.down("KeyW");
+    await settle();
+    const forward = await readInput();
+    check("W moves forward", forward.moveY === 1 && forward.moveX === 0, JSON.stringify([forward.moveX, forward.moveY]));
+
+    await page.keyboard.down("KeyD");
+    await settle();
+    const diagonal = await readInput();
+    const diagonalLength = Math.hypot(diagonal.moveX, diagonal.moveY);
+    check(
+      "W+D is diagonal with length 1",
+      diagonal.moveX > 0 && diagonal.moveY > 0 && Math.abs(diagonalLength - 1) < 1e-6,
+      `length ${diagonalLength.toFixed(4)}`,
+    );
+
+    await page.keyboard.up("KeyW");
+    await page.keyboard.up("KeyD");
+    await settle();
+    const released = await readInput();
+    check("releasing keys stops movement", released.moveX === 0 && released.moveY === 0);
+
+    await page.keyboard.down("Space");
+    await settle();
+    check("Space jumps", (await readInput()).jump === true);
+    await page.keyboard.up("Space");
+  }
+
   await mkdir(outDir, { recursive: true });
   await page.screenshot({ path: screenshotPath });
   check("screenshot saved", true, screenshotPath);
