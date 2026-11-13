@@ -1,6 +1,9 @@
 import { createTransform, createWorld } from "./core/ecs";
 import { startGameLoop } from "./core/gameLoop";
 import { installDebugApi } from "./debug/debugApi";
+import type { DebugOverlay } from "./debug/debugOverlay";
+import type { DevLog } from "./debug/devLog";
+import { FrameStats } from "./debug/frameStats";
 import { createSpinSystem } from "./gameplay/spinSystem";
 import { createEmptyActions } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
@@ -18,8 +21,22 @@ if (!canvas) {
 }
 
 const debug = installDebugApi();
+const frameStats = new FrameStats();
 
 const renderer = createRenderer(canvas);
+
+// Development tools: the dynamic imports keep them out of production builds.
+let overlay: DebugOverlay | undefined;
+let devLog: DevLog | undefined;
+if (import.meta.env.DEV) {
+  void import("./debug/debugOverlay").then(({ createDebugOverlay }) => {
+    overlay = createDebugOverlay(debug);
+  });
+  void import("./debug/devLog").then(({ createDevLog }) => {
+    devLog = createDevLog(debug, renderer);
+  });
+}
+
 const camera = createCamera();
 camera.position.set(5, 4, 7);
 camera.lookAt(0, 0.75, 0);
@@ -43,6 +60,11 @@ fitToWindow(renderer, camera);
 window.addEventListener("resize", () => fitToWindow(renderer, camera));
 
 startGameLoop({
+  onFrame(frameMs, nowMs) {
+    frameStats.add(frameMs);
+    overlay?.update(nowMs);
+    devLog?.update(nowMs);
+  },
   update(dt) {
     inputSystem();
     spinSystem(dt);
@@ -50,13 +72,21 @@ startGameLoop({
     if (player.input) {
       Object.assign(debug.input, player.input);
     }
-
     debug.tick += 1;
     debug.simSeconds += dt;
   },
   render() {
     renderSync.sync();
     renderer.render(scene, camera);
+
+    // renderer.info counts reset on every render call, so read them straight afterwards.
+    const { render, memory } = renderer.info;
+    Object.assign(debug.stats, frameStats.snapshot(), {
+      drawCalls: render.calls,
+      triangles: render.triangles,
+      geometries: memory.geometries,
+      textures: memory.textures,
+    });
 
     debug.frame += 1;
     debug.entityCount = world.entities.length;

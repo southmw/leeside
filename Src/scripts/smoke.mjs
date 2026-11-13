@@ -128,6 +128,28 @@ try {
     await settle();
     check("Space jumps", (await readInput()).jump === true);
     await page.keyboard.up("Space");
+
+    // Performance figures must be populated. Their values are not judged here: a headless
+    // browser renders in software, so the numbers say nothing about real performance.
+    const stats = await page.evaluate(() => ({ ...window.__game.stats }));
+    check(
+      "performance stats are populated",
+      stats.samples > 0 && stats.fps > 0 && stats.frameMs > 0 && stats.drawCalls > 0 && stats.triangles > 0,
+      `${stats.drawCalls} draw calls, ${stats.triangles} triangles, ${stats.samples} samples`,
+    );
+
+    // F3 toggles the debug overlay.
+    const overlay = page.locator("#debug-overlay");
+    await overlay.waitFor({ state: "attached", timeout: 5_000 });
+    const hiddenAtStart = await overlay.isHidden();
+    await page.keyboard.press("F3");
+    await page.waitForTimeout(600);
+    const text = (await overlay.isVisible()) ? await overlay.innerText() : "";
+    check(
+      "F3 shows the debug overlay",
+      hiddenAtStart && text.includes("FPS") && text.includes("Draw calls"),
+      text ? `${text.split("\n").length} lines` : "overlay not visible",
+    );
   }
 
   await mkdir(outDir, { recursive: true });

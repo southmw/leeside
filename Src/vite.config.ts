@@ -1,8 +1,10 @@
 import { defineConfig } from "vitest/config";
+import { devLogPlugin } from "./scripts/devLogPlugin.mjs";
 
 export default defineConfig({
   // Relative asset paths so the build works from any sub-path on a static host.
   base: "./",
+  plugins: [devLogPlugin()],
   build: {
     target: "es2022",
   },

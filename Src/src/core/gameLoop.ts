@@ -5,6 +5,12 @@ export interface GameLoopCallbacks {
   update(dt: number): void;
   /** Draws a frame. `alpha` is how far the display is between the last two simulation steps. */
   render(alpha: number): void;
+  /**
+   * Reports the real time since the previous frame, in milliseconds, and the current
+   * timestamp. Not called for the first frame or the first frame after the tab was hidden,
+   * because there is no meaningful interval to report.
+   */
+  onFrame?(frameMs: number, nowMs: number): void;
 }
 
 export interface GameLoop {
@@ -34,6 +40,9 @@ export function startGameLoop(callbacks: GameLoopCallbacks): GameLoop {
       return;
     }
     const frameSeconds = lastTime === undefined ? 0 : (now - lastTime) / 1000;
+    if (lastTime !== undefined) {
+      callbacks.onFrame?.(now - lastTime, now);
+    }
     lastTime = now;
 
     const { ticks, alpha } = timestep.advance(frameSeconds);
