@@ -53,7 +53,8 @@ try {
 
   const launched = await launchBrowser();
   browser = launched.browser;
-  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  // A fixed browser language, so the result does not depend on the machine's settings.
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, locale: "en-US" });
 
   const consoleErrors = [];
   page.on("console", (message) => {
@@ -155,6 +156,41 @@ try {
   await mkdir(outDir, { recursive: true });
   await page.screenshot({ path: screenshotPath });
   check("screenshot saved", true, screenshotPath);
+
+  // Screen text follows `?lang`, and without it the browser's language.
+  const overlayTextFor = async (targetPage, query) => {
+    await targetPage.goto(`${url}${query}`, { waitUntil: "load" });
+    await targetPage.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    const panel = targetPage.locator("#debug-overlay");
+    await panel.waitFor({ state: "visible", timeout: 5_000 });
+    await targetPage.waitForFunction(() => document.querySelector("#debug-overlay")?.textContent !== "");
+    return {
+      text: await panel.innerText(),
+      language: await targetPage.evaluate(() => window.__game.language),
+      htmlLang: await targetPage.evaluate(() => document.documentElement.lang),
+    };
+  };
+
+  const korean = await overlayTextFor(page, "?debug&lang=ko");
+  check(
+    "?lang=ko shows Korean text",
+    korean.language === "ko" && korean.htmlLang === "ko" && korean.text.includes("드로우콜") && !korean.text.includes("Draw calls"),
+    `language ${korean.language}`,
+  );
+
+  const english = await overlayTextFor(page, "?debug&lang=en");
+  check(
+    "?lang=en shows English text",
+    english.language === "en" && english.htmlLang === "en" && english.text.includes("Draw calls") && !english.text.includes("드로우콜"),
+    `language ${english.language}`,
+  );
+
+  const koreanBrowser = await browser.newPage({ locale: "ko-KR" });
+  const detected = await overlayTextFor(koreanBrowser, "?debug");
+  check("a Korean browser starts in Korean", detected.language === "ko" && detected.text.includes("드로우콜"), `language ${detected.language}`);
+  const overridden = await overlayTextFor(koreanBrowser, "?debug&lang=en");
+  check("?lang overrides the browser language", overridden.language === "en", `language ${overridden.language}`);
+  await koreanBrowser.close();
 
   check("no console errors", consoleErrors.length === 0, consoleErrors.join(" | "));
 

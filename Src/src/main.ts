@@ -8,6 +8,7 @@ import { createSpinSystem } from "./gameplay/spinSystem";
 import { createEmptyActions } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
 import { createLocalInput } from "./input/localInput";
+import { createI18n, detectLanguage } from "./locales/i18n";
 import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
 import { createBoxMesh, createTestScene } from "./render/testScene";
@@ -20,7 +21,17 @@ if (!canvas) {
   throw new Error("Missing #game canvas");
 }
 
-const debug = installDebugApi();
+// Start conditions come from the URL, e.g. `?lang=ko`.
+const startParams = new URLSearchParams(window.location.search);
+
+const i18n = createI18n(detectLanguage({ query: startParams.get("lang"), browser: navigator.languages }));
+document.documentElement.lang = i18n.language;
+
+const debug = installDebugApi(i18n.language);
+i18n.onChange((language) => {
+  document.documentElement.lang = language;
+  debug.language = language;
+});
 const frameStats = new FrameStats();
 
 const renderer = createRenderer(canvas);
@@ -30,7 +41,7 @@ let overlay: DebugOverlay | undefined;
 let devLog: DevLog | undefined;
 if (import.meta.env.DEV) {
   void import("./debug/debugOverlay").then(({ createDebugOverlay }) => {
-    overlay = createDebugOverlay(debug);
+    overlay = createDebugOverlay(debug, i18n);
   });
   void import("./debug/devLog").then(({ createDevLog }) => {
     devLog = createDevLog(debug, renderer);

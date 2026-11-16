@@ -1,4 +1,5 @@
 import { createEmptyActions, type PlayerActions } from "../input/actions";
+import type { Language } from "../locales/i18n";
 
 /** Performance figures: frame timing plus what the renderer drew in the latest frame. */
 export interface DebugStats {
@@ -37,6 +38,8 @@ export interface GameDebug {
   input: PlayerActions;
   /** Size of the drawing buffer in device pixels. */
   canvas: { width: number; height: number };
+  /** Language the screen text is shown in. */
+  language: Language;
   stats: DebugStats;
 }
 
@@ -47,7 +50,7 @@ declare global {
 }
 
 /** Creates the debug object and attaches it to `window` in development builds only. */
-export function installDebugApi(): GameDebug {
+export function installDebugApi(language: Language): GameDebug {
   const debug: GameDebug = {
     ready: false,
     frame: 0,
@@ -56,6 +59,7 @@ export function installDebugApi(): GameDebug {
     entityCount: 0,
     input: createEmptyActions(),
     canvas: { width: 0, height: 0 },
+    language,
     stats: {
       fps: 0,
       avgFps: 0,
