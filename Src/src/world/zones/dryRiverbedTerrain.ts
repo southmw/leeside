@@ -5,21 +5,21 @@
  * to be adjusted by walking around in the zone (plan step 1.10).
  */
 
-export const DRY_RIVERBED_SIZE = 384;
-/** 97 samples per side puts them 4 m apart. */
-export const DRY_RIVERBED_SAMPLES = 97;
+export const DRY_RIVERBED_SIZE = 720;
+/** 181 samples per side puts them 4 m apart. */
+export const DRY_RIVERBED_SAMPLES = 181;
 
 /** Height of the plain around the river. The riverbed's floor is at about 0. */
 const PLAIN_HEIGHT = 2.5;
 /** The channel: where its centre line runs, how wide its flat floor is, and how wide the banks are. */
-const CHANNEL_CENTRE_X = 192;
-const CHANNEL_MEANDER = 10;
-const CHANNEL_MEANDER_LENGTH = 60;
-const CHANNEL_HALF_WIDTH = 18;
-/** 2.5 m of drop over 14 m is about 10 degrees: easy to walk up anywhere. */
-const BANK_WIDTH = 14;
+const CHANNEL_CENTRE_X = 360;
+const CHANNEL_MEANDER = 18;
+const CHANNEL_MEANDER_LENGTH = 110;
+const CHANNEL_HALF_WIDTH = 34;
+/** 2.5 m of drop over 16 m is about 9 degrees: easy to walk up anywhere. */
+const BANK_WIDTH = 16;
 /** The eastern mound: centre (east, south), extra height and how far it spreads. */
-const MOUND = { x: 300, z: 110, height: 3, radius: 45 };
+const MOUND = { x: 563, z: 206, height: 4, radius: 80 };
 
 /** 0 at `from`, 1 at `to`, with a smooth start and end. */
 function smoothstep(from: number, to: number, value: number): number {

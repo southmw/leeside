@@ -28,9 +28,10 @@ export const CHARACTER_SKIN = 0.02;
 /**
  * A character walking down a slope or off a small ledge is pulled back to the ground if it
  * would end up less than this far above it, in metres. Without it, walking downhill becomes
- * a series of tiny falls.
+ * a series of tiny falls. At 12 m/s a character covers 0.2 m per step, so this covers slopes
+ * up to about 55 degrees.
  */
-const GROUND_SNAP_DISTANCE = 0.2;
+const GROUND_SNAP_DISTANCE = 0.3;
 
 /** How far below a character the surface it rests on is looked for: past the skin and the snap distance. */
 const GROUND_PROBE_DISTANCE = CHARACTER_SKIN + GROUND_SNAP_DISTANCE + 0.1;

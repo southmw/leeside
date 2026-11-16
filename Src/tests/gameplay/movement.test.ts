@@ -80,6 +80,29 @@ describe("character movement", () => {
     physics.dispose();
   });
 
+  it("walks at an overridden speed when one is given", () => {
+    const world = createWorld();
+    const physics = new PhysicsWorld();
+    physics.addStaticBox({ x: 0, y: -0.5, z: 0 }, { x: 50, y: 0.5, z: 50 });
+    const start = { x: 0, y: CHARACTER_HEIGHT / 2 + CHARACTER_SKIN, z: 0 };
+    const player = world.add({
+      transform: createTransform(start.x, start.y, start.z),
+      input: createEmptyActions(),
+      character: createCharacter(),
+      body: { handle: physics.addCharacter(start) },
+    });
+    const movement = createMovementSystem(world, physics, 10);
+    const physicsSystem = createPhysicsSystem(world, physics);
+    physicsSystem.update();
+    player.input.moveY = 1;
+    for (let tick = 0; tick < TICK_RATE; tick += 1) {
+      movement(TICK_SECONDS);
+      physicsSystem.update();
+    }
+    expect(-player.transform.z).toBeCloseTo(10, 1);
+    physics.dispose();
+  });
+
   it("is not faster diagonally", () => {
     const { physics, player, run } = setup();
     player.input.moveX = Math.SQRT1_2;
@@ -115,7 +138,8 @@ describe("character movement", () => {
 
   it("slides along a wall when pushed into it at an angle", () => {
     const { physics, player, run } = setup();
-    physics.addStaticBox({ x: 0, y: 1.5, z: -3.5 }, { x: 10, y: 1.5, z: 0.5 });
+    // Long enough that two seconds of sliding do not reach its end.
+    physics.addStaticBox({ x: 0, y: 1.5, z: -3.5 }, { x: 40, y: 1.5, z: 0.5 });
     run(1);
 
     player.input.moveX = Math.SQRT1_2;

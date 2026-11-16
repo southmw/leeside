@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { CHARACTER_HEIGHT } from "../../src/data/tuning";
+import { CHARACTER_HEIGHT, MOVE_SPEED } from "../../src/data/tuning";
 import { settleVertical, stepVertical } from "../../src/gameplay/verticalMotion";
 import { CHARACTER_SKIN, initPhysics, PhysicsWorld } from "../../src/physics/physicsWorld";
 import { buildTerrainGeometry, cellSize, createHeightfield, heightAt } from "../../src/world/terrain";
@@ -114,14 +114,18 @@ describe("dry riverbed terrain", () => {
 
   it("is a valid zone", () => {
     expect(zone.id).toBe("dry_riverbed");
-    expect(zone.size).toBe(384);
+    expect(zone.size).toBe(720);
   });
 
   it("has a riverbed 2 to 3 m lower than the land on either side", () => {
-    for (const south of [60, 150, 262, 330]) {
-      const bed = heightAt(terrain, 192, south);
-      const west = heightAt(terrain, 120, south);
-      const east = heightAt(terrain, 260, south);
+    for (const south of [113, 281, 491, 619]) {
+      // The channel meanders, so find its lowest point on this line rather than assume x = 360.
+      let bed = Number.POSITIVE_INFINITY;
+      for (let x = 320; x <= 400; x += 2) {
+        bed = Math.min(bed, heightAt(terrain, x, south));
+      }
+      const west = heightAt(terrain, 240, south);
+      const east = heightAt(terrain, 480, south);
       expect(west - bed).toBeGreaterThan(1.8);
       expect(west - bed).toBeLessThan(3.2);
       expect(east - bed).toBeGreaterThan(1.8);
@@ -129,13 +133,13 @@ describe("dry riverbed terrain", () => {
   });
 
   it("puts the start and the line of cars in the riverbed, and house A on the plain", () => {
-    expect(heightAt(terrain, 192, 330)).toBeLessThan(0.6);
-    expect(heightAt(terrain, 200, 262)).toBeLessThan(0.6);
-    expect(heightAt(terrain, 150, 150)).toBeGreaterThan(1.8);
+    expect(heightAt(terrain, 360, 619)).toBeLessThan(0.6);
+    expect(heightAt(terrain, 375, 491)).toBeLessThan(0.6);
+    expect(heightAt(terrain, 281, 281)).toBeGreaterThan(1.8);
   });
 
   it("raises a mound in the east for house B", () => {
-    expect(heightAt(terrain, 300, 110)).toBeGreaterThan(heightAt(terrain, 300, 300) + 2);
+    expect(heightAt(terrain, 563, 206)).toBeGreaterThan(heightAt(terrain, 563, 560) + 2);
   });
 
   it("has no slope too steep to walk", () => {
@@ -199,10 +203,10 @@ describe("character on terrain", () => {
   }
 
   it.each([
-    ["in the riverbed", 192, 330],
-    ["on the plain", 100, 200],
-    ["on a bank", 166, 200],
-    ["on the mound", 300, 110],
+    ["in the riverbed", 360, 619],
+    ["on the plain", 190, 380],
+    ["on a bank", 313, 380],
+    ["on the mound", 540, 230],
   ])("comes to rest at ground height when dropped %s", (_where, x, z) => {
     const physics = setup();
     const ground = heightAt(terrain, x, z);
@@ -217,12 +221,12 @@ describe("character on terrain", () => {
 
   it("stays on the surface while walking across the riverbed from one plain to the other", () => {
     const physics = setup();
-    const handle = physics.addCharacter({ x: 130, y: heightAt(terrain, 130, 200) + standingHeight, z: 200 });
+    const handle = physics.addCharacter({ x: 270, y: heightAt(terrain, 270, 380) + standingHeight, z: 380 });
     physics.step();
 
-    // 6.5 m/s eastwards for 20 seconds: down one bank, across the floor, up the other.
-    const { pose, worstGap, airborne } = simulate(physics, handle, 20 * 60, 6.5 / 60, 0);
-    expect(pose.x).toBeGreaterThan(250);
+    // At walking speed eastwards for 15 seconds: down one bank, across the floor, up the other.
+    const { pose, worstGap, airborne } = simulate(physics, handle, 15 * 60, MOVE_SPEED / 60, 0);
+    expect(pose.x).toBeGreaterThan(440);
     expect(worstGap).toBeLessThan(0.1);
     expect(airborne).toBeLessThan(12);
     physics.dispose();

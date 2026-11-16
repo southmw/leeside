@@ -54,8 +54,8 @@ export interface GameDebug {
    * is inside (null outdoors).
    */
   player: { x: number; y: number; z: number; grounded: boolean; groundHeight: number; inside: string | null };
-  /** The zone the player is in: its id, the text key of its name, and how many buildings it has. */
-  zone: { id: string; nameKey: string; buildings: number };
+  /** The zone the player is in: its id, the text key of its name, and how many buildings, props and rocks it has. */
+  zone: { id: string; nameKey: string; buildings: number; props: number; rocks: number };
   /** The local player's view in radians, and whether mouse movement currently turns it. */
   view: { yaw: number; pitch: number; locked: boolean };
   /**
@@ -63,6 +63,8 @@ export interface GameDebug {
    * chosen with the wheel (the current one is shorter when something is in the way), and its height.
    */
   camera: { distance: number; wantedDistance: number; y: number };
+  /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
+  moveSpeed: number;
   /** The local player's actions as of the latest simulation step. */
   input: PlayerActions;
   /** Size of the drawing buffer in device pixels. */
@@ -88,8 +90,9 @@ export function installDebugApi(language: Language): GameDebug {
     entityCount: 0,
     bodyCount: 0,
     player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null },
-    zone: { id: "", nameKey: "", buildings: 0 },
+    zone: { id: "", nameKey: "", buildings: 0, props: 0, rocks: 0 },
     view: { yaw: 0, pitch: 0, locked: false },
+    moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },
     input: createEmptyActions(),
     canvas: { width: 0, height: 0 },

@@ -92,13 +92,13 @@ try {
     check("frames keep rendering", later.frame > first.frame, `frame ${first.frame} -> ${later.frame}`);
     check("simulation keeps stepping", later.tick > first.tick, `tick ${first.tick} -> ${later.tick}`);
     check("world has entities", first.entityCount >= 1, `${first.entityCount} entities`);
-    // Terrain, 7 boxes for each of the 3 houses, and the player.
-    check("physics world has the terrain, the buildings and the player", first.bodyCount === 23, `${first.bodyCount} bodies`);
+    // Terrain, 7 boxes for each of the 3 houses, 9 props, 4 boundary walls, the larger rocks and the player.
+    check("physics world has the zone's colliders and the player", first.bodyCount > 1 + 21 + 9 + 4 + 1, `${first.bodyCount} bodies`);
     const zoneInfo = await page.evaluate(() => ({ ...window.__game.zone }));
     check(
       "the zone is loaded with its buildings",
-      zoneInfo.id === "dry_riverbed" && zoneInfo.buildings === 3,
-      `${zoneInfo.id}, ${zoneInfo.buildings} buildings`,
+      zoneInfo.id === "dry_riverbed" && zoneInfo.buildings === 3 && zoneInfo.props === 9 && zoneInfo.rocks > 1000,
+      `${zoneInfo.id}, ${zoneInfo.buildings} buildings, ${zoneInfo.props} props, ${zoneInfo.rocks} rocks`,
     );
     check(
       "drawing buffer matches the window",
@@ -348,18 +348,33 @@ try {
       return { before, after: await page.evaluate(() => ({ ...window.__game.player })) };
     };
 
-    const throughDoor = await walkFrom("162,150");
-    check("the start position can be set with ?at", Math.abs(throughDoor.before.x - 162) < 0.5 && Math.abs(throughDoor.before.z - 150) < 0.5);
+    const throughDoor = await walkFrom("293,281");
+    check("the start position can be set with ?at", Math.abs(throughDoor.before.x - 293) < 0.5 && Math.abs(throughDoor.before.z - 281) < 0.5);
     check(
       "walking through the doorway enters the house",
       throughDoor.before.inside === null && throughDoor.after.inside === "house_a",
       `inside: ${throughDoor.after.inside}, x ${throughDoor.after.x.toFixed(2)}`,
     );
 
-    const intoWall = await walkFrom("162,152.5");
+    // The zone cannot be left: walking at its southern edge ends against the invisible wall.
+    await page.goto(`${url}?at=360,705&face=180`, { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
+    const edgeStart = await page.evaluate(() => window.__game.simSeconds);
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction((sim) => window.__game.simSeconds > sim + 3, edgeStart, { timeout: 60_000 });
+    await page.keyboard.up("KeyW");
+    const atEdge = await page.evaluate(() => ({ ...window.__game.player }));
+    check(
+      "the zone's edge stops the character",
+      atEdge.z > 716 && atEdge.z < 720 && atEdge.grounded,
+      `z ${atEdge.z.toFixed(2)} of 720`,
+    );
+
+    const intoWall = await walkFrom("293,283.5");
     check(
       "the wall beside the doorway stops the character",
-      intoWall.after.inside === null && intoWall.after.x > 155.3 && intoWall.after.x < 155.6,
+      intoWall.after.inside === null && intoWall.after.x > 286.3 && intoWall.after.x < 286.6,
       `inside: ${intoWall.after.inside}, x ${intoWall.after.x.toFixed(2)}`,
     );
   }
@@ -384,8 +399,8 @@ try {
     });
     const startX = await page.evaluate(() => window.__game.player.x);
     await page.keyboard.down("KeyD");
-    // East from the middle of the riverbed, up the bank and onto the plain: about 45 m.
-    await page.waitForFunction((x) => window.__game.player.x > x + 45, startX, { timeout: 60_000 });
+    // East from the middle of the riverbed, up the bank and onto the plain: about 70 m.
+    await page.waitForFunction((x) => window.__game.player.x > x + 70, startX, { timeout: 60_000 });
     await page.keyboard.up("KeyD");
     const walk = await page.evaluate(() => {
       clearInterval(window.__smokeTimer);

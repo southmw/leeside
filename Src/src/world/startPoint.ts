@@ -1,5 +1,17 @@
 import type { ZoneDefinition } from "./zoneDefinition";
 
+/**
+ * A number from a start condition such as `?speed=8`, or `fallback` if it is missing, not a
+ * number, or outside `min` to `max`.
+ */
+export function numberParam(value: string | null | undefined, min: number, max: number, fallback: number): number {
+  if (value === null || value === undefined || value.trim() === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
+}
+
 export interface StartPoint {
   east: number;
   south: number;

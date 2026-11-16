@@ -12,6 +12,7 @@ import {
   CAMERA_SHOULDER_OFFSET,
   CHARACTER_HEIGHT,
   CHARACTER_RADIUS,
+  MOVE_SPEED,
 } from "./data/tuning";
 import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
@@ -31,7 +32,7 @@ import { createRenderSync } from "./render/renderSync";
 import { createLookHint } from "./ui/lookHint";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
 import { buildingAt, yawFromDegrees } from "./world/building";
-import { resolveStart } from "./world/startPoint";
+import { numberParam, resolveStart } from "./world/startPoint";
 import { heightAt } from "./world/terrain";
 import { loadZone } from "./world/zoneLoader";
 import { loadDryRiverbed } from "./world/zones/dryRiverbed";
@@ -88,6 +89,8 @@ const zoneDefinition = zone.definition;
 debug.zone.id = zoneDefinition.id;
 debug.zone.nameKey = zoneDefinition.nameKey;
 debug.zone.buildings = zoneDefinition.buildings.length;
+debug.zone.props = zoneDefinition.props.length;
+debug.zone.rocks = zone.rockCount;
 
 // Where the player starts: the zone's start point, or `?at=east,south` and `?face=degrees`
 // (clockwise from north) to start anywhere, for checking a place without walking to it.
@@ -112,7 +115,10 @@ createLookHint(mouse, i18n);
 const localInput = createLocalInput({ mouse });
 const inputSystem = createInputSystem(world, localInput);
 const lookSystem = createLookSystem(world);
-const movementSystem = createMovementSystem(world, physics);
+// `?speed=8` tries a different walking speed (m/s) without changing the tuning file.
+const moveSpeed = numberParam(startParams.get("speed"), 1, 30, MOVE_SPEED);
+debug.moveSpeed = moveSpeed;
+const movementSystem = createMovementSystem(world, physics, moveSpeed);
 
 // The camera's current reach. It shrinks at once when something is in the way and grows back
 // gradually, so it is kept between frames.

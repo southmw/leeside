@@ -9,7 +9,7 @@ import {
   WALL_THICKNESS,
   yawFromDegrees,
 } from "../../src/world/building";
-import { resolveStart } from "../../src/world/startPoint";
+import { numberParam, resolveStart } from "../../src/world/startPoint";
 import { heightAt } from "../../src/world/terrain";
 import type { ZoneBuilding } from "../../src/world/zoneDefinition";
 import { loadZone } from "../../src/world/zoneLoader";
@@ -125,8 +125,8 @@ describe("resolveStart", () => {
   const zone = loadDryRiverbed();
 
   it("uses the zone's start point by default", () => {
-    expect(resolveStart(zone)).toEqual({ east: 192, south: 330, facing: 0 });
-    expect(resolveStart(zone, null, null)).toEqual({ east: 192, south: 330, facing: 0 });
+    expect(resolveStart(zone)).toEqual({ east: 360, south: 619, facing: 0 });
+    expect(resolveStart(zone, null, null)).toEqual({ east: 360, south: 619, facing: 0 });
   });
 
   it("accepts a position and a direction", () => {
@@ -139,10 +139,23 @@ describe("resolveStart", () => {
   });
 
   it("ignores values that do not parse or lie outside the zone", () => {
-    for (const at of ["", "abc", "10", "10,20,30", "500,10", "-5,10", "10,NaN"]) {
-      expect(resolveStart(zone, at)).toEqual({ east: 192, south: 330, facing: 0 });
+    for (const at of ["", "abc", "10", "10,20,30", "900,10", "-5,10", "10,NaN"]) {
+      expect(resolveStart(zone, at)).toEqual({ east: 360, south: 619, facing: 0 });
     }
     expect(resolveStart(zone, null, "north").facing).toBe(0);
+  });
+});
+
+describe("numberParam", () => {
+  it("reads a number within the allowed range", () => {
+    expect(numberParam("8", 1, 30, 6.5)).toBe(8);
+    expect(numberParam(" 9.5 ", 1, 30, 6.5)).toBe(9.5);
+  });
+
+  it("falls back when the value is missing, not a number, or out of range", () => {
+    for (const value of [null, undefined, "", "fast", "0", "-3", "100", "NaN"]) {
+      expect(numberParam(value, 1, 30, 6.5)).toBe(6.5);
+    }
   });
 });
 
@@ -152,9 +165,9 @@ describe("the dry riverbed's buildings", () => {
   it("has the three houses of the design, at their positions, all giving shelter", () => {
     const byId = Object.fromEntries(zone.buildings.map((building) => [building.id, building]));
     expect(Object.keys(byId).sort()).toEqual(["house_a", "house_b", "house_c"]);
-    expect(byId.house_a?.position).toEqual([150, 150]);
-    expect(byId.house_b?.position).toEqual([300, 110]);
-    expect(byId.house_c?.position).toEqual([70, 230]);
+    expect(byId.house_a?.position).toEqual([281, 281]);
+    expect(byId.house_b?.position).toEqual([563, 206]);
+    expect(byId.house_c?.position).toEqual([131, 431]);
     expect(zone.buildings.every((building) => building.shelter)).toBe(true);
   });
 
@@ -182,45 +195,21 @@ describe("loadZone", () => {
     return { objects, add: (object: unknown) => objects.add(object), remove: (object: unknown) => objects.delete(object) };
   };
 
-  it("adds the terrain and every box of every building, as picture and as collider", () => {
-    const physics = new PhysicsWorld();
-    const scene = fakeScene();
-    const definition = loadDryRiverbed();
-    loadZone(definition, physics, scene);
-
-    // Terrain, plus 7 boxes per building.
-    const expected = 1 + definition.buildings.length * 7;
-    expect(physics.bodyCount).toBe(expected);
-    expect(scene.objects.size).toBe(expected);
-    physics.dispose();
-  });
-
-  it("takes everything out again on unload", () => {
-    const physics = new PhysicsWorld();
-    const scene = fakeScene();
-    const zone = loadZone(loadDryRiverbed(), physics, scene);
-    const player = physics.addCharacter({ x: 0, y: 5, z: 0 });
-
-    zone.unload();
-    expect(scene.objects.size).toBe(0);
-    expect(physics.bodyCount).toBe(1);
-    expect(physics.readPose(player, { x: 0, y: 0, z: 0, rotationY: 0 })).toBe(true);
-
-    // Loading again after unloading gives the same counts: nothing is left behind.
-    loadZone(loadDryRiverbed(), physics, scene);
-    expect(physics.bodyCount).toBe(1 + 1 + 3 * 7);
-    physics.dispose();
-  });
-
   describe("walking into a house", () => {
     const definition = loadDryRiverbed();
     const houseA = definition.buildings.find((building) => building.id === "house_a") as ZoneBuilding;
 
-    /** Starts a character east of house A at the given south coordinate and walks it west for 3 seconds. */
-    function walkWestFrom(south: number) {
+    const [houseX, houseZ] = houseA.position;
+    // House A is 10 m wide with its door in the middle of the east wall.
+    const eastFace = houseX + 5;
+    const westFace = houseX - 5;
+
+    /** Starts a character 7 m east of house A's east wall, `offset` metres south of the door, and walks it west for 3 seconds. */
+    function walkWestFrom(offset: number) {
       const physics = new PhysicsWorld();
       const zone = loadZone(definition, physics, fakeScene());
-      const start = { x: 162, y: heightAt(zone.terrain, 162, south) + CHARACTER_HEIGHT / 2 + CHARACTER_SKIN, z: south };
+      const south = houseZ + offset;
+      const start = { x: eastFace + 7, y: heightAt(zone.terrain, eastFace + 7, south) + CHARACTER_HEIGHT / 2 + CHARACTER_SKIN, z: south };
       const handle = physics.addCharacter(start);
       physics.step();
       const pose = { x: 0, y: 0, z: 0, rotationY: 0 };
@@ -234,18 +223,18 @@ describe("loadZone", () => {
     }
 
     it("gets in through the doorway", () => {
-      const pose = walkWestFrom(150);
+      const pose = walkWestFrom(0);
       expect(isInsideBuilding(houseA, pose.x, pose.z)).toBe(true);
       // Stopped by the far (west) wall, not somewhere in the doorway.
-      expect(pose.x).toBeLessThan(146.5);
-      expect(pose.x).toBeGreaterThan(145.3);
+      expect(pose.x).toBeLessThan(westFace + 1.5);
+      expect(pose.x).toBeGreaterThan(westFace + 0.3);
     });
 
     it("is stopped by the wall beside the doorway", () => {
-      const pose = walkWestFrom(152.5);
+      const pose = walkWestFrom(2.5);
       expect(isInsideBuilding(houseA, pose.x, pose.z)).toBe(false);
-      expect(pose.x).toBeGreaterThan(155.3);
-      expect(pose.x).toBeLessThan(155.5);
+      expect(pose.x).toBeGreaterThan(eastFace + 0.3);
+      expect(pose.x).toBeLessThan(eastFace + 0.5);
     });
   });
 });

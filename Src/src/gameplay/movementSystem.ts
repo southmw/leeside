@@ -24,12 +24,17 @@ export function desiredMovement(
  * Moves every character by its own input, plus jumping and gravity. The physics world
  * shortens the movement where something is in the way; the new position takes effect in the
  * physics step that follows, so this system must run before the physics system.
+ * `speed` overrides the walking speed, for trying out values (`?speed`).
  */
-export function createMovementSystem(world: GameWorld, physics: PhysicsWorld): (dt: number) => void {
+export function createMovementSystem(
+  world: GameWorld,
+  physics: PhysicsWorld,
+  speed: number = MOVE_SPEED,
+): (dt: number) => void {
   const characters = world.with("character", "input", "body");
   return (dt) => {
     for (const { character, input, body, view } of characters) {
-      const desired = desiredMovement(input, dt, view?.yaw);
+      const desired = desiredMovement(input, dt, view?.yaw, speed);
       const wasGrounded = character.grounded;
       desired.y = stepVertical(character, input.jump, dt);
       const result = physics.moveCharacter(body.handle, desired, wasGrounded);

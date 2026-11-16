@@ -10,8 +10,12 @@ export const GRAVITY = 20;
 export const CHARACTER_HEIGHT = 1.8;
 export const CHARACTER_RADIUS = 0.35;
 
-/** Player movement speed in m/s. The prototype has a single speed: no walking or sprinting. */
-export const MOVE_SPEED = 6.5;
+/**
+ * Player movement speed in m/s. The prototype has a single speed: no walking or sprinting.
+ * Raised from 6.5 after trying the zone on foot; the zone was enlarged by the same ratio, so
+ * the times between places are as designed.
+ */
+export const MOVE_SPEED = 12;
 
 /** How high a jump lifts the character's feet, in metres. */
 export const JUMP_HEIGHT = 1.1;

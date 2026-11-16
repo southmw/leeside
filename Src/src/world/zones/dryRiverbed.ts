@@ -2,20 +2,46 @@ import { parseZoneDefinition, type ZoneDefinition } from "../zoneDefinition";
 import { DRY_RIVERBED_SAMPLES, DRY_RIVERBED_SIZE, generateDryRiverbedHeights } from "./dryRiverbedTerrain";
 
 /**
- * The dry riverbed, the prototype's one outdoor zone (prototype design 5). It has terrain,
- * a starting point and the three ruined houses; cars, the camp, exits and scattered rocks
- * arrive in plan step 1.10.
+ * The dry riverbed, the prototype's one outdoor zone, laid out as in prototype design 5.2.
+ * The zone is 720 m across; at 12 m/s that is one minute from edge to edge.
  *
- * Positions are [east, south] from the north-west corner, as in the design document.
- * House sizes, door sides and rotations are placeholders.
+ * Positions are [east, south] from the north-west corner, exactly as in the design document.
+ * Sizes, door sides and rotations are placeholders. Containers and the spots where the storm
+ * uncovers things are added by the plan steps that introduce them.
  */
 const buildings = [
   // House A, west of the river. Its door faces the river, where the player comes from.
-  { id: "house_a", position: [150, 150], rotation: 0, size: [10, 8, 3], door: { side: "east", width: 1.6 }, shelter: true },
+  { id: "house_a", position: [281, 281], rotation: 0, size: [10, 8, 3], door: { side: "east", width: 1.6 }, shelter: true },
   // House B, on the mound in the east.
-  { id: "house_b", position: [300, 110], rotation: 340, size: [10, 8, 3], door: { side: "west", width: 1.6 }, shelter: true },
+  { id: "house_b", position: [563, 206], rotation: 340, size: [10, 8, 3], door: { side: "west", width: 1.6 }, shelter: true },
   // House C, further west.
-  { id: "house_c", position: [70, 230], rotation: 15, size: [9, 7, 3], door: { side: "east", width: 1.6 }, shelter: true },
+  { id: "house_c", position: [131, 431], rotation: 15, size: [9, 7, 3], door: { side: "east", width: 1.6 }, shelter: true },
+];
+
+const props = [
+  // 1: a line of cars in the riverbed, the first place the player searches.
+  { id: "car_line", kind: "car", position: [375, 491], rotation: 8 },
+  { id: "car_line_second", kind: "car", position: [374, 498], rotation: 352 },
+  // 2: an abandoned car east of the river.
+  { id: "abandoned_car", kind: "car", position: [469, 356], rotation: 70 },
+  // 3: an overturned car in the south-west, the place furthest from any shelter.
+  { id: "overturned_car", kind: "overturned_car", position: [244, 563], rotation: 40 },
+  // K: what is left of a camp.
+  { id: "camp", kind: "tent", position: [206, 150], rotation: 30 },
+  { id: "camp_second_tent", kind: "tent", position: [212, 154], rotation: 300 },
+  // W: a dry well.
+  { id: "dry_well", kind: "well", position: [403, 113], rotation: 0 },
+  // Rubble across the two exits that the prototype keeps closed.
+  { id: "north_exit_rubble", kind: "barrier", position: [356, 10], rotation: 0 },
+  { id: "east_exit_rubble", kind: "barrier", position: [711, 188], rotation: 90 },
+];
+
+const exits = [
+  // The shelter's entrance is in house A's basement.
+  { id: "to_shelter", position: [281, 281], to: "shelter", entry: "from_riverbed" },
+  // N and E lead to zones the prototype does not have.
+  { id: "north_exit", position: [356, 8], blocked: true },
+  { id: "east_exit", position: [713, 188], blocked: true },
 ];
 
 /** The ground is levelled under each building, a little beyond its corners. */
@@ -30,9 +56,12 @@ const definition = {
   nameKey: "zone.dry_riverbed.name",
   size: DRY_RIVERBED_SIZE,
   terrain: { samples: DRY_RIVERBED_SAMPLES, heights: generateDryRiverbedHeights(pads) },
-  // In the riverbed near the southern edge, facing north towards the cars and house A.
-  spawn: { position: [192, 330], facing: 0 },
+  // S: in the riverbed near the southern edge, facing north towards the cars and house A.
+  spawn: { position: [360, 619], facing: 0 },
   buildings,
+  props,
+  exits,
+  scatter: [{ id: "rocks", kind: "rock", count: 1100, seed: 20261116 }],
 };
 
 /** Validates and returns the zone. Throws with every problem listed if the definition is wrong. */
