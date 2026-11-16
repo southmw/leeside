@@ -39,6 +39,8 @@ export interface DebugStats {
 export interface GameDebug {
   /** True once the first frame has been rendered. */
   ready: boolean;
+  /** Whether the title screen is up, the player is in control, or a performance measurement is running. */
+  phase: "title" | "playing" | "bench";
   /** Number of frames rendered so far. */
   frame: number;
   /** Number of fixed simulation steps run so far. */
@@ -106,6 +108,7 @@ declare global {
 export function installDebugApi(language: Language): GameDebug {
   const debug: GameDebug = {
     ready: false,
+    phase: "title",
     frame: 0,
     tick: 0,
     simSeconds: 0,

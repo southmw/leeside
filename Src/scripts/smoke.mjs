@@ -51,6 +51,9 @@ try {
     throw new Error("Dev server did not report a local URL");
   }
 
+  // Most checks go straight into the game; the title screen has its own check further down.
+  const gameUrl = (query = "") => `${url}?skipTitle${query ? `&${query.replace(/^\?/, "")}` : ""}`;
+
   const launched = await launchBrowser();
   browser = launched.browser;
   // A fixed browser language, so the result does not depend on the machine's settings.
@@ -70,7 +73,7 @@ try {
     }
   });
 
-  await page.goto(url, { waitUntil: "load" });
+  await page.goto(gameUrl(), { waitUntil: "load" });
 
   // The game sets `ready` after its first rendered frame.
   let ready = true;
@@ -272,7 +275,7 @@ try {
 
   // Camera: the view turns while a mouse button is held and the mouse moves, and walking follows it.
   {
-    await page.goto(url, { waitUntil: "load" });
+    await page.goto(gameUrl(), { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
     const viewNow = () => page.evaluate(() => ({ ...window.__game.view }));
     const hint = page.locator("#look-hint");
@@ -400,7 +403,7 @@ try {
   // through the doorway; starting beside it, the wall stops the character.
   {
     const walkFrom = async (at) => {
-      await page.goto(`${url}?at=${at}&face=270`, { waitUntil: "load" });
+      await page.goto(gameUrl(`at=${at}&face=270`), { waitUntil: "load" });
       await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
       await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
       const before = await page.evaluate(() => ({ ...window.__game.player, sim: window.__game.simSeconds }));
@@ -419,7 +422,7 @@ try {
     );
 
     // The zone cannot be left: walking at its southern edge ends against the invisible wall.
-    await page.goto(`${url}?at=360,705&face=180`, { waitUntil: "load" });
+    await page.goto(gameUrl("at=360,705&face=180"), { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
     await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
     const edgeStart = await page.evaluate(() => window.__game.simSeconds);
@@ -444,7 +447,7 @@ try {
   // Terrain: walking down the bank into the riverbed and back up the other side, the
   // character stays on the surface the whole way. Start on the west bank, heading east.
   {
-    await page.goto(url, { waitUntil: "load" });
+    await page.goto(gameUrl(), { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
     await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
     await page.evaluate(() => {
@@ -488,10 +491,87 @@ try {
     check("the context menu is suppressed over the game", !menuShown);
   }
 
+  // Title screen: it is what a visitor sees first. START (button or Enter) hands over control;
+  // before that the character does not respond. The language switch works at once.
+  {
+    await page.goto(url, { waitUntil: "load" });
+    const titleScreen = page.locator("#title-screen");
+    await titleScreen.waitFor({ state: "visible", timeout: 15_000 });
+    await page.locator("#title-start").waitFor({ state: "visible", timeout: 30_000 });
+    const atTitle = await page.evaluate(() => ({ phase: window.__game.phase, x: window.__game.player.x, z: window.__game.player.z }));
+    check("the title screen comes up with a START button", atTitle.phase === "title" && (await titleScreen.innerText()).includes("LEESIDE"));
+
+    await page.keyboard.down("KeyW");
+    await page.waitForTimeout(500);
+    await page.keyboard.up("KeyW");
+    const stillAtTitle = await page.evaluate(() => ({ x: window.__game.player.x, z: window.__game.player.z }));
+    check("the character does not move behind the title", stillAtTitle.x === atTitle.x && stillAtTitle.z === atTitle.z);
+
+    await page.locator("#title-language-ko").click();
+    const korean = await titleScreen.innerText();
+    await page.locator("#title-language-en").click();
+    const english = await titleScreen.innerText();
+    check(
+      "the language switch changes the title at once",
+      korean.includes("바람이 닿지 않는 곳") && korean.includes("시작") && english.includes("START") && !english.includes("시작"),
+    );
+
+    await page.locator("#title-settings").click();
+    const settingsNotice = page.locator('[data-window="settings-pending"]');
+    const noticeShown = await settingsNotice.isVisible();
+    // Enter must close the notice here, not start the game underneath it.
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(300);
+    const phaseAfterNotice = await page.evaluate(() => window.__game.phase);
+    check("the settings button opens a notice, and Enter closes it without starting", noticeShown && phaseAfterNotice === "title");
+
+    await page.locator("#title-start").click();
+    await page.waitForFunction(() => window.__game.phase === "playing", undefined, { timeout: 5_000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    check(
+      "START hands control to the player and the title goes away",
+      (await page.evaluate(() => window.__game.phase)) === "playing" && (await titleScreen.count()) === 0,
+    );
+
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction((z) => window.__game.player.z < z - 0.5, atTitle.z, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.up("KeyW");
+    const afterStart = await page.evaluate(() => window.__game.player.z);
+    check("after START the character moves", afterStart < atTitle.z - 0.5, `z ${atTitle.z.toFixed(1)} -> ${afterStart.toFixed(1)}`);
+
+    // Enter starts the game as well.
+    await page.goto(url, { waitUntil: "load" });
+    await page.locator("#title-start").waitFor({ state: "visible", timeout: 30_000 });
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.phase === "playing", undefined, { timeout: 5_000 }).catch(() => {});
+    check("Enter starts the game from the title", (await page.evaluate(() => window.__game.phase)) === "playing");
+
+    // A phone gets an explanation instead of the game, and nothing is loaded for it.
+    const phone = await browser.newPage({
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+      userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      locale: "en-US",
+    });
+    const phoneErrors = [];
+    phone.on("pageerror", (error) => phoneErrors.push(String(error)));
+    await phone.goto(url, { waitUntil: "load" });
+    await phone.waitForTimeout(1500);
+    const phoneText = await phone.locator("#title-screen").innerText().catch(() => "");
+    const gameLoadedOnPhone = await phone.evaluate(() => window.__game !== undefined);
+    check(
+      "a phone gets a notice instead of the game",
+      phoneText.includes("desktop browser") && !gameLoadedOnPhone && (await phone.locator("#title-start").count()) === 0 && phoneErrors.length === 0,
+      phoneErrors.join(" | "),
+    );
+    await phone.close();
+  }
+
   // UI frame: the sample window opens and closes, works with keyboard and mouse, keeps its
   // keys from the game, and the UI scales with the window.
   {
-    await page.goto(url, { waitUntil: "load" });
+    await page.goto(gameUrl(), { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
     await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
     const uiNow = () => page.evaluate(() => ({ ...window.__game.ui }));
@@ -601,7 +681,7 @@ try {
 
   // Screen text follows `?lang`, and without it the browser's language.
   const overlayTextFor = async (targetPage, query) => {
-    await targetPage.goto(`${url}${query}`, { waitUntil: "load" });
+    await targetPage.goto(gameUrl(query), { waitUntil: "load" });
     await targetPage.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
     const panel = targetPage.locator("#debug-overlay");
     await panel.waitFor({ state: "visible", timeout: 5_000 });
