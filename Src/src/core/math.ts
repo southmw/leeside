@@ -34,3 +34,15 @@ export function wrapAngle(angle: number): number {
 export function lerpAngle(a: number, b: number, t: number): number {
   return a + wrapAngle(b - a) * t;
 }
+
+/**
+ * Turns an angle towards a target by at most `maxStep` radians, the shorter way round.
+ * The result stays within -PI..PI.
+ */
+export function turnTowards(current: number, target: number, maxStep: number): number {
+  const difference = wrapAngle(target - current);
+  if (Math.abs(difference) <= maxStep) {
+    return wrapAngle(target);
+  }
+  return wrapAngle(current + Math.sign(difference) * maxStep);
+}

@@ -1,5 +1,6 @@
 import type { GameWorld } from "../core/ecs";
-import { MOVE_SPEED } from "../data/tuning";
+import { turnTowards } from "../core/math";
+import { CHARACTER_TURN_RATE, MOVE_SPEED } from "../data/tuning";
 import type { PlayerActions } from "../input/actions";
 import type { PhysicsWorld, Vec3 } from "../physics/physicsWorld";
 import { settleVertical, stepVertical } from "./verticalMotion";
@@ -20,6 +21,11 @@ export function desiredMovement(
   return { x: direction.x * speed * dt, y: 0, z: direction.z * speed * dt };
 }
 
+/** The facing (0 faces -Z, counter-clockwise from above) that points along a horizontal direction. */
+export function facingOf(x: number, z: number): number {
+  return Math.atan2(-x, -z);
+}
+
 /**
  * Moves every character by its own input, plus jumping and gravity. The physics world
  * shortens the movement where something is in the way; the new position takes effect in the
@@ -35,6 +41,9 @@ export function createMovementSystem(
   return (dt) => {
     for (const { character, input, body, view } of characters) {
       const desired = desiredMovement(input, dt, view?.yaw, speed);
+      if (desired.x !== 0 || desired.z !== 0) {
+        character.facing = turnTowards(character.facing, facingOf(desired.x, desired.z), CHARACTER_TURN_RATE * dt);
+      }
       const wasGrounded = character.grounded;
       desired.y = stepVertical(character, input.jump, dt);
       const result = physics.moveCharacter(body.handle, desired, wasGrounded);

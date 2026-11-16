@@ -1,6 +1,6 @@
 /**
  * Terrain of the dry riverbed zone (prototype design 5), computed rather than drawn: a plain
- * with a dried-up river channel running north to south through the middle, 2.5 m lower than
+ * with a dried-up river channel running north to south through the middle, 2.8 m lower than
  * its surroundings, and a mound in the east where house B stands. The numbers are placeholders
  * to be adjusted by walking around in the zone (plan step 1.10).
  */
@@ -10,14 +10,17 @@ export const DRY_RIVERBED_SIZE = 720;
 export const DRY_RIVERBED_SAMPLES = 181;
 
 /** Height of the plain around the river. The riverbed's floor is at about 0. */
-const PLAIN_HEIGHT = 2.5;
+const PLAIN_HEIGHT = 2.8;
 /** The channel: where its centre line runs, how wide its flat floor is, and how wide the banks are. */
 const CHANNEL_CENTRE_X = 360;
 const CHANNEL_MEANDER = 18;
 const CHANNEL_MEANDER_LENGTH = 110;
 const CHANNEL_HALF_WIDTH = 34;
-/** 2.5 m of drop over 16 m is about 9 degrees: easy to walk up anywhere. */
-const BANK_WIDTH = 16;
+/**
+ * 2.8 m of drop over 9 m: about 17 degrees on average and about 25 at its steepest, which
+ * reads clearly as a bank and is still well within what a character can walk up (45).
+ */
+const BANK_WIDTH = 9;
 /** The eastern mound: centre (east, south), extra height and how far it spreads. */
 const MOUND = { x: 563, z: 206, height: 4, radius: 80 };
 

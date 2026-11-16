@@ -5,7 +5,7 @@
   "common.yes": "yes",
   "common.no": "no",
 
-  "hint.click_to_look": "Click to look around with the mouse (Esc to release)",
+  "hint.drag_to_look": "Hold a mouse button and move the mouse to look around",
 
   "zone.dry_riverbed.name": "Dry Riverbed",
 
@@ -40,6 +40,7 @@
   "debug.entities": "Entities",
   "debug.bodies": "Physics bodies",
   "debug.position": "Player position",
+  "debug.character_model": "Model / animation",
   "debug.move_speed": "Walking speed",
   "debug.speed_value": "{value} m/s",
   "debug.ground_height": "Terrain height",

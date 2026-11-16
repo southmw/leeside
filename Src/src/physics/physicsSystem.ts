@@ -23,6 +23,10 @@ export function createPhysicsSystem(world: GameWorld, physics: PhysicsWorld): Ph
       physics.step();
       for (const entity of bodies) {
         physics.readPose(entity.body.handle, entity.transform);
+        // A character's capsule never turns in the physics world; its facing is game state.
+        if (entity.character) {
+          entity.transform.rotationY = entity.character.facing;
+        }
       }
     },
     dispose(): void {

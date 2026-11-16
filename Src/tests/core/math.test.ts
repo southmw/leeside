@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clamp, lerp, lerpAngle, yawFromQuaternion } from "../../src/core/math";
+import { clamp, lerp, lerpAngle, turnTowards, yawFromQuaternion } from "../../src/core/math";
 
 describe("clamp", () => {
   it("returns the value when it is inside the range", () => {
@@ -64,5 +64,31 @@ describe("lerpAngle", () => {
   it("takes the short way in the other direction too", () => {
     const result = lerpAngle(-Math.PI + 0.2, Math.PI - 0.2, 0.5);
     expect(Math.abs(result)).toBeCloseTo(Math.PI);
+  });
+});
+
+describe("turnTowards", () => {
+  it("turns by at most the given step", () => {
+    expect(turnTowards(0, 1, 0.25)).toBeCloseTo(0.25);
+    expect(turnTowards(0, -1, 0.25)).toBeCloseTo(-0.25);
+  });
+
+  it("stops exactly at the target when it is within reach", () => {
+    expect(turnTowards(0.9, 1, 0.25)).toBeCloseTo(1);
+    expect(turnTowards(1, 1, 0.25)).toBeCloseTo(1);
+  });
+
+  it("goes the short way across the seam at PI", () => {
+    // From just below PI to just above -PI is a small turn onwards, not a long way back.
+    const result = turnTowards(Math.PI - 0.1, -Math.PI + 0.1, 0.15);
+    expect(Math.abs(result)).toBeGreaterThan(Math.PI - 0.06);
+  });
+
+  it("keeps the result within half a turn", () => {
+    let angle = 0;
+    for (let i = 0; i < 100; i += 1) {
+      angle = turnTowards(angle, angle + 2, 0.5);
+      expect(Math.abs(angle)).toBeLessThanOrEqual(Math.PI + 1e-9);
+    }
   });
 });

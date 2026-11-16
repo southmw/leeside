@@ -110,7 +110,12 @@ try {
   if (ready) {
     // Keyboard input must reach the local player's actions.
     const readInput = () => page.evaluate(() => ({ ...window.__game.input }));
-    const settle = () => page.waitForTimeout(150);
+    // Waits until the simulation has run a few steps, so a key press has certainly been read.
+    // A fixed pause is not enough: a headless browser can take longer than that for one frame.
+    const settle = async () => {
+      const tick = await page.evaluate(() => window.__game.tick);
+      await page.waitForFunction((from) => window.__game.tick >= from + 3, tick, { timeout: 10_000 });
+    };
 
     await page.keyboard.down("KeyW");
     await settle();
@@ -160,6 +165,28 @@ try {
       `${clearance.toFixed(3)} m above terrain at height ${movedRight.groundHeight.toFixed(2)}`,
     );
 
+    // The character model is there from the first frame, and its animation follows the movement.
+    const modelAtStart = await page.evaluate(() => window.__game.player.model);
+    const modelLoaded = modelAtStart === "model";
+    check("the character model is loaded before the game starts", modelLoaded, modelAtStart);
+    const animationNow = () => page.evaluate(() => window.__game.player.animation);
+    if (modelLoaded) {
+      // The keys of the previous check were only just released; give the animation a moment.
+      await page.waitForTimeout(400);
+      const standing = await animationNow();
+      await page.keyboard.down("KeyA");
+      await page.waitForTimeout(300);
+      const running = await animationNow();
+      await page.keyboard.up("KeyA");
+      await page.waitForTimeout(300);
+      const stopped = await animationNow();
+      check(
+        "the model idles when standing and runs when moving",
+        standing === "idle" && running === "run" && stopped === "idle",
+        `${standing} -> ${running} -> ${stopped}`,
+      );
+    }
+
     // Jumping: the character leaves the ground, rises close to the jump height (1.1 m) and
     // lands where it started.
     const grounded = () => page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
@@ -175,6 +202,7 @@ try {
     await settle();
     check("Space jumps", (await readInput()).jump === true);
     const airborne = await page.evaluate(() => !window.__game.player.grounded);
+    const jumpAnimation = await animationNow();
     await page.keyboard.up("Space");
     await page.waitForTimeout(300);
     await grounded();
@@ -183,6 +211,14 @@ try {
       return { peak: window.__smokePeak - ground, landedAt: window.__game.player.y - ground };
     }, groundY);
     check("the character leaves the ground when jumping", airborne);
+    if (modelLoaded) {
+      const landedAnimation = await animationNow();
+      check(
+        "the model plays the jump animation in the air and stops on landing",
+        jumpAnimation === "jump" && landedAnimation === "idle",
+        `${jumpAnimation} -> ${landedAnimation}`,
+      );
+    }
     check("the jump rises about 1.1 m", jump.peak > 0.8 && jump.peak < 1.15, `peak ${jump.peak.toFixed(2)} m`);
     check("the character lands again", Math.abs(jump.landedAt) < 0.03, `${jump.landedAt.toFixed(3)} m above the start`);
 
@@ -234,13 +270,13 @@ try {
   await page.screenshot({ path: screenshotPath });
   check("screenshot saved", true, screenshotPath);
 
-  // Camera: clicking locks the pointer, mouse movement turns the view, and walking follows it.
+  // Camera: the view turns while a mouse button is held and the mouse moves, and walking follows it.
   {
     await page.goto(url, { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
     const viewNow = () => page.evaluate(() => ({ ...window.__game.view }));
     const hint = page.locator("#look-hint");
-    check("the click hint is shown before mouse look", await hint.isVisible());
+    check("the look hint is shown at first", await hint.isVisible());
 
     // The wheel zooms even before the click, as long as the pointer is over the game.
     await page.mouse.move(640, 360);
@@ -257,14 +293,26 @@ try {
     await page.reload({ waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
 
-    await page.mouse.click(640, 360);
+    // Moving the mouse without a button held must not turn the view.
+    const beforeHover = await viewNow();
+    await page.mouse.move(640, 360);
+    await page.mouse.move(900, 500, { steps: 5 });
+    await page.waitForTimeout(200);
+    const afterHover = await viewNow();
+    check(
+      "moving the mouse without a button held does not turn the view",
+      afterHover.yaw === beforeHover.yaw && afterHover.pitch === beforeHover.pitch && !afterHover.looking,
+    );
+
+    await page.mouse.move(640, 360);
+    await page.mouse.down();
     let locked = true;
     try {
-      await page.waitForFunction(() => window.__game.view.locked, undefined, { timeout: 5_000 });
+      await page.waitForFunction(() => window.__game.view.looking, undefined, { timeout: 5_000 });
     } catch {
       locked = false;
     }
-    check("clicking the game starts mouse look", locked && (await hint.isHidden()));
+    check("holding a mouse button starts mouse look", locked && (await hint.isHidden()));
 
     if (locked) {
       // 400 px to the right at the default sensitivity is 1 radian: a turn to the right.
@@ -318,6 +366,20 @@ try {
         "rolling the wheel forward stops at the nearest distance",
         zoomedIn.wantedDistance === 1 && Math.abs(zoomedIn.distance - 1) < 0.05,
         `wanted ${zoomedIn.wantedDistance.toFixed(2)} m, now ${zoomedIn.distance.toFixed(2)} m`,
+      );
+
+      // Letting go of the button ends mouse look and frees the cursor.
+      await page.mouse.up();
+      await page.waitForFunction(() => !window.__game.view.looking, undefined, { timeout: 5_000 }).catch(() => {});
+      const released = await viewNow();
+      const pointerFree = await page.evaluate(() => document.pointerLockElement === null);
+      await page.mouse.move(700, 400, { steps: 4 });
+      await page.waitForTimeout(200);
+      const afterRelease = await viewNow();
+      check(
+        "releasing the button ends mouse look",
+        !released.looking && pointerFree && afterRelease.yaw === released.yaw,
+        `looking ${released.looking}, pointer free ${pointerFree}`,
       );
 
       // Facing right of -Z, forward must now carry the character towards +X as well.

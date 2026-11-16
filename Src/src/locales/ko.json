@@ -5,7 +5,7 @@
   "common.yes": "예",
   "common.no": "아니요",
 
-  "hint.click_to_look": "화면을 클릭하면 마우스로 시점을 돌립니다 (Esc로 해제)",
+  "hint.drag_to_look": "마우스 버튼을 누른 채 움직이면 시점이 돕니다",
 
   "zone.dry_riverbed.name": "마른 강바닥",
 
@@ -40,6 +40,7 @@
   "debug.entities": "엔티티",
   "debug.bodies": "물리 객체",
   "debug.position": "플레이어 위치",
+  "debug.character_model": "모델 / 동작",
   "debug.move_speed": "이동 속도",
   "debug.speed_value": "{value} m/s",
   "debug.ground_height": "지형 높이",

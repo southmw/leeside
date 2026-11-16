@@ -1,8 +1,13 @@
 import { clamp } from "../core/math";
 
 /**
- * Mouse look and wheel. The browser only reports unbounded mouse movement while the pointer is locked
- * to the page, which it allows after a click and which the player leaves with Esc.
+ * Mouse look and wheel.
+ *
+ * The view turns while a mouse button is held down over the game and the mouse is moved;
+ * letting go stops it and leaves the cursor free. While a button is held the pointer is
+ * locked to the page, so the mouse can keep moving without the cursor hitting the edge of
+ * the screen. If the browser refuses the lock, dragging still works, only limited by the
+ * screen's edge.
  */
 
 /** `WheelEvent.deltaMode` values. */
@@ -29,30 +34,34 @@ export function wheelNotches(deltaY: number, deltaMode: number): number {
 /** The parts of the canvas and the document the mouse needs. Tests pass stand-ins. */
 export interface PointerLockCanvas {
   requestPointerLock(): unknown;
-  addEventListener(type: "click", listener: () => void): void;
-  removeEventListener(type: "click", listener: () => void): void;
+  addEventListener(type: string, listener: (event: Event) => void): void;
+  removeEventListener(type: string, listener: (event: Event) => void): void;
 }
 export interface PointerLockDocument {
   readonly pointerLockElement: unknown;
+  exitPointerLock(): void;
   addEventListener(type: string, listener: (event: Event) => void, options?: { passive?: boolean }): void;
   removeEventListener(type: string, listener: (event: Event) => void): void;
 }
 
+/** Mouse buttons that turn the view while held: left and right (`MouseEvent.button`). */
+const LOOK_BUTTONS: readonly number[] = [0, 2];
+
 export interface Mouse {
-  /** True while mouse movement turns the view. */
-  readonly locked: boolean;
+  /** True while a button is held and mouse movement turns the view. */
+  readonly looking: boolean;
   /** Returns the movement in pixels since the previous call (x: right, y: down) and resets it. */
   takeMovement(): { x: number; y: number };
   /** The movement collected so far, without resetting it. */
   peekMovement(): { x: number; y: number };
   /**
    * Returns how far the wheel was rolled since the previous call, in notches (positive:
-   * rolled back, towards the player), and resets it. Counted while locked, or whenever the
-   * pointer is over the game.
+   * rolled back, towards the player), and resets it. Counted whenever the pointer is over
+   * the game, and while looking.
    */
   takeWheel(): number;
-  /** Calls `listener` whenever the lock is gained or lost. */
-  onLockChange(listener: (locked: boolean) => void): void;
+  /** Calls `listener` whenever looking starts or stops. */
+  onLookChange(listener: (looking: boolean) => void): void;
   dispose(): void;
 }
 
@@ -60,25 +69,56 @@ export function createMouse(canvas: PointerLockCanvas, doc: PointerLockDocument)
   let x = 0;
   let y = 0;
   let wheel = 0;
-  const listeners: Array<(locked: boolean) => void> = [];
-  const isLocked = (): boolean => doc.pointerLockElement === canvas;
+  let looking = false;
+  const listeners: Array<(looking: boolean) => void> = [];
 
-  const onClick = (): void => {
-    if (!isLocked()) {
-      // Browsers may refuse (for example right after Esc); the next click simply tries again.
+  const setLooking = (next: boolean): void => {
+    if (next === looking) {
+      return;
+    }
+    looking = next;
+    // Movement from before the button went down must not turn the view.
+    x = 0;
+    y = 0;
+    for (const listener of listeners) {
+      listener(looking);
+    }
+  };
+
+  const stopLooking = (): void => {
+    setLooking(false);
+    if (doc.pointerLockElement === canvas) {
+      doc.exitPointerLock();
+    }
+  };
+
+  const onMouseDown = (event: Event): void => {
+    if (!LOOK_BUTTONS.includes((event as MouseEvent).button)) {
+      return;
+    }
+    setLooking(true);
+    if (doc.pointerLockElement !== canvas) {
+      // Browsers may refuse; dragging then works without the lock.
       void Promise.resolve(canvas.requestPointerLock()).catch(() => {});
     }
   };
+  const onMouseUp = (event: Event): void => {
+    // `buttons` lists what is still held; looking ends when the last look button is released.
+    const stillHeld = (event as MouseEvent).buttons ?? 0;
+    const LEFT_AND_RIGHT = 1 | 2;
+    if ((stillHeld & LEFT_AND_RIGHT) === 0) {
+      stopLooking();
+    }
+  };
   const onMouseMove = (event: Event): void => {
-    if (isLocked()) {
+    if (looking) {
       const { movementX = 0, movementY = 0 } = event as MouseEvent;
       x += movementX;
       y += movementY;
     }
   };
   const onWheel = (event: Event): void => {
-    // The wheel works with or without mouse look, as long as it is rolled over the game.
-    if (isLocked() || (event.target as unknown) === canvas) {
+    if (looking || (event.target as unknown) === canvas) {
       const { deltaY = 0, deltaMode = 0 } = event as WheelEvent;
       wheel += wheelNotches(deltaY, deltaMode);
       // Keep the page from scrolling or zooming under the game.
@@ -86,22 +126,23 @@ export function createMouse(canvas: PointerLockCanvas, doc: PointerLockDocument)
     }
   };
   const onLockChange = (): void => {
-    // Movement from before or after the lock must not turn the view later.
-    x = 0;
-    y = 0;
-    for (const listener of listeners) {
-      listener(isLocked());
+    // The lock ended some other way (Esc, a window switch): the button's release may never arrive.
+    if (looking && doc.pointerLockElement !== canvas && lockSeen) {
+      setLooking(false);
     }
+    lockSeen = doc.pointerLockElement === canvas;
   };
+  let lockSeen = false;
 
-  canvas.addEventListener("click", onClick);
+  canvas.addEventListener("mousedown", onMouseDown);
+  doc.addEventListener("mouseup", onMouseUp);
   doc.addEventListener("mousemove", onMouseMove);
   doc.addEventListener("pointerlockchange", onLockChange);
   doc.addEventListener("wheel", onWheel, { passive: false });
 
   return {
-    get locked(): boolean {
-      return isLocked();
+    get looking(): boolean {
+      return looking;
     },
     takeMovement() {
       const movement = { x, y };
@@ -117,11 +158,12 @@ export function createMouse(canvas: PointerLockCanvas, doc: PointerLockDocument)
       wheel = 0;
       return notches;
     },
-    onLockChange(listener) {
+    onLookChange(listener) {
       listeners.push(listener);
     },
     dispose(): void {
-      canvas.removeEventListener("click", onClick);
+      canvas.removeEventListener("mousedown", onMouseDown);
+      doc.removeEventListener("mouseup", onMouseUp);
       doc.removeEventListener("mousemove", onMouseMove);
       doc.removeEventListener("pointerlockchange", onLockChange);
       doc.removeEventListener("wheel", onWheel);

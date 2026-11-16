@@ -190,6 +190,7 @@ export function createDebugOverlay(
         { label: t("debug.entities"), value: integer(debug.entityCount) },
         { label: t("debug.bodies"), value: integer(debug.bodyCount) },
         { label: t("debug.position"), value: `${fixed(player.x, 2)}, ${fixed(player.y, 2)}, ${fixed(player.z, 2)}` },
+        { label: t("debug.character_model"), value: `${player.model} / ${player.animation}` },
         { label: t("debug.move_speed"), value: t("debug.speed_value", { value: fixed(debug.moveSpeed, 1) }) },
         { label: t("debug.ground_height"), value: t("debug.metres", { value: fixed(player.groundHeight, 2) }) },
         { label: t("debug.grounded"), value: t(player.grounded ? "common.yes" : "common.no") },
@@ -207,7 +208,7 @@ export function createDebugOverlay(
             wanted: fixed(debug.camera.wantedDistance, 1),
           }),
         },
-        { label: t("debug.mouse_look"), value: t(view.locked ? "common.yes" : "common.no") },
+        { label: t("debug.mouse_look"), value: t(view.looking ? "common.yes" : "common.no") },
         { label: t("debug.move"), value: `${fixed(input.moveX, 2)}, ${fixed(input.moveY, 2)}` },
         {
           label: t("debug.buttons"),

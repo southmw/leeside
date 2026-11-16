@@ -1,3 +1,4 @@
+import { Group } from "three";
 import { createCharacter, createTransform, createWorld } from "./core/ecs";
 import { startGameLoop } from "./core/gameLoop";
 import { installDebugApi, TIMED_SECTIONS } from "./debug/debugApi";
@@ -30,6 +31,7 @@ import { applyZoom } from "./render/cameraZoom";
 import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
 import { createLookHint } from "./ui/lookHint";
+import { loadCharacterModel, type CharacterModel } from "./render/characterModel";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
 import { buildingAt, yawFromDegrees } from "./world/building";
 import { numberParam, resolveStart } from "./world/startPoint";
@@ -79,6 +81,15 @@ const scene = createTestScene();
 const world = createWorld();
 const renderSync = createRenderSync(world, scene);
 
+// The character model downloads while the physics engine starts up.
+const characterModelLoading: Promise<CharacterModel | undefined> = loadCharacterModel(
+  `${import.meta.env.BASE_URL}models/character.glb`,
+  CHARACTER_HEIGHT,
+).catch((error: unknown) => {
+  console.warn("Character model could not be loaded; using the capsule instead.", error);
+  return undefined;
+});
+
 // The physics engine is WebAssembly and has to load before the first step.
 await initPhysics();
 const physics = new PhysicsWorld();
@@ -101,13 +112,28 @@ const PLAYER_START = {
   z: start.south,
 };
 
+// What the player looks like: the character model, or a capsule if the model could not be
+// loaded (the game is fully playable with it). The game starts only once this is settled, so
+// the capsule never shows for a moment before the model.
+const playerVisual = new Group();
+const characterModel = await characterModelLoading;
+if (characterModel) {
+  // The entity's position is the capsule's centre; the model's origin is at its feet.
+  characterModel.object.position.y = -(CHARACTER_HEIGHT / 2 + CHARACTER_SKIN);
+  playerVisual.add(characterModel.object);
+} else {
+  playerVisual.add(createCharacterMesh(CHARACTER_HEIGHT, CHARACTER_RADIUS));
+}
+debug.player.model = characterModel ? "model" : "capsule";
+
+const startYaw = yawFromDegrees(start.facing);
 const player = world.add({
   localPlayer: true,
   input: createEmptyActions(),
-  character: createCharacter(),
-  view: createView(yawFromDegrees(start.facing), START_PITCH),
-  transform: createTransform(PLAYER_START.x, PLAYER_START.y, PLAYER_START.z),
-  renderable: { object: createCharacterMesh(CHARACTER_HEIGHT, CHARACTER_RADIUS) },
+  character: createCharacter(startYaw),
+  view: createView(startYaw, START_PITCH),
+  transform: createTransform(PLAYER_START.x, PLAYER_START.y, PLAYER_START.z, startYaw),
+  renderable: { object: playerVisual },
   body: { handle: physics.addCharacter(PLAYER_START) },
 });
 const mouse = createMouse(canvas, document);
@@ -157,7 +183,7 @@ startGameLoop({
     debug.player.inside = buildingAt(zoneDefinition.buildings, player.transform.x, player.transform.z)?.id ?? null;
     debug.view.yaw = player.view.yaw;
     debug.view.pitch = player.view.pitch;
-    debug.view.locked = mouse.locked;
+    debug.view.looking = mouse.looking;
     debug.camera.distance = cameraFit.distance;
     debug.camera.wantedDistance = wantedCameraDistance;
     debug.camera.y = camera.position.y;
@@ -167,6 +193,16 @@ startGameLoop({
   render(alpha) {
     sectionTimer.begin("render");
     renderSync.sync(alpha);
+    if (characterModel) {
+      const moving = player.input.moveX !== 0 || player.input.moveY !== 0;
+      characterModel.update(lastFrameSeconds, {
+        moving,
+        speed: moveSpeed,
+        grounded: player.character.grounded,
+        velocityY: player.character.velocityY,
+      });
+      debug.player.animation = characterModel.animation;
+    }
     // The camera follows the character where it is drawn, not where the simulation has it,
     // and shows mouse movement that the next step has yet to apply.
     const drawnAt = player.renderable.object.position;

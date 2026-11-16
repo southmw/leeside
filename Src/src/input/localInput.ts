@@ -36,12 +36,6 @@ export function createLocalInput(options: LocalInputOptions = {}): LocalInput {
   const keyboard = createKeyboard(options.target);
   const { mouse } = options;
   const sensitivity = options.sensitivity ?? MOUSE_SENSITIVITY;
-  // Leaving mouse look (Esc, a window switch) can swallow key-ups just like losing focus.
-  mouse?.onLockChange((locked) => {
-    if (!locked) {
-      keyboard.releaseAll();
-    }
-  });
   return {
     sample(): PlayerActions {
       // Without focus the page receives no key events, so whatever is held cannot be trusted.

@@ -53,11 +53,22 @@ export interface GameDebug {
    * stands on something, the height of the terrain under it, and the id of the building it
    * is inside (null outdoors).
    */
-  player: { x: number; y: number; z: number; grounded: boolean; groundHeight: number; inside: string | null };
+  player: {
+    x: number;
+    y: number;
+    z: number;
+    grounded: boolean;
+    groundHeight: number;
+    inside: string | null;
+    /** What is drawn for the character: the model, or the capsule if the model could not be loaded. */
+    model: "capsule" | "model";
+    /** Animation the model is playing; "none" while there is no model. */
+    animation: "none" | "idle" | "run" | "jump";
+  };
   /** The zone the player is in: its id, the text key of its name, and how many buildings, props and rocks it has. */
   zone: { id: string; nameKey: string; buildings: number; props: number; rocks: number };
-  /** The local player's view in radians, and whether mouse movement currently turns it. */
-  view: { yaw: number; pitch: number; locked: boolean };
+  /** The local player's view in radians, and whether a mouse button is held so that mouse movement turns it. */
+  view: { yaw: number; pitch: number; looking: boolean };
   /**
    * The camera, in metres: its current distance behind the character's shoulder, the distance
    * chosen with the wheel (the current one is shorter when something is in the way), and its height.
@@ -89,9 +100,9 @@ export function installDebugApi(language: Language): GameDebug {
     simSeconds: 0,
     entityCount: 0,
     bodyCount: 0,
-    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null },
+    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, model: "capsule", animation: "none" },
     zone: { id: "", nameKey: "", buildings: 0, props: 0, rocks: 0 },
-    view: { yaw: 0, pitch: 0, locked: false },
+    view: { yaw: 0, pitch: 0, looking: false },
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },
     input: createEmptyActions(),

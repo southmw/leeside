@@ -17,6 +17,9 @@ export const CHARACTER_RADIUS = 0.35;
  */
 export const MOVE_SPEED = 12;
 
+/** How fast a character turns to face the way it is moving, in radians per second. */
+export const CHARACTER_TURN_RATE = 14;
+
 /** How high a jump lifts the character's feet, in metres. */
 export const JUMP_HEIGHT = 1.1;
 

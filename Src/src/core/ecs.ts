@@ -29,11 +29,17 @@ export interface Body {
   handle: number;
 }
 
-/** Movement state of a walking entity. For now only jumping and falling need any. */
-export type Character = VerticalState;
+/** Movement state of a walking entity: jumping and falling, and which way its body faces. */
+export interface Character extends VerticalState {
+  /**
+   * Direction the body faces, in radians, counter-clockwise seen from above; 0 faces -Z.
+   * It turns towards the direction of movement and is copied to `transform.rotationY`.
+   */
+  facing: number;
+}
 
-export function createCharacter(): Character {
-  return { velocityY: 0, grounded: false, jumpHeld: false };
+export function createCharacter(facing = 0): Character {
+  return { velocityY: 0, grounded: false, jumpHeld: false, facing };
 }
 
 export interface Entity {

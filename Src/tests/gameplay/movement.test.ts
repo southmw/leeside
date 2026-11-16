@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { createCharacter, createTransform, createWorld, type Entity } from "../../src/core/ecs";
 import { TICK_RATE, TICK_SECONDS } from "../../src/core/fixedTimestep";
 import { CHARACTER_HEIGHT, CHARACTER_RADIUS, JUMP_HEIGHT, MOVE_SPEED } from "../../src/data/tuning";
-import { createMovementSystem, desiredMovement } from "../../src/gameplay/movementSystem";
+import { createMovementSystem, desiredMovement, facingOf } from "../../src/gameplay/movementSystem";
 import { settleVertical, stepVertical } from "../../src/gameplay/verticalMotion";
 import { createEmptyActions } from "../../src/input/actions";
 import { createPhysicsSystem } from "../../src/physics/physicsSystem";
@@ -160,6 +160,42 @@ describe("character movement", () => {
     run(2 * TICK_RATE);
 
     expect(player.transform.z).toBeGreaterThan(-3 + CHARACTER_RADIUS - 0.05);
+    physics.dispose();
+  });
+});
+
+describe("facing", () => {
+  it("points along the direction of movement", () => {
+    expect(facingOf(0, -1)).toBeCloseTo(0);
+    expect(facingOf(-1, 0)).toBeCloseTo(Math.PI / 2);
+    expect(facingOf(1, 0)).toBeCloseTo(-Math.PI / 2);
+    expect(Math.abs(facingOf(0, 1))).toBeCloseTo(Math.PI);
+  });
+
+  it("turns the character towards where it walks, and the transform follows", () => {
+    const { physics, player, run } = setup();
+    expect(player.character.facing).toBe(0);
+
+    // Walk to the right (+X): the body should end up facing -PI / 2.
+    player.input.moveX = 1;
+    run(1);
+    const afterOneStep = player.character.facing;
+    expect(afterOneStep).toBeLessThan(0);
+    expect(afterOneStep).toBeGreaterThan(-Math.PI / 2);
+
+    run(30);
+    expect(player.character.facing).toBeCloseTo(-Math.PI / 2);
+    expect(player.transform.rotationY).toBeCloseTo(-Math.PI / 2);
+    physics.dispose();
+  });
+
+  it("keeps its facing when it stops", () => {
+    const { physics, player, run } = setup();
+    player.input.moveX = 1;
+    run(30);
+    player.input.moveX = 0;
+    run(30);
+    expect(player.character.facing).toBeCloseTo(-Math.PI / 2);
     physics.dispose();
   });
 });

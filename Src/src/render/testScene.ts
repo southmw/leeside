@@ -13,10 +13,12 @@ export function createTestScene(): Scene {
   const scene = new Scene();
   scene.background = new Color(0x8f9aa3);
 
-  scene.add(new AmbientLight(0xffffff, 0.7));
+  // Kept low so that slopes facing away from the sun are visibly darker and the land has shape.
+  scene.add(new AmbientLight(0xffffff, 0.45));
 
-  const sun = new DirectionalLight(0xfff2d6, 2.2);
-  sun.position.set(6, 10, 4);
+  // Low in the west: light rakes across the river's banks, which run north to south.
+  const sun = new DirectionalLight(0xfff2d6, 2.6);
+  sun.position.set(-10, 7, 3);
   scene.add(sun);
 
   return scene;

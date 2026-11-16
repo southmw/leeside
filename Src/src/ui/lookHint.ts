@@ -11,8 +11,8 @@ const css = `
 `;
 
 /**
- * Tells the player to click before the mouse can turn the view. A stopgap: the title screen
- * (step 1.14) and the pause screen (step 2.21) take this role later.
+ * Tells the player how to turn the view, until they have done it once. A stopgap: the
+ * introduction (step 2.23) explains the controls later.
  */
 export function createLookHint(mouse: Mouse, i18n: I18n): void {
   const style = document.createElement("style");
@@ -23,11 +23,15 @@ export function createLookHint(mouse: Mouse, i18n: I18n): void {
   hint.id = "look-hint";
   document.body.append(hint);
 
+  let learned = false;
   const refresh = (): void => {
-    hint.textContent = i18n.t("hint.click_to_look");
-    hint.hidden = mouse.locked;
+    hint.textContent = i18n.t("hint.drag_to_look");
+    hint.hidden = learned;
   };
-  mouse.onLockChange(refresh);
+  mouse.onLookChange((looking) => {
+    learned ||= looking;
+    refresh();
+  });
   i18n.onChange(refresh);
   refresh();
 }
