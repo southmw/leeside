@@ -3,13 +3,13 @@
 **바람이 닿지 않는 곳** — 날씨가 가장 큰 적이 된 세계에서 살아남는 3인칭 생존 액션 RPG
 
 > A third-person survival action RPG for desktop browsers, built with Three.js.
-> The weather is your greatest enemy. *Currently in planning — no playable build yet.*
+> The weather is your greatest enemy. *Prototype in early development — no playable build yet.*
 
 기후 붕괴로 문명이 무너진 세계. 폭풍이 오기 전에 폐허를 수색하고, 숨을 곳을 찾아 버티고, 주운 것으로 버려진 대피소를 되살린다. 제목 LEESIDE는 "바람을 등진 쪽"이라는 뜻이다.
 
 ## 현재 상태
 
-**시제품 구현을 막 시작했다.** 프로젝트 뼈대만 있고 아직 플레이할 수 있는 것은 없다.
+**시제품의 기반을 만드는 중이다.** 게임 루프, 입력, 디버그 도구, 영어·한국어 문구 체계까지 있고 아직 플레이할 수 있는 것은 없다.
 
 | 단계 | 상태 |
 |---|---|
@@ -101,7 +101,7 @@ npm install
 npm run dev
 ```
 
-표시되는 주소를 브라우저로 연다. 지금은 제목만 나오는 빈 페이지다.
+표시되는 주소를 브라우저로 연다. 지금은 바닥 위에서 상자가 도는 임시 장면만 나온다. F3을 누르면 성능 수치가 보이고, 주소 뒤에 `?lang=ko` 또는 `?lang=en`을 붙이면 언어가 바뀐다.
 
 ## 라이선스
 
