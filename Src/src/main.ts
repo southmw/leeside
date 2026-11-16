@@ -6,19 +6,25 @@ import type { DevLog } from "./debug/devLog";
 import { FrameStats } from "./debug/frameStats";
 import { readHeapMb } from "./debug/memory";
 import { SectionTimer } from "./debug/sectionTimer";
+import { CHARACTER_HEIGHT, CHARACTER_RADIUS } from "./data/tuning";
+import { createMovementSystem } from "./gameplay/movementSystem";
 import { createEmptyActions } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
 import { createLocalInput } from "./input/localInput";
 import { createI18n, detectLanguage } from "./locales/i18n";
 import { createPhysicsSystem } from "./physics/physicsSystem";
-import { initPhysics, PhysicsWorld } from "./physics/physicsWorld";
+import { CHARACTER_SKIN, initPhysics, PhysicsWorld } from "./physics/physicsWorld";
 import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
-import { createBoxMesh, createTestScene } from "./render/testScene";
+import { createBoxMesh, createCharacterMesh, createTestScene } from "./render/testScene";
 
 /** Placeholder box: half its edge length, and the height it is dropped from, in metres. */
 const BOX_HALF_SIZE = 0.75;
 const BOX_DROP_HEIGHT = 8;
+/** The box lands this far ahead of the player, so walking forward runs into it. */
+const BOX_Z = -4;
+/** Where the player starts, on the ground. */
+const PLAYER_START = { x: 0, y: CHARACTER_HEIGHT / 2 + CHARACTER_SKIN, z: 3 };
 /** Half extents of the placeholder floor's collider. Its top surface is at y = 0. */
 const FLOOR_HALF_SIZE = { x: 30, y: 0.5, z: 30 };
 
@@ -56,8 +62,10 @@ if (import.meta.env.DEV) {
 }
 
 const camera = createCamera();
-camera.position.set(5, 4, 7);
-camera.lookAt(0, 0.75, 0);
+// Fixed view from behind the player until the follow camera exists (step 1.4): forward (W)
+// is away from the camera and right (D) is to the right of the screen.
+camera.position.set(0, 7, 13);
+camera.lookAt(0, 1, -2);
 
 const scene = createTestScene();
 const world = createWorld();
@@ -71,19 +79,26 @@ physics.addStaticBox({ x: 0, y: -FLOOR_HALF_SIZE.y, z: 0 }, FLOOR_HALF_SIZE);
 
 // Placeholder until zones exist: a box that falls onto the floor.
 world.add({
-  transform: createTransform(0, BOX_DROP_HEIGHT, 0),
+  transform: createTransform(0, BOX_DROP_HEIGHT, BOX_Z),
   renderable: { object: createBoxMesh() },
   body: {
     handle: physics.addDynamicBox(
-      { x: 0, y: BOX_DROP_HEIGHT, z: 0 },
+      { x: 0, y: BOX_DROP_HEIGHT, z: BOX_Z },
       { x: BOX_HALF_SIZE, y: BOX_HALF_SIZE, z: BOX_HALF_SIZE },
     ),
   },
 });
 
-// Stand-in for the player until the character exists (step 1.2). It only carries input.
-const player = world.add({ localPlayer: true, input: createEmptyActions() });
+const player = world.add({
+  localPlayer: true,
+  input: createEmptyActions(),
+  character: true,
+  transform: createTransform(PLAYER_START.x, PLAYER_START.y, PLAYER_START.z),
+  renderable: { object: createCharacterMesh(CHARACTER_HEIGHT, CHARACTER_RADIUS) },
+  body: { handle: physics.addCharacter(PLAYER_START) },
+});
 const inputSystem = createInputSystem(world, createLocalInput());
+const movementSystem = createMovementSystem(world, physics);
 
 fitToWindow(renderer, camera);
 window.addEventListener("resize", () => fitToWindow(renderer, camera));
@@ -97,12 +112,14 @@ startGameLoop({
   update(dt) {
     sectionTimer.begin("sim");
     inputSystem();
+    movementSystem(dt);
     physicsSystem.update();
     sectionTimer.end("sim");
 
-    if (player.input) {
-      Object.assign(debug.input, player.input);
-    }
+    Object.assign(debug.input, player.input);
+    debug.player.x = player.transform.x;
+    debug.player.y = player.transform.y;
+    debug.player.z = player.transform.z;
     debug.tick += 1;
     debug.simSeconds += dt;
   },

@@ -29,6 +29,7 @@
   "debug.buffer": "Buffer",
   "debug.entities": "Entities",
   "debug.bodies": "Physics bodies",
+  "debug.position": "Player position",
   "debug.tick": "Tick",
   "debug.sim_time": "Sim time",
   "debug.sim_time_value": "{seconds} s",

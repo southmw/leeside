@@ -1,6 +1,7 @@
 import {
   AmbientLight,
   BoxGeometry,
+  CapsuleGeometry,
   Color,
   DirectionalLight,
   Mesh,
@@ -35,5 +36,13 @@ export function createBoxMesh(): Mesh {
   return new Mesh(
     new BoxGeometry(1.5, 1.5, 1.5),
     new MeshStandardMaterial({ color: 0xc2643b, roughness: 0.8 }),
+  );
+}
+
+/** Placeholder character: a capsule the size of the player's collider. */
+export function createCharacterMesh(height: number, radius: number): Mesh {
+  return new Mesh(
+    new CapsuleGeometry(radius, height - 2 * radius, 4, 12),
+    new MeshStandardMaterial({ color: 0x4f7a8c, roughness: 0.7 }),
   );
 }

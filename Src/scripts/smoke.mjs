@@ -92,7 +92,7 @@ try {
     check("frames keep rendering", later.frame > first.frame, `frame ${first.frame} -> ${later.frame}`);
     check("simulation keeps stepping", later.tick > first.tick, `tick ${first.tick} -> ${later.tick}`);
     check("world has entities", first.entityCount >= 1, `${first.entityCount} entities`);
-    check("physics world has the floor and the box", first.bodyCount === 2, `${first.bodyCount} bodies`);
+    check("physics world has the floor, the box and the player", first.bodyCount === 3, `${first.bodyCount} bodies`);
     check(
       "drawing buffer matches the window",
       first.canvas.width >= 1280 && first.canvas.height >= 720,
@@ -125,6 +125,27 @@ try {
     await settle();
     const released = await readInput();
     check("releasing keys stops movement", released.moveX === 0 && released.moveY === 0);
+
+    // The character walks: forward is -Z, right is +X. Speed is not judged here, because a
+    // headless browser may run the simulation slower than real time.
+    const readPlayer = () => page.evaluate(() => ({ ...window.__game.player }));
+    const startedAt = await readPlayer();
+    await settle();
+    const stoodStill = await readPlayer();
+    check("the character stands still without input", stoodStill.x === startedAt.x && stoodStill.z === startedAt.z);
+
+    await page.keyboard.down("KeyS");
+    await page.waitForTimeout(400);
+    await page.keyboard.up("KeyS");
+    const movedBack = await readPlayer();
+    check("S walks the character back", movedBack.z > startedAt.z + 0.5 && movedBack.x === startedAt.x, `z ${startedAt.z.toFixed(2)} -> ${movedBack.z.toFixed(2)}`);
+
+    await page.keyboard.down("KeyD");
+    await page.waitForTimeout(400);
+    await page.keyboard.up("KeyD");
+    const movedRight = await readPlayer();
+    check("D walks the character right", movedRight.x > movedBack.x + 0.5, `x ${movedBack.x.toFixed(2)} -> ${movedRight.x.toFixed(2)}`);
+    check("the character stays on the ground", Math.abs(movedRight.y - startedAt.y) < 0.01, `y ${movedRight.y.toFixed(3)}`);
 
     await page.keyboard.down("Space");
     await settle();
@@ -178,6 +199,45 @@ try {
   await mkdir(outDir, { recursive: true });
   await page.screenshot({ path: screenshotPath });
   check("screenshot saved", true, screenshotPath);
+
+  // Obstacles: from a fresh start, walking forward runs into the box, and pushing into it at
+  // an angle slides past it. The box's near face is at z = -3.25 and the capsule's radius is
+  // 0.35, so a blocked character stops with its centre near z = -2.9.
+  {
+    await page.goto(url, { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    const playerNow = () => page.evaluate(() => ({ ...window.__game.player }));
+    // Let the box land first.
+    await page.waitForFunction(() => window.__game.simSeconds > 2, undefined, { timeout: 15_000 });
+
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction(() => window.__game.simSeconds > 5, undefined, { timeout: 30_000 });
+    const blocked = await playerNow();
+    check(
+      "the box blocks the character",
+      blocked.z < -2.7 && blocked.z > -3.0 && Math.abs(blocked.x) < 0.05,
+      `stopped at x ${blocked.x.toFixed(2)}, z ${blocked.z.toFixed(2)}`,
+    );
+
+    await page.keyboard.down("KeyD");
+    await page.waitForFunction(() => window.__game.simSeconds > 6.5, undefined, { timeout: 30_000 });
+    await page.keyboard.up("KeyD");
+    await page.keyboard.up("KeyW");
+    const slid = await playerNow();
+    check(
+      "pushing at an angle slides past the box",
+      slid.x > 1.1 && slid.z < -3.5,
+      `reached x ${slid.x.toFixed(2)}, z ${slid.z.toFixed(2)}`,
+    );
+
+    // Opening the context menu swallows the key-up, which would leave the key stuck down.
+    await page.waitForTimeout(200);
+    // dispatchEvent returns false when a listener cancelled the event.
+    const menuShown = await page.evaluate(() =>
+      document.querySelector("canvas#game").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })),
+    );
+    check("the context menu is suppressed over the game", !menuShown);
+  }
 
   // Screen text follows `?lang`, and without it the browser's language.
   const overlayTextFor = async (targetPage, query) => {

@@ -31,6 +31,8 @@ export interface Entity {
   transform?: Transform;
   renderable?: Renderable;
   body?: Body;
+  /** Marks an entity that walks under the control of its `input` (players, later enemies). */
+  character?: true;
   /**
    * This step's actions for a player-controlled entity. Each player entity owns its own copy,
    * so systems never assume there is only one player.

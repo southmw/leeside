@@ -122,7 +122,7 @@ export function createDebugOverlay(
       .join("");
 
   const render = (): void => {
-    const { stats, input } = debug;
+    const { stats, input, player } = debug;
     const verdict = evaluateBudget(
       {
         avgFps: stats.avgFps,
@@ -178,6 +178,7 @@ export function createDebugOverlay(
       section(t("debug.section.world"), [
         { label: t("debug.entities"), value: integer(debug.entityCount) },
         { label: t("debug.bodies"), value: integer(debug.bodyCount) },
+        { label: t("debug.position"), value: `${fixed(player.x, 2)}, ${fixed(player.y, 2)}, ${fixed(player.z, 2)}` },
         { label: t("debug.tick"), value: integer(debug.tick) },
         { label: t("debug.sim_time"), value: t("debug.sim_time_value", { seconds: fixed(debug.simSeconds, 1) }) },
         { label: t("debug.language"), value: t(`language.${i18n.language}`) },
