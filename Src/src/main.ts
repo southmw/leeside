@@ -7,15 +7,20 @@ import { FrameStats } from "./debug/frameStats";
 import { readHeapMb } from "./debug/memory";
 import { SectionTimer } from "./debug/sectionTimer";
 import { CHARACTER_HEIGHT, CHARACTER_RADIUS } from "./data/tuning";
+import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
+import { createView } from "./gameplay/view";
 import { createEmptyActions } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
 import { createLocalInput } from "./input/localInput";
+import { createMouse } from "./input/mouse";
 import { createI18n, detectLanguage } from "./locales/i18n";
 import { createPhysicsSystem } from "./physics/physicsSystem";
 import { CHARACTER_SKIN, initPhysics, PhysicsWorld } from "./physics/physicsWorld";
+import { computeCameraPose } from "./render/cameraRig";
 import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
+import { createLookHint } from "./ui/lookHint";
 import { createBoxMesh, createCharacterMesh, createStaticBoxMesh, createTestScene } from "./render/testScene";
 
 /** Placeholder box: half its edge length, and the height it is dropped from, in metres. */
@@ -23,6 +28,8 @@ const BOX_HALF_SIZE = 0.75;
 const BOX_DROP_HEIGHT = 8;
 /** The box lands this far ahead of the player, so walking forward runs into it. */
 const BOX_Z = -4;
+/** The view starts tilted slightly down, so the ground ahead is in sight. Radians. */
+const START_PITCH = -0.2;
 /** Where the player starts, on the ground. */
 const PLAYER_START = { x: 0, y: CHARACTER_HEIGHT / 2 + CHARACTER_SKIN, z: 3 };
 /** Half extents of the placeholder floor's collider. Its top surface is at y = 0. */
@@ -62,10 +69,6 @@ if (import.meta.env.DEV) {
 }
 
 const camera = createCamera();
-// Fixed view from behind the player until the follow camera exists (step 1.4): forward (W)
-// is away from the camera and right (D) is to the right of the screen.
-camera.position.set(0, 9, 15);
-camera.lookAt(0, 1, -4);
 
 const scene = createTestScene();
 const world = createWorld();
@@ -122,11 +125,15 @@ const player = world.add({
   localPlayer: true,
   input: createEmptyActions(),
   character: createCharacter(),
+  view: createView(0, START_PITCH),
   transform: createTransform(PLAYER_START.x, PLAYER_START.y, PLAYER_START.z),
   renderable: { object: createCharacterMesh(CHARACTER_HEIGHT, CHARACTER_RADIUS) },
   body: { handle: physics.addCharacter(PLAYER_START) },
 });
-const inputSystem = createInputSystem(world, createLocalInput());
+const mouse = createMouse(canvas, document);
+createLookHint(mouse, i18n);
+const inputSystem = createInputSystem(world, createLocalInput({ mouse }));
+const lookSystem = createLookSystem(world);
 const movementSystem = createMovementSystem(world, physics);
 
 fitToWindow(renderer, camera);
@@ -141,6 +148,7 @@ startGameLoop({
   update(dt) {
     sectionTimer.begin("sim");
     inputSystem();
+    lookSystem();
     movementSystem(dt);
     physicsSystem.update();
     sectionTimer.end("sim");
@@ -150,12 +158,18 @@ startGameLoop({
     debug.player.y = player.transform.y;
     debug.player.z = player.transform.z;
     debug.player.grounded = player.character.grounded;
+    debug.view.yaw = player.view.yaw;
+    debug.view.pitch = player.view.pitch;
+    debug.view.locked = mouse.locked;
     debug.tick += 1;
     debug.simSeconds += dt;
   },
   render() {
     sectionTimer.begin("render");
     renderSync.sync();
+    const pose = computeCameraPose(player.transform, player.view.yaw, player.view.pitch);
+    camera.position.set(pose.position.x, pose.position.y, pose.position.z);
+    camera.lookAt(pose.target.x, pose.target.y, pose.target.z);
     renderer.render(scene, camera);
     sectionTimer.end("render");
     sectionTimer.endFrame();

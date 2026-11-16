@@ -221,6 +221,54 @@ try {
   await page.screenshot({ path: screenshotPath });
   check("screenshot saved", true, screenshotPath);
 
+  // Camera: clicking locks the pointer, mouse movement turns the view, and walking follows it.
+  {
+    await page.goto(url, { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    const viewNow = () => page.evaluate(() => ({ ...window.__game.view }));
+    const hint = page.locator("#look-hint");
+    check("the click hint is shown before mouse look", await hint.isVisible());
+
+    await page.mouse.click(640, 360);
+    let locked = true;
+    try {
+      await page.waitForFunction(() => window.__game.view.locked, undefined, { timeout: 5_000 });
+    } catch {
+      locked = false;
+    }
+    check("clicking the game starts mouse look", locked && (await hint.isHidden()));
+
+    if (locked) {
+      // 400 px to the right at the default sensitivity is 1 radian: a turn to the right.
+      await page.mouse.move(640, 360);
+      await page.mouse.move(1040, 360, { steps: 8 });
+      await page.waitForTimeout(200);
+      const turned = await viewNow();
+      check("moving the mouse right turns the view right", turned.yaw < -0.5 && turned.yaw > -1.5, `yaw ${turned.yaw.toFixed(2)} rad`);
+
+      await page.mouse.move(1040, 3000, { steps: 8 });
+      await page.waitForTimeout(200);
+      const lookedDown = await viewNow();
+      check(
+        "looking down stops at the limit",
+        Math.abs(lookedDown.pitch + Math.PI / 3) < 0.01,
+        `pitch ${((lookedDown.pitch * 180) / Math.PI).toFixed(1)} degrees`,
+      );
+
+      // Facing right of -Z, forward must now carry the character towards +X as well.
+      const before = await page.evaluate(() => ({ ...window.__game.player }));
+      await page.keyboard.down("KeyW");
+      await page.waitForTimeout(400);
+      await page.keyboard.up("KeyW");
+      const after = await page.evaluate(() => ({ ...window.__game.player }));
+      check(
+        "W walks where the view faces",
+        after.x > before.x + 0.3 && after.z < before.z - 0.1,
+        `moved ${(after.x - before.x).toFixed(2)}, ${(after.z - before.z).toFixed(2)}`,
+      );
+    }
+  }
+
   // Obstacles: from a fresh start, walking forward runs into the box, and pushing into it at
   // an angle slides past it. The box's near face is at z = -3.25 and the capsule's radius is
   // 0.35, so a blocked character stops with its centre near z = -2.9.

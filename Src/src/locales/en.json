@@ -5,6 +5,8 @@
   "common.yes": "yes",
   "common.no": "no",
 
+  "hint.click_to_look": "Click to look around with the mouse (Esc to release)",
+
   "quality.low": "Low",
   "quality.high": "High",
 
@@ -38,6 +40,9 @@
   "debug.sim_time": "Sim time",
   "debug.sim_time_value": "{seconds} s",
   "debug.language": "Language",
+  "debug.view": "View",
+  "debug.view_value": "yaw {yaw}°, pitch {pitch}°",
+  "debug.mouse_look": "Mouse look",
   "debug.move": "Move",
   "debug.buttons": "Buttons",
   "debug.button.jump": "jump",

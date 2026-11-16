@@ -3,18 +3,21 @@ import { MOVE_SPEED } from "../data/tuning";
 import type { PlayerActions } from "../input/actions";
 import type { PhysicsWorld, Vec3 } from "../physics/physicsWorld";
 import { settleVertical, stepVertical } from "./verticalMotion";
+import { moveDirection } from "./view";
 
 /**
- * How far a character wants to walk this step, in world space. Forward is -Z and right is +X
- * until the camera decides the direction (step 1.4). The input vector never exceeds length 1,
- * so diagonal movement is not faster.
+ * How far a character wants to walk this step, in world space. Forward is the direction its
+ * view faces (`yaw`; -Z at 0). The input vector never exceeds length 1, so diagonal movement
+ * is not faster.
  */
 export function desiredMovement(
   actions: Pick<PlayerActions, "moveX" | "moveY">,
   dt: number,
+  yaw = 0,
   speed: number = MOVE_SPEED,
 ): Vec3 {
-  return { x: actions.moveX * speed * dt, y: 0, z: -actions.moveY * speed * dt };
+  const direction = moveDirection(actions.moveX, actions.moveY, yaw);
+  return { x: direction.x * speed * dt, y: 0, z: direction.z * speed * dt };
 }
 
 /**
@@ -25,8 +28,8 @@ export function desiredMovement(
 export function createMovementSystem(world: GameWorld, physics: PhysicsWorld): (dt: number) => void {
   const characters = world.with("character", "input", "body");
   return (dt) => {
-    for (const { character, input, body } of characters) {
-      const desired = desiredMovement(input, dt);
+    for (const { character, input, body, view } of characters) {
+      const desired = desiredMovement(input, dt, view?.yaw);
       const wasGrounded = character.grounded;
       desired.y = stepVertical(character, input.jump, dt);
       const result = physics.moveCharacter(body.handle, desired, wasGrounded);

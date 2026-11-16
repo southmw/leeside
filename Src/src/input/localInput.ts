@@ -1,5 +1,7 @@
 import { actionsFromKeys, DEFAULT_KEY_BINDINGS, type KeyBindings, type PlayerActions } from "./actions";
+import { MOUSE_SENSITIVITY } from "../data/tuning";
 import { createKeyboard, type KeyboardTarget } from "./keyboard";
+import type { Mouse } from "./mouse";
 
 export interface LocalInput {
   /** Reads the devices and returns this step's actions for the player at this machine. */
@@ -13,23 +15,41 @@ export interface LocalInputOptions {
   target?: KeyboardTarget;
   /** Whether the page has keyboard focus. Defaults to `document.hasFocus()`. */
   hasFocus?: () => boolean;
+  /** Mouse look. Without it the view cannot be turned. */
+  mouse?: Mouse;
+  /** Radians of turn per pixel of mouse movement. */
+  sensitivity?: number;
 }
 
 /**
- * Input for the local player. Mouse look (step 1.4) and gamepad (step 0.8) plug in here and
- * merge into the same `PlayerActions`.
+ * Input for the local player: keyboard and mouse look merged into one `PlayerActions`.
+ * The gamepad (step 0.8) will plug in here too.
  */
 export function createLocalInput(options: LocalInputOptions = {}): LocalInput {
   const bindings = options.bindings ?? DEFAULT_KEY_BINDINGS;
   const hasFocus = options.hasFocus ?? (() => document.hasFocus());
   const keyboard = createKeyboard(options.target);
+  const { mouse } = options;
+  const sensitivity = options.sensitivity ?? MOUSE_SENSITIVITY;
+  // Leaving mouse look (Esc, a window switch) can swallow key-ups just like losing focus.
+  mouse?.onLockChange((locked) => {
+    if (!locked) {
+      keyboard.releaseAll();
+    }
+  });
   return {
     sample(): PlayerActions {
       // Without focus the page receives no key events, so whatever is held cannot be trusted.
       if (!hasFocus()) {
         keyboard.releaseAll();
       }
-      return actionsFromKeys(keyboard.pressed, bindings);
+      const actions = actionsFromKeys(keyboard.pressed, bindings);
+      if (mouse) {
+        const movement = mouse.takeMovement();
+        actions.lookX = movement.x * sensitivity;
+        actions.lookY = movement.y * sensitivity;
+      }
+      return actions;
     },
     dispose: () => keyboard.dispose(),
   };

@@ -122,7 +122,8 @@ export function createDebugOverlay(
       .join("");
 
   const render = (): void => {
-    const { stats, input, player } = debug;
+    const { stats, input, player, view } = debug;
+    const degrees = (radians: number): string => fixed((radians * 180) / Math.PI, 0);
     const verdict = evaluateBudget(
       {
         avgFps: stats.avgFps,
@@ -185,6 +186,11 @@ export function createDebugOverlay(
         { label: t("debug.language"), value: t(`language.${i18n.language}`) },
       ]) +
       section(t("debug.section.input"), [
+        {
+          label: t("debug.view"),
+          value: t("debug.view_value", { yaw: degrees(view.yaw), pitch: degrees(view.pitch) }),
+        },
+        { label: t("debug.mouse_look"), value: t(view.locked ? "common.yes" : "common.no") },
         { label: t("debug.move"), value: `${fixed(input.moveX, 2)}, ${fixed(input.moveY, 2)}` },
         {
           label: t("debug.buttons"),

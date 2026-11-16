@@ -14,8 +14,18 @@ beforeAll(async () => {
 
 describe("desiredMovement", () => {
   it("moves forward along -Z and right along +X", () => {
-    expect(desiredMovement({ moveX: 0, moveY: 1 }, 1, 2)).toEqual({ x: 0, y: 0, z: -2 });
-    expect(desiredMovement({ moveX: 1, moveY: 0 }, 1, 2)).toEqual({ x: 2, y: 0, z: -0 });
+    const forward = desiredMovement({ moveX: 0, moveY: 1 }, 1, 0, 2);
+    expect(forward.x).toBeCloseTo(0);
+    expect(forward.z).toBeCloseTo(-2);
+    const right = desiredMovement({ moveX: 1, moveY: 0 }, 1, 0, 2);
+    expect(right.x).toBeCloseTo(2);
+    expect(right.z).toBeCloseTo(0);
+  });
+
+  it("follows the view: after a quarter turn to the left, forward is -X", () => {
+    const forward = desiredMovement({ moveX: 0, moveY: 1 }, 1, Math.PI / 2, 2);
+    expect(forward.x).toBeCloseTo(-2);
+    expect(forward.z).toBeCloseTo(0);
   });
 
   it("scales with the step length and the speed", () => {

@@ -18,3 +18,15 @@ export const JUMP_HEIGHT = 1.1;
 
 /** Steepest slope a character can walk up, in degrees. Anything steeper blocks and slides. */
 export const MAX_SLOPE_DEGREES = 45;
+
+/** Third-person camera: distance behind the character and sideways shift to the right, in metres. */
+export const CAMERA_DISTANCE = 4.5;
+export const CAMERA_SHOULDER_OFFSET = 0.5;
+/** Height above the character's centre that the camera orbits and looks past, in metres. */
+export const CAMERA_PIVOT_HEIGHT = 0.6;
+/** How far the view can tilt down and up from level, in degrees. */
+export const LOOK_DOWN_LIMIT_DEGREES = 60;
+export const LOOK_UP_LIMIT_DEGREES = 70;
+
+/** Default mouse sensitivity: radians of turn per pixel of mouse movement. */
+export const MOUSE_SENSITIVITY = 0.0025;

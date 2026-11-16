@@ -1,6 +1,7 @@
 import { World } from "miniplex";
 import type { Object3D } from "three";
 import type { VerticalState } from "../gameplay/verticalMotion";
+import type { View } from "../gameplay/view";
 import type { PlayerActions } from "../input/actions";
 
 /**
@@ -46,6 +47,8 @@ export interface Entity {
    * so systems never assume there is only one player.
    */
   input?: PlayerActions;
+  /** Where a player looks. Movement is relative to it, and the camera follows the local player's. */
+  view?: View;
   /** Marks the entity controlled from this machine's devices. */
   localPlayer?: true;
 }

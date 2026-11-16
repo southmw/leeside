@@ -11,7 +11,7 @@ export interface PlayerActions {
   moveX: number;
   /** Advance: -1 (back) to 1 (forward). The move vector never exceeds length 1. */
   moveY: number;
-  /** Look delta for this step, filled in by mouse or right stick (step 1.4). */
+  /** How far to turn the view this step, in radians: to the right, and downwards. */
   lookX: number;
   lookY: number;
   jump: boolean;

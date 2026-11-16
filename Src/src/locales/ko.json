@@ -5,6 +5,8 @@
   "common.yes": "예",
   "common.no": "아니요",
 
+  "hint.click_to_look": "화면을 클릭하면 마우스로 시점을 돌립니다 (Esc로 해제)",
+
   "quality.low": "낮음",
   "quality.high": "높음",
 
@@ -38,6 +40,9 @@
   "debug.sim_time": "시뮬레이션 시간",
   "debug.sim_time_value": "{seconds}초",
   "debug.language": "언어",
+  "debug.view": "시점",
+  "debug.view_value": "좌우 {yaw}°, 상하 {pitch}°",
+  "debug.mouse_look": "마우스 시점",
   "debug.move": "이동",
   "debug.buttons": "버튼",
   "debug.button.jump": "점프",

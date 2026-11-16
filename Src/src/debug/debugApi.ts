@@ -50,6 +50,8 @@ export interface GameDebug {
   bodyCount: number;
   /** The local player's character: position of the capsule's centre in metres, and whether it stands on something. */
   player: { x: number; y: number; z: number; grounded: boolean };
+  /** The local player's view in radians, and whether mouse movement currently turns it. */
+  view: { yaw: number; pitch: number; locked: boolean };
   /** The local player's actions as of the latest simulation step. */
   input: PlayerActions;
   /** Size of the drawing buffer in device pixels. */
@@ -75,6 +77,7 @@ export function installDebugApi(language: Language): GameDebug {
     entityCount: 0,
     bodyCount: 0,
     player: { x: 0, y: 0, z: 0, grounded: false },
+    view: { yaw: 0, pitch: 0, locked: false },
     input: createEmptyActions(),
     canvas: { width: 0, height: 0 },
     language,
