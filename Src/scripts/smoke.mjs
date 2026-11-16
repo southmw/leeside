@@ -92,6 +92,7 @@ try {
     check("frames keep rendering", later.frame > first.frame, `frame ${first.frame} -> ${later.frame}`);
     check("simulation keeps stepping", later.tick > first.tick, `tick ${first.tick} -> ${later.tick}`);
     check("world has entities", first.entityCount >= 1, `${first.entityCount} entities`);
+    check("physics world has the floor and the box", first.bodyCount === 2, `${first.bodyCount} bodies`);
     check(
       "drawing buffer matches the window",
       first.canvas.width >= 1280 && first.canvas.height >= 720,

@@ -21,16 +21,16 @@ export interface Renderable {
   object: Object3D;
 }
 
-/** Placeholder component: spins the entity at a constant rate. Removed once real gameplay exists. */
-export interface Spin {
-  /** Radians per second. */
-  speed: number;
+/** Links the entity to a body in the physics world, which then drives its `transform`. */
+export interface Body {
+  /** Handle from PhysicsWorld. A plain number, so the component stays serialisable. */
+  handle: number;
 }
 
 export interface Entity {
   transform?: Transform;
   renderable?: Renderable;
-  spin?: Spin;
+  body?: Body;
   /**
    * This step's actions for a player-controlled entity. Each player entity owns its own copy,
    * so systems never assume there is only one player.

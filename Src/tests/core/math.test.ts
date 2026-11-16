@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clamp, lerp } from "../../src/core/math";
+import { clamp, lerp, yawFromQuaternion } from "../../src/core/math";
 
 describe("clamp", () => {
   it("returns the value when it is inside the range", () => {
@@ -28,5 +28,23 @@ describe("lerp", () => {
 
   it("extrapolates when t is outside 0..1", () => {
     expect(lerp(0, 10, 1.5)).toBe(15);
+  });
+});
+
+describe("yawFromQuaternion", () => {
+  const aboutY = (angle: number) => ({ x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) });
+
+  it("is 0 for no rotation", () => {
+    expect(yawFromQuaternion({ x: 0, y: 0, z: 0, w: 1 })).toBe(0);
+  });
+
+  it("returns the angle of a rotation around the vertical axis", () => {
+    expect(yawFromQuaternion(aboutY(0.5))).toBeCloseTo(0.5);
+    expect(yawFromQuaternion(aboutY(-2))).toBeCloseTo(-2);
+  });
+
+  it("ignores a pure tilt", () => {
+    const aboutX = { x: Math.sin(0.3), y: 0, z: 0, w: Math.cos(0.3) };
+    expect(yawFromQuaternion(aboutX)).toBeCloseTo(0);
   });
 });

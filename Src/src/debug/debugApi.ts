@@ -46,6 +46,8 @@ export interface GameDebug {
   simSeconds: number;
   /** Number of entities in the ECS world. */
   entityCount: number;
+  /** Number of bodies in the physics world, static ones included. */
+  bodyCount: number;
   /** The local player's actions as of the latest simulation step. */
   input: PlayerActions;
   /** Size of the drawing buffer in device pixels. */
@@ -69,6 +71,7 @@ export function installDebugApi(language: Language): GameDebug {
     tick: 0,
     simSeconds: 0,
     entityCount: 0,
+    bodyCount: 0,
     input: createEmptyActions(),
     canvas: { width: 0, height: 0 },
     language,

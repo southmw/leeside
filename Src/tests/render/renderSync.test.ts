@@ -1,7 +1,6 @@
 import { Object3D, Scene } from "three";
 import { describe, expect, it } from "vitest";
 import { createTransform, createWorld } from "../../src/core/ecs";
-import { createSpinSystem } from "../../src/gameplay/spinSystem";
 import { createRenderSync } from "../../src/render/renderSync";
 
 describe("createRenderSync", () => {
@@ -72,27 +71,5 @@ describe("createRenderSync", () => {
     world.add({ transform: createTransform(), renderable: { object: new Object3D() } });
 
     expect(scene.children).toHaveLength(0);
-  });
-});
-
-describe("createSpinSystem", () => {
-  it("rotates spinning entities by speed times dt", () => {
-    const world = createWorld();
-    const spin = createSpinSystem(world);
-    const entity = world.add({ transform: createTransform(), spin: { speed: 2 } });
-
-    spin(0.5);
-
-    expect(entity.transform?.rotationY).toBeCloseTo(1);
-  });
-
-  it("leaves entities without spin alone", () => {
-    const world = createWorld();
-    const spin = createSpinSystem(world);
-    const entity = world.add({ transform: createTransform(0, 0, 0, 0.25) });
-
-    spin(1);
-
-    expect(entity.transform?.rotationY).toBe(0.25);
   });
 });

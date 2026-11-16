@@ -28,6 +28,7 @@
   "debug.textures": "Textures",
   "debug.buffer": "Buffer",
   "debug.entities": "Entities",
+  "debug.bodies": "Physics bodies",
   "debug.tick": "Tick",
   "debug.sim_time": "Sim time",
   "debug.sim_time_value": "{seconds} s",

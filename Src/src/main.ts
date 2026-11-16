@@ -6,17 +6,21 @@ import type { DevLog } from "./debug/devLog";
 import { FrameStats } from "./debug/frameStats";
 import { readHeapMb } from "./debug/memory";
 import { SectionTimer } from "./debug/sectionTimer";
-import { createSpinSystem } from "./gameplay/spinSystem";
 import { createEmptyActions } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
 import { createLocalInput } from "./input/localInput";
 import { createI18n, detectLanguage } from "./locales/i18n";
+import { createPhysicsSystem } from "./physics/physicsSystem";
+import { initPhysics, PhysicsWorld } from "./physics/physicsWorld";
 import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
 import { createBoxMesh, createTestScene } from "./render/testScene";
 
-/** Placeholder motion so the fixed timestep is visible: radians per second. */
-const BOX_SPIN_SPEED = 1;
+/** Placeholder box: half its edge length, and the height it is dropped from, in metres. */
+const BOX_HALF_SIZE = 0.75;
+const BOX_DROP_HEIGHT = 8;
+/** Half extents of the placeholder floor's collider. Its top surface is at y = 0. */
+const FLOOR_HALF_SIZE = { x: 30, y: 0.5, z: 30 };
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game");
 if (!canvas) {
@@ -58,12 +62,23 @@ camera.lookAt(0, 0.75, 0);
 const scene = createTestScene();
 const world = createWorld();
 const renderSync = createRenderSync(world, scene);
-const spinSystem = createSpinSystem(world);
 
+// The physics engine is WebAssembly and has to load before the first step.
+await initPhysics();
+const physics = new PhysicsWorld();
+const physicsSystem = createPhysicsSystem(world, physics);
+physics.addStaticBox({ x: 0, y: -FLOOR_HALF_SIZE.y, z: 0 }, FLOOR_HALF_SIZE);
+
+// Placeholder until zones exist: a box that falls onto the floor.
 world.add({
-  transform: createTransform(0, 0.75, 0),
+  transform: createTransform(0, BOX_DROP_HEIGHT, 0),
   renderable: { object: createBoxMesh() },
-  spin: { speed: BOX_SPIN_SPEED },
+  body: {
+    handle: physics.addDynamicBox(
+      { x: 0, y: BOX_DROP_HEIGHT, z: 0 },
+      { x: BOX_HALF_SIZE, y: BOX_HALF_SIZE, z: BOX_HALF_SIZE },
+    ),
+  },
 });
 
 // Stand-in for the player until the character exists (step 1.2). It only carries input.
@@ -82,7 +97,7 @@ startGameLoop({
   update(dt) {
     sectionTimer.begin("sim");
     inputSystem();
-    spinSystem(dt);
+    physicsSystem.update();
     sectionTimer.end("sim");
 
     if (player.input) {
@@ -111,6 +126,7 @@ startGameLoop({
 
     debug.frame += 1;
     debug.entityCount = world.entities.length;
+    debug.bodyCount = physics.bodyCount;
     debug.canvas.width = canvas.width;
     debug.canvas.height = canvas.height;
     debug.ready = true;

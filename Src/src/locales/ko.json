@@ -28,6 +28,7 @@
   "debug.textures": "텍스처",
   "debug.buffer": "버퍼",
   "debug.entities": "엔티티",
+  "debug.bodies": "물리 객체",
   "debug.tick": "틱",
   "debug.sim_time": "시뮬레이션 시간",
   "debug.sim_time_value": "{seconds}초",
