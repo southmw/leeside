@@ -12,3 +12,9 @@ export const CHARACTER_RADIUS = 0.35;
 
 /** Player movement speed in m/s. The prototype has a single speed: no walking or sprinting. */
 export const MOVE_SPEED = 6.5;
+
+/** How high a jump lifts the character's feet, in metres. */
+export const JUMP_HEIGHT = 1.1;
+
+/** Steepest slope a character can walk up, in degrees. Anything steeper blocks and slides. */
+export const MAX_SLOPE_DEGREES = 45;

@@ -1,5 +1,6 @@
 import { World } from "miniplex";
 import type { Object3D } from "three";
+import type { VerticalState } from "../gameplay/verticalMotion";
 import type { PlayerActions } from "../input/actions";
 
 /**
@@ -27,12 +28,19 @@ export interface Body {
   handle: number;
 }
 
+/** Movement state of a walking entity. For now only jumping and falling need any. */
+export type Character = VerticalState;
+
+export function createCharacter(): Character {
+  return { velocityY: 0, grounded: false, jumpHeld: false };
+}
+
 export interface Entity {
   transform?: Transform;
   renderable?: Renderable;
   body?: Body;
-  /** Marks an entity that walks under the control of its `input` (players, later enemies). */
-  character?: true;
+  /** An entity that walks and jumps under the control of its `input` (players, later enemies). */
+  character?: Character;
   /**
    * This step's actions for a player-controlled entity. Each player entity owns its own copy,
    * so systems never assume there is only one player.

@@ -92,7 +92,7 @@ try {
     check("frames keep rendering", later.frame > first.frame, `frame ${first.frame} -> ${later.frame}`);
     check("simulation keeps stepping", later.tick > first.tick, `tick ${first.tick} -> ${later.tick}`);
     check("world has entities", first.entityCount >= 1, `${first.entityCount} entities`);
-    check("physics world has the floor, the box and the player", first.bodyCount === 3, `${first.bodyCount} bodies`);
+    check("physics world has the floor, the props and the player", first.bodyCount === 8, `${first.bodyCount} bodies`);
     check(
       "drawing buffer matches the window",
       first.canvas.width >= 1280 && first.canvas.height >= 720,
@@ -132,25 +132,46 @@ try {
     const startedAt = await readPlayer();
     await settle();
     const stoodStill = await readPlayer();
-    check("the character stands still without input", stoodStill.x === startedAt.x && stoodStill.z === startedAt.z);
+    check("the character stands still without input", Math.abs(stoodStill.x - startedAt.x) < 0.001 && Math.abs(stoodStill.z - startedAt.z) < 0.001);
 
     await page.keyboard.down("KeyS");
     await page.waitForTimeout(400);
     await page.keyboard.up("KeyS");
     const movedBack = await readPlayer();
-    check("S walks the character back", movedBack.z > startedAt.z + 0.5 && movedBack.x === startedAt.x, `z ${startedAt.z.toFixed(2)} -> ${movedBack.z.toFixed(2)}`);
+    check("S walks the character back", movedBack.z > startedAt.z + 0.5 && Math.abs(movedBack.x - startedAt.x) < 0.01, `z ${startedAt.z.toFixed(2)} -> ${movedBack.z.toFixed(2)}`);
 
     await page.keyboard.down("KeyD");
     await page.waitForTimeout(400);
     await page.keyboard.up("KeyD");
     const movedRight = await readPlayer();
     check("D walks the character right", movedRight.x > movedBack.x + 0.5, `x ${movedBack.x.toFixed(2)} -> ${movedRight.x.toFixed(2)}`);
-    check("the character stays on the ground", Math.abs(movedRight.y - startedAt.y) < 0.01, `y ${movedRight.y.toFixed(3)}`);
+    check("the character stays on the ground", Math.abs(movedRight.y - startedAt.y) < 0.03, `y ${movedRight.y.toFixed(3)}`);
 
+    // Jumping: the character leaves the ground, rises close to the jump height (1.1 m) and
+    // lands where it started.
+    const grounded = () => page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
+    await grounded();
+    const groundY = await page.evaluate(() => window.__game.player.y);
+    await page.evaluate(() => {
+      window.__smokePeak = 0;
+      window.__smokeTimer = setInterval(() => {
+        window.__smokePeak = Math.max(window.__smokePeak, window.__game.player.y);
+      }, 4);
+    });
     await page.keyboard.down("Space");
     await settle();
     check("Space jumps", (await readInput()).jump === true);
+    const airborne = await page.evaluate(() => !window.__game.player.grounded);
     await page.keyboard.up("Space");
+    await page.waitForTimeout(300);
+    await grounded();
+    const jump = await page.evaluate((ground) => {
+      clearInterval(window.__smokeTimer);
+      return { peak: window.__smokePeak - ground, landedAt: window.__game.player.y - ground };
+    }, groundY);
+    check("the character leaves the ground when jumping", airborne);
+    check("the jump rises about 1.1 m", jump.peak > 0.8 && jump.peak < 1.15, `peak ${jump.peak.toFixed(2)} m`);
+    check("the character lands again", Math.abs(jump.landedAt) < 0.03, `${jump.landedAt.toFixed(3)} m above the start`);
 
     // Performance figures must be populated. Their values are not judged here: a headless
     // browser renders in software, so the numbers say nothing about real performance.

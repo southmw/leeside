@@ -1,7 +1,7 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { TICK_SECONDS } from "../core/fixedTimestep";
 import { yawFromQuaternion } from "../core/math";
-import { CHARACTER_HEIGHT, CHARACTER_RADIUS, GRAVITY } from "../data/tuning";
+import { CHARACTER_HEIGHT, CHARACTER_RADIUS, GRAVITY, MAX_SLOPE_DEGREES } from "../data/tuning";
 
 /**
  * Thin wrapper around Rapier. The rest of the game talks to this class and to body handles
@@ -25,6 +25,26 @@ export interface BodyPose extends Vec3 {
  */
 export const CHARACTER_SKIN = 0.02;
 
+/**
+ * A character walking down a slope or off a small ledge is pulled back to the ground if it
+ * would end up less than this far above it, in metres. Without it, walking downhill becomes
+ * a series of tiny falls.
+ */
+const GROUND_SNAP_DISTANCE = 0.2;
+
+/** How far below a character the surface it rests on is looked for: past the skin and the snap distance. */
+const GROUND_PROBE_DISTANCE = CHARACTER_SKIN + GROUND_SNAP_DISTANCE + 0.1;
+/** Upward movement smaller than this is rounding, not the controller lifting the character. */
+const LIFT_TOLERANCE = 1e-4;
+/** Cosine of the steepest walkable slope: a surface is walkable if its normal's Y is at least this. */
+const WALKABLE_NORMAL_Y = Math.cos((MAX_SLOPE_DEGREES * Math.PI) / 180);
+
+/** What actually happened to a character's requested movement. */
+export interface CharacterMove extends Vec3 {
+  /** Whether the character is standing on walkable ground after the move. */
+  grounded: boolean;
+}
+
 /** Loads the physics engine's WebAssembly. Must finish before a PhysicsWorld is created. */
 export async function initPhysics(): Promise<void> {
   await RAPIER.init();
@@ -34,16 +54,37 @@ export class PhysicsWorld {
   private readonly world: RAPIER.World;
   /** One controller serves every character; it holds settings, not per-character state. */
   private readonly characterController: RAPIER.KinematicCharacterController;
+  /**
+   * True while bodies have been added or removed since the last step. Rapier refreshes what
+   * its collision queries can see only during a step, so until then a character would walk
+   * straight through anything new. Worse, once it overlaps a surface's skin the controller no
+   * longer holds it reliably and it sinks in. Characters therefore wait for the next step.
+   */
+  private queriesStale = true;
 
   constructor(gravity: number = GRAVITY, tickSeconds: number = TICK_SECONDS) {
     this.world = new RAPIER.World({ x: 0, y: -gravity, z: 0 });
     this.world.timestep = tickSeconds;
     this.characterController = this.world.createCharacterController(CHARACTER_SKIN);
+    const maxSlope = (MAX_SLOPE_DEGREES * Math.PI) / 180;
+    this.characterController.setMaxSlopeClimbAngle(maxSlope);
+    this.characterController.setMinSlopeSlideAngle(maxSlope);
+    this.characterController.enableSnapToGround(GROUND_SNAP_DISTANCE);
   }
 
-  /** Adds an immovable box (ground, walls). Sizes are half extents, as Rapier takes them. */
-  addStaticBox(center: Vec3, halfExtents: Vec3): number {
-    return this.addBox(RAPIER.RigidBodyDesc.fixed(), center, halfExtents);
+  /**
+   * Adds an immovable box (ground, walls, ramps). Sizes are half extents, as Rapier takes
+   * them. `pitch` tilts the box around the X axis, in radians, which turns it into a ramp
+   * rising towards -Z for positive values.
+   */
+  addStaticBox(center: Vec3, halfExtents: Vec3, pitch = 0): number {
+    const description = RAPIER.RigidBodyDesc.fixed().setRotation({
+      x: Math.sin(pitch / 2),
+      y: 0,
+      z: 0,
+      w: Math.cos(pitch / 2),
+    });
+    return this.addBox(description, center, halfExtents);
   }
 
   /** Adds a box that falls and collides. */
@@ -61,28 +102,80 @@ export class PhysicsWorld {
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(center.x, center.y, center.z),
     );
     this.world.createCollider(RAPIER.ColliderDesc.capsule(height / 2 - radius, radius), body);
+    this.queriesStale = true;
     return body.handle;
   }
 
   /**
    * Moves a character by `desired`, shortened and bent along surfaces where something is in
-   * the way. The new position takes effect on the next `step`. Obstacles are known to the
-   * physics world from the step after they were added.
+   * the way, and reports the movement that fitted. The new position takes effect on the next
+   * `step`. Returns undefined, without moving, if the character does not exist or if bodies
+   * were added or removed since the last step (see `queriesStale`); the caller simply tries
+   * again on the next step.
+   *
+   * Two rules are added to what Rapier's controller does by itself:
+   * - Standing on a slope steeper than the limit does not count as grounded, so the character
+   *   keeps falling, slides off, and cannot jump from there.
+   * - A character in the air is never lifted by what it bumps into. The capsule's round
+   *   bottom would otherwise ride up over a ledge's edge or up a steep slope, adding up to its
+   *   radius to the jump height. Such a bump stops the sideways movement instead.
+   *
+   * `wasGrounded` is whether the character stood on the ground before this move.
    */
-  moveCharacter(handle: number, desired: Vec3): void {
+  moveCharacter(handle: number, desired: Vec3, wasGrounded: boolean): CharacterMove | undefined {
     const body = this.world.getRigidBody(handle);
     const collider = body?.collider(0);
-    if (!body || !collider) {
-      return;
+    if (!body || !collider || this.queriesStale) {
+      return undefined;
     }
-    this.characterController.computeColliderMovement(collider, desired);
-    const movement = this.characterController.computedMovement();
+    const controller = this.characterController;
     const position = body.translation();
+    const groundedAfter = (movement: Vec3): boolean =>
+      controller.computedGrounded() && this.isWalkableBelow(collider, body, position, movement);
+
+    controller.computeColliderMovement(collider, desired);
+    let movement = controller.computedMovement();
+    let grounded = groundedAfter(movement);
+
+    const lifted = movement.y > Math.max(desired.y, 0) + LIFT_TOLERANCE;
+    if (!wasGrounded && lifted) {
+      controller.computeColliderMovement(collider, { x: 0, y: desired.y, z: 0 });
+      movement = controller.computedMovement();
+      grounded = groundedAfter(movement);
+    }
+
     body.setNextKinematicTranslation({
       x: position.x + movement.x,
       y: position.y + movement.y,
       z: position.z + movement.z,
     });
+    return { x: movement.x, y: movement.y, z: movement.z, grounded };
+  }
+
+  /**
+   * Whether what a character rests on, once it has moved by `movement`, is flat enough to
+   * stand on. The capsule itself is swept down a short way and the slope is read where it
+   * touches, so a capsule leaning on a steep slope or hanging on a ledge's corner by its
+   * round bottom is not standing, whatever lies under its centre. Finding nothing means not
+   * standing either: Rapier's controller also reports ground for a character that is in the
+   * air but pressed against a wall, which would let it hang there.
+   */
+  private isWalkableBelow(collider: RAPIER.Collider, body: RAPIER.RigidBody, position: Vec3, movement: Vec3): boolean {
+    const hit = this.world.castShape(
+      { x: position.x + movement.x, y: position.y + movement.y, z: position.z + movement.z },
+      collider.rotation(),
+      { x: 0, y: -1, z: 0 },
+      collider.shape,
+      0,
+      GROUND_PROBE_DISTANCE,
+      false,
+      undefined,
+      undefined,
+      collider,
+      body,
+    );
+    // The two normals of a hit are opposite, so the magnitude is the same whichever is read.
+    return hit !== null && Math.abs(hit.normal1.y) >= WALKABLE_NORMAL_Y;
   }
 
   /** Removes a body and its colliders. Unknown handles are ignored. */
@@ -90,12 +183,14 @@ export class PhysicsWorld {
     const body = this.world.getRigidBody(handle);
     if (body) {
       this.world.removeRigidBody(body);
+      this.queriesStale = true;
     }
   }
 
   /** Advances the simulation by one fixed step. */
   step(): void {
     this.world.step();
+    this.queriesStale = false;
   }
 
   /** Copies a body's pose into `out`. Returns false if the body does not exist. */
@@ -131,6 +226,7 @@ export class PhysicsWorld {
   private addBox(description: RAPIER.RigidBodyDesc, center: Vec3, halfExtents: Vec3): number {
     const body = this.world.createRigidBody(description.setTranslation(center.x, center.y, center.z));
     this.world.createCollider(RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z), body);
+    this.queriesStale = true;
     return body.handle;
   }
 }

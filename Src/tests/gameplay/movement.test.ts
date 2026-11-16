@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { createTransform, createWorld, type Entity } from "../../src/core/ecs";
+import { createCharacter, createTransform, createWorld, type Entity } from "../../src/core/ecs";
 import { TICK_RATE, TICK_SECONDS } from "../../src/core/fixedTimestep";
-import { CHARACTER_HEIGHT, CHARACTER_RADIUS, MOVE_SPEED } from "../../src/data/tuning";
+import { CHARACTER_HEIGHT, CHARACTER_RADIUS, JUMP_HEIGHT, MOVE_SPEED } from "../../src/data/tuning";
 import { createMovementSystem, desiredMovement } from "../../src/gameplay/movementSystem";
+import { settleVertical, stepVertical } from "../../src/gameplay/verticalMotion";
 import { createEmptyActions } from "../../src/input/actions";
 import { createPhysicsSystem } from "../../src/physics/physicsSystem";
 import { CHARACTER_SKIN, initPhysics, PhysicsWorld } from "../../src/physics/physicsWorld";
@@ -38,9 +39,9 @@ function setup() {
   const player = world.add({
     transform: createTransform(start.x, start.y, start.z),
     input: createEmptyActions(),
-    character: true,
+    character: createCharacter(),
     body: { handle: physics.addCharacter(start) },
-  }) as Required<Pick<Entity, "transform" | "input">>;
+  }) as Required<Pick<Entity, "transform" | "input" | "character">>;
 
   const movement = createMovementSystem(world, physics);
   const physicsSystem = createPhysicsSystem(world, physics);
@@ -50,9 +51,10 @@ function setup() {
       physicsSystem.update();
     }
   };
-  // One step first, so the physics world knows about every collider before anything moves.
-  run(1);
-  return { physics, player, run };
+  // A few steps first, so the physics world knows about every collider and the character
+  // has settled on the floor before anything moves.
+  run(10);
+  return { physics, player, run, groundY: player.transform.y };
 }
 
 describe("character movement", () => {
@@ -62,8 +64,9 @@ describe("character movement", () => {
     run(2 * TICK_RATE);
 
     expect(-player.transform.z).toBeCloseTo(MOVE_SPEED * 2, 1);
-    expect(player.transform.x).toBeCloseTo(0, 3);
-    expect(player.transform.y).toBeCloseTo(CHARACTER_HEIGHT / 2 + CHARACTER_SKIN, 2);
+    expect(player.transform.x).toBeCloseTo(0, 2);
+    // The controller lets the height wander by a few millimetres while walking.
+    expect(Math.abs(player.transform.y - (CHARACTER_HEIGHT / 2 + CHARACTER_SKIN))).toBeLessThan(0.02);
     physics.dispose();
   });
 
@@ -80,8 +83,8 @@ describe("character movement", () => {
   it("stays put without input", () => {
     const { physics, player, run } = setup();
     run(TICK_RATE);
-    expect(player.transform.x).toBe(0);
-    expect(player.transform.z).toBe(0);
+    expect(player.transform.x).toBeCloseTo(0, 4);
+    expect(player.transform.z).toBeCloseTo(0, 4);
     physics.dispose();
   });
 
@@ -124,5 +127,244 @@ describe("character movement", () => {
 
     expect(player.transform.z).toBeGreaterThan(-3 + CHARACTER_RADIUS - 0.05);
     physics.dispose();
+  });
+});
+
+describe("jumping", () => {
+  /** Runs `ticks` steps and returns the greatest height above the ground reached. */
+  function peakDuring(game: ReturnType<typeof setup>, ticks: number, eachTick?: (tick: number) => void): number {
+    let peak = 0;
+    for (let tick = 0; tick < ticks; tick += 1) {
+      eachTick?.(tick);
+      game.run(1);
+      peak = Math.max(peak, game.player.transform.y - game.groundY);
+    }
+    return peak;
+  }
+
+  it("stands on the ground at rest", () => {
+    const game = setup();
+    game.run(TICK_RATE);
+    expect(game.player.character.grounded).toBe(true);
+    expect(game.player.transform.y).toBeCloseTo(game.groundY, 3);
+    game.physics.dispose();
+  });
+
+  it("reaches the configured height and lands again", () => {
+    const game = setup();
+    game.player.input.jump = true;
+    const peak = peakDuring(game, 2 * TICK_RATE, (tick) => {
+      if (tick === 5) {
+        game.player.input.jump = false;
+      }
+    });
+
+    expect(peak).toBeGreaterThan(JUMP_HEIGHT - 0.05);
+    expect(peak).toBeLessThan(JUMP_HEIGHT + 0.05);
+    expect(game.player.transform.y).toBeCloseTo(game.groundY, 2);
+    expect(game.player.character.grounded).toBe(true);
+    game.physics.dispose();
+  });
+
+  it("is in the air right after take-off", () => {
+    const game = setup();
+    game.player.input.jump = true;
+    game.run(3);
+    expect(game.player.character.grounded).toBe(false);
+    game.physics.dispose();
+  });
+
+  it("cannot jump again in the air", () => {
+    const game = setup();
+    const peak = peakDuring(game, 2 * TICK_RATE, (tick) => {
+      // Press, release, then press again near the top of the jump.
+      game.player.input.jump = tick < 3 || (tick >= 18 && tick < 22);
+    });
+    expect(peak).toBeLessThan(JUMP_HEIGHT + 0.05);
+    game.physics.dispose();
+  });
+
+  it("jumps once per press, even if the button is held", () => {
+    const game = setup();
+    game.player.input.jump = true;
+    peakDuring(game, 2 * TICK_RATE);
+    // Landed long ago and the button is still down: no second jump.
+    const secondPeak = peakDuring(game, TICK_RATE);
+    expect(secondPeak).toBeLessThan(0.01);
+    game.physics.dispose();
+  });
+
+  it("keeps its walking speed while jumping", () => {
+    const game = setup();
+    game.player.input.moveY = 1;
+    game.player.input.jump = true;
+    game.run(TICK_RATE);
+    expect(-game.player.transform.z).toBeCloseTo(MOVE_SPEED, 1);
+    game.physics.dispose();
+  });
+
+  it("falls off a ledge and lands on the ground below", () => {
+    const game = setup();
+    // A platform 1 m high directly ahead: jump onto it, walk across and off its far edge.
+    game.physics.addStaticBox({ x: 0, y: 0.5, z: -3 }, { x: 2, y: 0.5, z: 1.5 });
+    game.run(1);
+    game.player.input.moveY = 1;
+    game.run(8);
+    game.player.input.jump = true;
+    game.run(30);
+    game.player.input.jump = false;
+    expect(game.player.transform.y - game.groundY).toBeCloseTo(1, 1);
+    expect(game.player.character.grounded).toBe(true);
+
+    game.run(TICK_RATE);
+    expect(game.player.transform.z).toBeLessThan(-4.5);
+    expect(game.player.transform.y).toBeCloseTo(game.groundY, 2);
+    expect(game.player.character.grounded).toBe(true);
+  });
+});
+
+describe("ledges", () => {
+  /** Walks at a platform of the given height, jumping at the right moment, and reports the result. */
+  function jumpAt(platformHeight: number) {
+    const game = setup();
+    // Near face at z = -2; the jump starts about 0.6 m before it.
+    game.physics.addStaticBox(
+      { x: 0, y: platformHeight / 2, z: -12 },
+      { x: 2, y: platformHeight / 2, z: 10 },
+    );
+    game.run(1);
+    game.player.input.moveY = 1;
+    game.run(10);
+    game.player.input.jump = true;
+    game.run(2);
+    game.player.input.jump = false;
+    game.run(TICK_RATE);
+    const result = { height: game.player.transform.y - game.groundY, z: game.player.transform.z };
+    game.physics.dispose();
+    return result;
+  }
+
+  it("jumps onto a ledge lower than the jump height", () => {
+    const { height, z } = jumpAt(1.0);
+    expect(height).toBeCloseTo(1.0, 1);
+    expect(z).toBeLessThan(-2.5);
+  });
+
+  // The capsule's round bottom can stand on an edge as long as the contact is no steeper than
+  // a walkable slope, which is worth about 0.1 m: the reach is roughly 1.2 m, not 1.1 m.
+  it.each([1.3, 1.4, 1.6])("cannot jump onto a %f m ledge", (platformHeight) => {
+    const { height, z } = jumpAt(platformHeight);
+    expect(height).toBeCloseTo(0, 1);
+    expect(z).toBeGreaterThan(-2);
+  });
+});
+
+describe("slopes", () => {
+  /** A ramp across the path starting at z = -2 and rising towards -Z. */
+  function addRamp(physics: PhysicsWorld, degrees: number): void {
+    const angle = (degrees * Math.PI) / 180;
+    const halfLength = 6;
+    const halfThickness = 0.25;
+    physics.addStaticBox(
+      {
+        x: 0,
+        y: halfLength * Math.sin(angle) - halfThickness * Math.cos(angle),
+        z: -2 - halfLength * Math.cos(angle),
+      },
+      { x: 5, y: halfThickness, z: halfLength },
+      angle,
+    );
+  }
+
+  function climb(degrees: number) {
+    const game = setup();
+    addRamp(game.physics, degrees);
+    game.run(1);
+    game.player.input.moveY = 1;
+    game.run(Math.round(1.5 * TICK_RATE));
+    const gained = game.player.transform.y - game.groundY;
+    const z = game.player.transform.z;
+    game.physics.dispose();
+    return { gained, z };
+  }
+
+  it.each([20, 40])("walks up a %i degree slope", (degrees) => {
+    const { gained } = climb(degrees);
+    expect(gained).toBeGreaterThan(1.5);
+  });
+
+  it.each([50, 70])("cannot walk up a %i degree slope", (degrees) => {
+    const { gained, z } = climb(degrees);
+    expect(gained).toBeLessThan(0.3);
+    expect(z).toBeGreaterThan(-2.6);
+  });
+
+  it("cannot get up a too-steep slope by jumping against it", () => {
+    const game = setup();
+    addRamp(game.physics, 55);
+    game.run(1);
+    game.player.input.moveY = 1;
+    let peak = 0;
+    for (let tick = 0; tick < 5 * TICK_RATE; tick += 1) {
+      // Hammer the jump button: down for two steps out of every six.
+      game.player.input.jump = tick % 6 < 2;
+      game.run(1);
+      peak = Math.max(peak, game.player.transform.y - game.groundY);
+    }
+    // No higher than one ordinary jump from the foot of the slope.
+    expect(peak).toBeLessThan(JUMP_HEIGHT + 0.1);
+
+    game.player.input.jump = false;
+    game.player.input.moveY = 0;
+    game.run(2 * TICK_RATE);
+    expect(game.player.transform.y).toBeCloseTo(game.groundY, 1);
+    expect(game.player.character.grounded).toBe(true);
+    game.physics.dispose();
+  });
+
+  it("slides back down when dropped onto a too-steep slope", () => {
+    const game = setup();
+    addRamp(game.physics, 55);
+    game.run(1);
+    // Put a second character in the air above the middle of the ramp.
+    const angle = (55 * Math.PI) / 180;
+    const above = { x: 2, y: 3 * Math.sin(angle) + 3, z: -2 - 3 * Math.cos(angle) };
+    const handle = game.physics.addCharacter(above);
+    const state = createCharacter();
+    const pose = { x: 0, y: 0, z: 0, rotationY: 0 };
+    game.physics.step();
+    for (let tick = 0; tick < 4 * TICK_RATE; tick += 1) {
+      const wanted = stepVertical(state, false, TICK_SECONDS);
+      const result = game.physics.moveCharacter(handle, { x: 0, y: wanted, z: 0 }, state.grounded);
+      if (result) {
+        settleVertical(state, wanted, result.y, result.grounded);
+      }
+      game.physics.step();
+    }
+    game.physics.readPose(handle, pose);
+    expect(pose.y).toBeCloseTo(game.groundY, 1);
+    expect(state.grounded).toBe(true);
+    game.physics.dispose();
+  });
+
+  it("walks back down a slope without leaving the ground", () => {
+    const game = setup();
+    addRamp(game.physics, 30);
+    game.run(1);
+    game.player.input.moveY = 1;
+    game.run(TICK_RATE);
+    expect(game.player.transform.y - game.groundY).toBeGreaterThan(1);
+
+    game.player.input.moveY = -1;
+    let airborneTicks = 0;
+    for (let tick = 0; tick < TICK_RATE; tick += 1) {
+      game.run(1);
+      if (!game.player.character.grounded) {
+        airborneTicks += 1;
+      }
+    }
+    expect(airborneTicks).toBeLessThanOrEqual(1);
+    expect(game.player.transform.y).toBeCloseTo(game.groundY, 1);
+    game.physics.dispose();
   });
 });

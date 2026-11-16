@@ -39,6 +39,25 @@ export function createBoxMesh(): Mesh {
   );
 }
 
+/**
+ * Placeholder ramp or platform: a box tilted around the X axis by `pitch` radians. It is
+ * added to the scene directly, because an entity's transform cannot express a tilt.
+ */
+export function createStaticBoxMesh(
+  center: { x: number; y: number; z: number },
+  halfExtents: { x: number; y: number; z: number },
+  pitch: number,
+  color: number,
+): Mesh {
+  const mesh = new Mesh(
+    new BoxGeometry(halfExtents.x * 2, halfExtents.y * 2, halfExtents.z * 2),
+    new MeshStandardMaterial({ color, roughness: 0.9 }),
+  );
+  mesh.position.set(center.x, center.y, center.z);
+  mesh.rotation.x = pitch;
+  return mesh;
+}
+
 /** Placeholder character: a capsule the size of the player's collider. */
 export function createCharacterMesh(height: number, radius: number): Mesh {
   return new Mesh(

@@ -48,8 +48,8 @@ export interface GameDebug {
   entityCount: number;
   /** Number of bodies in the physics world, static ones included. */
   bodyCount: number;
-  /** Position of the local player's character (the centre of its capsule), in metres. */
-  player: { x: number; y: number; z: number };
+  /** The local player's character: position of the capsule's centre in metres, and whether it stands on something. */
+  player: { x: number; y: number; z: number; grounded: boolean };
   /** The local player's actions as of the latest simulation step. */
   input: PlayerActions;
   /** Size of the drawing buffer in device pixels. */
@@ -74,7 +74,7 @@ export function installDebugApi(language: Language): GameDebug {
     simSeconds: 0,
     entityCount: 0,
     bodyCount: 0,
-    player: { x: 0, y: 0, z: 0 },
+    player: { x: 0, y: 0, z: 0, grounded: false },
     input: createEmptyActions(),
     canvas: { width: 0, height: 0 },
     language,

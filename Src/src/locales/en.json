@@ -2,6 +2,9 @@
   "language.en": "English",
   "language.ko": "한국어",
 
+  "common.yes": "yes",
+  "common.no": "no",
+
   "quality.low": "Low",
   "quality.high": "High",
 
@@ -30,6 +33,7 @@
   "debug.entities": "Entities",
   "debug.bodies": "Physics bodies",
   "debug.position": "Player position",
+  "debug.grounded": "On ground",
   "debug.tick": "Tick",
   "debug.sim_time": "Sim time",
   "debug.sim_time_value": "{seconds} s",
