@@ -37,6 +37,14 @@
   "bench.copy_failed": "복사하지 못했습니다",
   "bench.note": "플레이하려면 주소에서 ?bench를 빼세요.",
 
+  "ui.close": "닫기",
+  "ui.window_too_small": "창을 키워 주세요 (최소 {width} x {height}).",
+  "ui.sample.title": "견본 창",
+  "ui.sample.text": "공통 UI 요소를 확인하는 창입니다. 마우스나 화살표 키, Enter, Esc로 조작합니다.",
+  "ui.sample.bar": "견본 막대",
+  "ui.sample.count": "{count}번 눌렀습니다",
+  "ui.sample.nothing": "아무 일도 하지 않는 버튼",
+
   "quality.low": "낮음",
   "quality.high": "높음",
 

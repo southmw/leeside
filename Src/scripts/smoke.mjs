@@ -488,6 +488,85 @@ try {
     check("the context menu is suppressed over the game", !menuShown);
   }
 
+  // UI frame: the sample window opens and closes, works with keyboard and mouse, keeps its
+  // keys from the game, and the UI scales with the window.
+  {
+    await page.goto(url, { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
+    const uiNow = () => page.evaluate(() => ({ ...window.__game.ui }));
+    const sampleWindow = page.locator('[data-window="sample"]');
+    const waitForUi = (predicate, argument) => page.waitForFunction(predicate, argument, { timeout: 5_000 }).catch(() => {});
+
+    const atStart = await uiNow();
+    check("the UI scale follows the window height", Math.abs(atStart.scale - 720 / 1080) < 0.001, `scale ${atStart.scale.toFixed(3)} at 720 px`);
+
+    await page.keyboard.press("F4");
+    await waitForUi(() => window.__game.ui.window === "sample");
+    const opened = await uiNow();
+    check("F4 opens the sample window", opened.window === "sample" && opened.selectedButton === 0 && (await sampleWindow.isVisible()));
+
+    // Arrow keys move the selection and wrap round; the window has three buttons.
+    // Read from the screen itself: the debug object is only refreshed once per frame.
+    const selectedOnScreen = () =>
+      sampleWindow.locator(".ui-button").evaluateAll((buttons) => buttons.findIndex((button) => button.classList.contains("selected")));
+    await page.keyboard.press("ArrowDown");
+    const second = await selectedOnScreen();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    const wrapped = await selectedOnScreen();
+    await page.keyboard.press("ArrowUp");
+    const last = await selectedOnScreen();
+    check("arrow keys move the selection and wrap round", second === 1 && wrapped === 0 && last === 2, `${second}, ${wrapped}, ${last}`);
+
+    // Space chooses a button and must not make the character jump at the same time.
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.down("Space");
+    await page.waitForTimeout(250);
+    const whileOpen = await page.evaluate(() => ({ jump: window.__game.input.jump, grounded: window.__game.player.grounded }));
+    await page.keyboard.up("Space");
+    const firstLabel = await sampleWindow.locator(".ui-button").first().innerText();
+    check("Space presses the selected button", firstLabel.includes("1"), firstLabel);
+    check("keys the window uses do not reach the game", whileOpen.jump === false && whileOpen.grounded === true);
+
+    // The mouse works too: hovering selects, clicking presses.
+    await sampleWindow.locator(".ui-button").nth(1).hover();
+    const hovered = await selectedOnScreen();
+    await sampleWindow.locator(".ui-button").first().click();
+    const clickedLabel = await sampleWindow.locator(".ui-button").first().innerText();
+    check("the mouse selects on hover and presses on click", hovered === 1 && clickedLabel.includes("2"), `selected ${hovered}, "${clickedLabel}"`);
+
+    // Clicking in the window must not start mouse look.
+    await sampleWindow.locator(".ui-title").hover();
+    await page.mouse.down();
+    await page.waitForTimeout(150);
+    const lookingOverWindow = await page.evaluate(() => window.__game.view.looking);
+    await page.mouse.up();
+    check("pressing a mouse button over a window does not turn the view", lookingOverWindow === false);
+
+    await page.keyboard.press("Escape");
+    await waitForUi(() => window.__game.ui.window === null);
+    await page.waitForTimeout(250);
+    check("Escape closes the window", (await uiNow()).window === null && (await sampleWindow.count()) === 0);
+
+    // Once the window is closed the keys belong to the game again.
+    await page.keyboard.down("Space");
+    await waitForUi(() => window.__game.input.jump === true);
+    const jumpAfterClose = await page.evaluate(() => window.__game.input.jump);
+    await page.keyboard.up("Space");
+    check("after closing, the keys reach the game again", jumpAfterClose === true);
+
+    // A window below the supported size gets a notice; a taller one scales the UI up.
+    await page.setViewportSize({ width: 1000, height: 600 });
+    await waitForUi(() => window.__game.ui.tooSmall === true);
+    check("a window that is too small shows a notice", (await uiNow()).tooSmall && (await page.locator("#ui-too-small").isVisible()));
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await waitForUi(() => window.__game.ui.scale === 1);
+    const large = await uiNow();
+    check("at 1920 x 1080 the scale is 1 and the notice is gone", large.scale === 1 && !large.tooSmall && (await page.locator("#ui-too-small").isHidden()));
+    await page.setViewportSize({ width: 1280, height: 720 });
+  }
+
   // Performance measurement: `?bench` flies the camera round by itself and ends with a result.
   // A short run is enough here; the numbers themselves mean nothing in a headless browser.
   {

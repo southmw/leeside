@@ -37,6 +37,14 @@
   "bench.copy_failed": "Could not copy",
   "bench.note": "Remove ?bench from the address to play.",
 
+  "ui.close": "Close",
+  "ui.window_too_small": "Please make the window larger (at least {width} x {height}).",
+  "ui.sample.title": "Sample window",
+  "ui.sample.text": "For checking the shared UI pieces. Use the mouse, or the arrow keys, Enter and Esc.",
+  "ui.sample.bar": "Sample bar",
+  "ui.sample.count": "Pressed {count} times",
+  "ui.sample.nothing": "A button that does nothing",
+
   "quality.low": "Low",
   "quality.high": "High",
 

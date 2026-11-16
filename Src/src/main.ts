@@ -37,6 +37,7 @@ import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
 import { createBenchPanel } from "./ui/benchPanel";
 import { createLookHint } from "./ui/lookHint";
+import { createUi } from "./ui/uiRoot";
 import { loadCharacterModel, type CharacterModel } from "./render/characterModel";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
 import { buildingAt, yawFromDegrees } from "./world/building";
@@ -67,6 +68,7 @@ const i18n = createI18n(detectLanguage({ query: startParams.get("lang"), browser
 document.documentElement.lang = i18n.language;
 
 const debug = installDebugApi(i18n.language);
+const ui = createUi(i18n);
 i18n.onChange((language) => {
   document.documentElement.lang = language;
   debug.language = language;
@@ -82,6 +84,9 @@ let devLog: DevLog | undefined;
 if (import.meta.env.DEV) {
   void import("./debug/debugOverlay").then(({ createDebugOverlay }) => {
     overlay = createDebugOverlay(debug, i18n, frameStats);
+  });
+  void import("./ui/sampleWindow").then(({ installSampleWindow }) => {
+    installSampleWindow(ui, i18n);
   });
   void import("./debug/devLog").then(({ createDevLog }) => {
     devLog = createDevLog(debug, renderer);
@@ -217,6 +222,10 @@ startGameLoop({
     debug.view.yaw = player.view.yaw;
     debug.view.pitch = player.view.pitch;
     debug.view.looking = mouse.looking;
+    debug.ui.scale = ui.scale;
+    debug.ui.tooSmall = ui.tooSmall;
+    debug.ui.window = ui.openWindowId;
+    debug.ui.selectedButton = ui.selectedButton;
     debug.camera.distance = cameraFit.distance;
     debug.camera.wantedDistance = wantedCameraDistance;
     debug.camera.y = camera.position.y;
