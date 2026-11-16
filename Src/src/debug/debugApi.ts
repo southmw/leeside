@@ -55,8 +55,11 @@ export interface GameDebug {
   player: { x: number; y: number; z: number; grounded: boolean; groundHeight: number };
   /** The local player's view in radians, and whether mouse movement currently turns it. */
   view: { yaw: number; pitch: number; locked: boolean };
-  /** The camera: its current distance behind the character's shoulder, and its height, in metres. */
-  camera: { distance: number; y: number };
+  /**
+   * The camera, in metres: its current distance behind the character's shoulder, the distance
+   * chosen with the wheel (the current one is shorter when something is in the way), and its height.
+   */
+  camera: { distance: number; wantedDistance: number; y: number };
   /** The local player's actions as of the latest simulation step. */
   input: PlayerActions;
   /** Size of the drawing buffer in device pixels. */
@@ -83,7 +86,7 @@ export function installDebugApi(language: Language): GameDebug {
     bodyCount: 0,
     player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0 },
     view: { yaw: 0, pitch: 0, locked: false },
-    camera: { distance: 0, y: 0 },
+    camera: { distance: 0, wantedDistance: 0, y: 0 },
     input: createEmptyActions(),
     canvas: { width: 0, height: 0 },
     language,

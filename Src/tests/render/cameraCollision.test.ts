@@ -57,38 +57,52 @@ describe("updateCameraDistance", () => {
   const dt = 1 / 60;
 
   it("moves in at once when the camera's own spot is inside something", () => {
-    expect(updateCameraDistance(4.5, 1.2, true, dt, 10, 6)).toBe(1.2);
+    expect(updateCameraDistance(4.5, 1.2, true, dt, 10, 6, 0)).toBe(1.2);
   });
 
   it("glides in when only the view is blocked", () => {
-    expect(updateCameraDistance(4.5, 1.2, false, 0.1, 10, 6)).toBeCloseTo(3.5);
+    expect(updateCameraDistance(4.5, 1.2, false, 0.1, 10, 6, 0)).toBeCloseTo(3.5);
   });
 
   it("does not glide past the obstacle", () => {
-    expect(updateCameraDistance(1.3, 1.2, false, 0.1, 10, 6)).toBe(1.2);
+    expect(updateCameraDistance(1.3, 1.2, false, 0.1, 10, 6, 0)).toBe(1.2);
   });
 
   it("barely moves for an object that crosses the view for a few frames", () => {
     let distance = 4.5;
     for (let frame = 0; frame < 3; frame += 1) {
-      distance = updateCameraDistance(distance, 1, false, dt, 10, 6);
+      distance = updateCameraDistance(distance, 1, false, dt, 10, 6, 0);
     }
     expect(distance).toBeGreaterThan(3.9);
     // Gone again: back out to the full distance within a moment.
     for (let frame = 0; frame < 10; frame += 1) {
-      distance = updateCameraDistance(distance, 4.5, false, dt, 10, 6);
+      distance = updateCameraDistance(distance, 4.5, false, dt, 10, 6, 0);
     }
     expect(distance).toBe(4.5);
   });
 
   it("moves back out gradually and does not overshoot", () => {
-    expect(updateCameraDistance(1, 4.5, false, 0.1, 10, 6)).toBeCloseTo(1.6);
-    expect(updateCameraDistance(4.4, 4.5, false, 1, 10, 6)).toBe(4.5);
+    expect(updateCameraDistance(1, 4.5, false, 0.1, 10, 6, 0)).toBeCloseTo(1.6);
+    expect(updateCameraDistance(4.4, 4.5, false, 1, 10, 6, 0)).toBe(4.5);
+  });
+
+  it("closes a large gap faster, in proportion to its size", () => {
+    // 15.5 m to go at a rate of 6 per second: 93 m/s, so 9.3 m in a tenth of a second.
+    expect(updateCameraDistance(4.5, 20, false, 0.1, 10, 6, 6)).toBeCloseTo(13.8);
+    expect(updateCameraDistance(20, 1, false, 0.1, 10, 6, 6)).toBeCloseTo(8.6);
+  });
+
+  it("gets from one end of the zoom range to the other within about a second", () => {
+    let distance = 1;
+    for (let frame = 0; frame < 75; frame += 1) {
+      distance = updateCameraDistance(distance, 20, false, dt);
+    }
+    expect(distance).toBe(20);
   });
 
   it("ignores a blocked spot when the target is further out", () => {
     // Cannot happen with a correct sweep, but must not pull the camera in.
-    expect(updateCameraDistance(2, 4.5, true, 0.1, 10, 6)).toBeCloseTo(2.6);
+    expect(updateCameraDistance(2, 4.5, true, 0.1, 10, 6, 0)).toBeCloseTo(2.6);
   });
 });
 
@@ -120,6 +134,24 @@ describe("fitCamera", () => {
     // At yaw 0 the view faces -Z, so the camera lies towards +Z.
     expect(backwards?.direction.z).toBeCloseTo(1);
     expect(backwards?.max).toBe(CAMERA_DISTANCE);
+  });
+
+  it("uses the distance chosen with the wheel, and sweeps that far", () => {
+    let sweptFor = 0;
+    const record: Sweep = (_origin, direction, max) => {
+      if (direction.z > 0.5) {
+        sweptFor = max;
+      }
+      return undefined;
+    };
+    expect(fitCamera(character, 0, 0, record, 7).distance).toBe(7);
+    expect(sweptFor).toBe(7);
+  });
+
+  it("still stops at an obstacle nearer than the chosen distance", () => {
+    const wallBehind: Sweep = (_origin, direction) => (direction.z > 0.5 ? 3 : undefined);
+    expect(fitCamera(character, 0, 0, wallBehind, 7).distance).toBe(3);
+    expect(fitCamera(character, 0, 0, wallBehind, 2).distance).toBe(2);
   });
 
   it("shortens the distance to where the backwards sweep stopped", () => {

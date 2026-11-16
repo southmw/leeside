@@ -46,6 +46,7 @@
   "debug.view": "View",
   "debug.view_value": "yaw {yaw}°, pitch {pitch}°",
   "debug.camera_distance": "Camera distance",
+  "debug.camera_distance_value": "{now} m (zoom {wanted})",
   "debug.metres": "{value} m",
   "debug.mouse_look": "Mouse look",
   "debug.move": "Move",

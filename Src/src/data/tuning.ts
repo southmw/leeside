@@ -42,3 +42,17 @@ export const CAMERA_RECOVER_SPEED = 6;
  * m/s. If the camera itself would be inside something, it moves in at once instead.
  */
 export const CAMERA_PULL_IN_SPEED = 10;
+
+/** Mouse wheel zoom: nearest and farthest camera distance in metres. */
+export const CAMERA_ZOOM_MIN = 1;
+export const CAMERA_ZOOM_MAX = 20;
+/**
+ * Each wheel notch multiplies or divides the distance by this. A ratio rather than a fixed
+ * step, so zooming feels the same close up and far out: about 21 notches from end to end.
+ */
+export const CAMERA_ZOOM_FACTOR = 1.15;
+/**
+ * The camera closes a gap to its target distance at this fraction of the gap per second, if
+ * that is faster than the fixed speeds above. Keeps a long zoom from taking seconds.
+ */
+export const CAMERA_FOLLOW_RATE = 6;

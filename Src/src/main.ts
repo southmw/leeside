@@ -25,6 +25,7 @@ import { createPhysicsSystem } from "./physics/physicsSystem";
 import { CHARACTER_SKIN, initPhysics, PhysicsWorld } from "./physics/physicsWorld";
 import { easeCameraLength, fitCamera, type Sweep, updateCameraDistance } from "./render/cameraCollision";
 import { computeCameraPose } from "./render/cameraRig";
+import { applyZoom } from "./render/cameraZoom";
 import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
 import { createLookHint } from "./ui/lookHint";
@@ -115,6 +116,8 @@ const movementSystem = createMovementSystem(world, physics);
 // The camera's current reach. It shrinks at once when something is in the way and grows back
 // gradually, so it is kept between frames.
 const cameraFit = { distance: CAMERA_DISTANCE, shoulderOffset: CAMERA_SHOULDER_OFFSET };
+/** How far back the player wants the camera, set with the mouse wheel. */
+let wantedCameraDistance = CAMERA_DISTANCE;
 let lastFrameSeconds = 0;
 const cameraSweep: Sweep = (origin, direction, maxDistance) =>
   physics.sweepSphere(origin, direction, maxDistance, CAMERA_COLLISION_RADIUS, player.body.handle);
@@ -148,6 +151,7 @@ startGameLoop({
     debug.view.pitch = player.view.pitch;
     debug.view.locked = mouse.locked;
     debug.camera.distance = cameraFit.distance;
+    debug.camera.wantedDistance = wantedCameraDistance;
     debug.camera.y = camera.position.y;
     debug.tick += 1;
     debug.simSeconds += dt;
@@ -160,7 +164,8 @@ startGameLoop({
     const drawnAt = player.renderable.object.position;
     const pending = localInput.pendingLook();
     const { yaw, pitch } = previewLook(player.view, pending.lookX, pending.lookY);
-    const fit = fitCamera(drawnAt, yaw, pitch, cameraSweep);
+    wantedCameraDistance = applyZoom(wantedCameraDistance, mouse.takeWheel());
+    const fit = fitCamera(drawnAt, yaw, pitch, cameraSweep, wantedCameraDistance);
     cameraFit.shoulderOffset = easeCameraLength(cameraFit.shoulderOffset, fit.shoulderOffset, lastFrameSeconds);
     // Where the camera would be if it stayed at its current distance, and whether that spot is free.
     const stayed = computeCameraPose(drawnAt, yaw, pitch, cameraFit).position;

@@ -1,7 +1,30 @@
+import { clamp } from "../core/math";
+
 /**
- * Mouse look. The browser only reports unbounded mouse movement while the pointer is locked
+ * Mouse look and wheel. The browser only reports unbounded mouse movement while the pointer is locked
  * to the page, which it allows after a click and which the player leaves with Esc.
  */
+
+/** `WheelEvent.deltaMode` values. */
+const DELTA_LINE = 1;
+const DELTA_PAGE = 2;
+/** What one notch of an ordinary mouse wheel reports, in pixels and in lines. */
+const PIXELS_PER_NOTCH = 100;
+const LINES_PER_NOTCH = 3;
+
+/**
+ * Converts a wheel event into notches (positive: rolled back, towards the player). Devices
+ * report in different units, and touchpads send a stream of small values, so the result is
+ * a fraction for those and never more than one notch per event.
+ */
+export function wheelNotches(deltaY: number, deltaMode: number): number {
+  if (!Number.isFinite(deltaY)) {
+    return 0;
+  }
+  const notches =
+    deltaMode === DELTA_PAGE ? Math.sign(deltaY) : deltaY / (deltaMode === DELTA_LINE ? LINES_PER_NOTCH : PIXELS_PER_NOTCH);
+  return clamp(notches, -1, 1);
+}
 
 /** The parts of the canvas and the document the mouse needs. Tests pass stand-ins. */
 export interface PointerLockCanvas {
@@ -11,7 +34,7 @@ export interface PointerLockCanvas {
 }
 export interface PointerLockDocument {
   readonly pointerLockElement: unknown;
-  addEventListener(type: string, listener: (event: Event) => void): void;
+  addEventListener(type: string, listener: (event: Event) => void, options?: { passive?: boolean }): void;
   removeEventListener(type: string, listener: (event: Event) => void): void;
 }
 
@@ -22,6 +45,12 @@ export interface Mouse {
   takeMovement(): { x: number; y: number };
   /** The movement collected so far, without resetting it. */
   peekMovement(): { x: number; y: number };
+  /**
+   * Returns how far the wheel was rolled since the previous call, in notches (positive:
+   * rolled back, towards the player), and resets it. Counted while locked, or whenever the
+   * pointer is over the game.
+   */
+  takeWheel(): number;
   /** Calls `listener` whenever the lock is gained or lost. */
   onLockChange(listener: (locked: boolean) => void): void;
   dispose(): void;
@@ -30,6 +59,7 @@ export interface Mouse {
 export function createMouse(canvas: PointerLockCanvas, doc: PointerLockDocument): Mouse {
   let x = 0;
   let y = 0;
+  let wheel = 0;
   const listeners: Array<(locked: boolean) => void> = [];
   const isLocked = (): boolean => doc.pointerLockElement === canvas;
 
@@ -46,6 +76,15 @@ export function createMouse(canvas: PointerLockCanvas, doc: PointerLockDocument)
       y += movementY;
     }
   };
+  const onWheel = (event: Event): void => {
+    // The wheel works with or without mouse look, as long as it is rolled over the game.
+    if (isLocked() || (event.target as unknown) === canvas) {
+      const { deltaY = 0, deltaMode = 0 } = event as WheelEvent;
+      wheel += wheelNotches(deltaY, deltaMode);
+      // Keep the page from scrolling or zooming under the game.
+      event.preventDefault();
+    }
+  };
   const onLockChange = (): void => {
     // Movement from before or after the lock must not turn the view later.
     x = 0;
@@ -58,6 +97,7 @@ export function createMouse(canvas: PointerLockCanvas, doc: PointerLockDocument)
   canvas.addEventListener("click", onClick);
   doc.addEventListener("mousemove", onMouseMove);
   doc.addEventListener("pointerlockchange", onLockChange);
+  doc.addEventListener("wheel", onWheel, { passive: false });
 
   return {
     get locked(): boolean {
@@ -72,6 +112,11 @@ export function createMouse(canvas: PointerLockCanvas, doc: PointerLockDocument)
     peekMovement() {
       return { x, y };
     },
+    takeWheel() {
+      const notches = wheel;
+      wheel = 0;
+      return notches;
+    },
     onLockChange(listener) {
       listeners.push(listener);
     },
@@ -79,6 +124,7 @@ export function createMouse(canvas: PointerLockCanvas, doc: PointerLockDocument)
       canvas.removeEventListener("click", onClick);
       doc.removeEventListener("mousemove", onMouseMove);
       doc.removeEventListener("pointerlockchange", onLockChange);
+      doc.removeEventListener("wheel", onWheel);
     },
   };
 }

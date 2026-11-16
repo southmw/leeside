@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createLocalInput } from "../../src/input/localInput";
-import { createMouse, type PointerLockCanvas, type PointerLockDocument } from "../../src/input/mouse";
+import { createMouse, type PointerLockCanvas, type PointerLockDocument, wheelNotches } from "../../src/input/mouse";
 import type { KeyboardTarget } from "../../src/input/keyboard";
 
 /** Stand-ins for the canvas and the document, with the pointer lock under the test's control. */
@@ -19,6 +19,13 @@ function setup() {
     click: () => canvasEvents.dispatchEvent(new Event("click")),
     move: (movementX: number, movementY: number) =>
       docEvents.dispatchEvent(Object.assign(new Event("mousemove"), { movementX, movementY })),
+    /** Rolls the wheel with the pointer over the game canvas, or over something else on the page. */
+    wheel(deltaY: number, deltaMode = 0, overGame = true) {
+      const event = Object.assign(new Event("wheel", { cancelable: true }), { deltaY, deltaMode });
+      Object.defineProperty(event, "target", { value: overGame ? canvas : {} });
+      docEvents.dispatchEvent(event);
+      return event;
+    },
     setLocked(locked: boolean) {
       lockElement = locked ? canvas : null;
       docEvents.dispatchEvent(new Event("pointerlockchange"));
@@ -80,6 +87,65 @@ describe("createMouse", () => {
     setLocked(true);
     setLocked(false);
     expect(listener.mock.calls).toEqual([[true], [false]]);
+  });
+});
+
+describe("wheelNotches", () => {
+  it("counts one notch for an ordinary wheel step, in pixels or in lines", () => {
+    expect(wheelNotches(100, 0)).toBe(1);
+    expect(wheelNotches(-100, 0)).toBe(-1);
+    expect(wheelNotches(3, 1)).toBe(1);
+    expect(wheelNotches(-1, 2)).toBe(-1);
+  });
+
+  it("gives a fraction for the small steps a touchpad sends", () => {
+    expect(wheelNotches(4, 0)).toBeCloseTo(0.04);
+  });
+
+  it("never counts more than one notch per event", () => {
+    expect(wheelNotches(1200, 0)).toBe(1);
+    expect(wheelNotches(-50, 1)).toBe(-1);
+  });
+
+  it("ignores values that are not numbers", () => {
+    expect(wheelNotches(Number.NaN, 0)).toBe(0);
+  });
+});
+
+describe("mouse wheel", () => {
+  it("adds up notches while locked and hands them out once", () => {
+    const { mouse, wheel, setLocked } = setup();
+    setLocked(true);
+    wheel(100);
+    wheel(100);
+    wheel(-100);
+    expect(mouse.takeWheel()).toBe(1);
+    expect(mouse.takeWheel()).toBe(0);
+  });
+
+  it("keeps the page from scrolling while locked", () => {
+    const { wheel, setLocked } = setup();
+    setLocked(true);
+    expect(wheel(100).defaultPrevented).toBe(true);
+  });
+
+  it("works without mouse look when rolled over the game", () => {
+    const { mouse, wheel } = setup();
+    expect(wheel(100).defaultPrevented).toBe(true);
+    expect(mouse.takeWheel()).toBe(1);
+  });
+
+  it("leaves the wheel to the page when rolled over something else without mouse look", () => {
+    const { mouse, wheel } = setup();
+    expect(wheel(100, 0, false).defaultPrevented).toBe(false);
+    expect(mouse.takeWheel()).toBe(0);
+  });
+
+  it("counts the wheel wherever the pointer is while locked", () => {
+    const { mouse, wheel, setLocked } = setup();
+    setLocked(true);
+    wheel(100, 0, false);
+    expect(mouse.takeWheel()).toBe(1);
   });
 });
 

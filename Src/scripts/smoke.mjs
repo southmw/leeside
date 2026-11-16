@@ -235,6 +235,21 @@ try {
     const hint = page.locator("#look-hint");
     check("the click hint is shown before mouse look", await hint.isVisible());
 
+    // The wheel zooms even before the click, as long as the pointer is over the game.
+    await page.mouse.move(640, 360);
+    for (let i = 0; i < 30; i += 1) {
+      await page.mouse.wheel(0, 100);
+    }
+    await page.waitForTimeout(1500);
+    const farOut = await page.evaluate(() => ({ ...window.__game.camera }));
+    check(
+      "the wheel zooms without mouse look, out to 20 m",
+      farOut.wantedDistance === 20 && Math.abs(farOut.distance - 20) < 0.05,
+      `wanted ${farOut.wantedDistance.toFixed(2)} m, now ${farOut.distance.toFixed(2)} m`,
+    );
+    await page.reload({ waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+
     await page.mouse.click(640, 360);
     let locked = true;
     try {
@@ -276,6 +291,27 @@ try {
       await page.waitForTimeout(1500);
       const lookingDown = await cameraNow();
       check("the camera moves back out when nothing is in the way", Math.abs(lookingDown.distance - 4.5) < 0.01, `distance ${lookingDown.distance.toFixed(2)} m`);
+
+      // The wheel zooms: back moves the camera away, forward brings it closer, within 2 to 8 m.
+      await page.mouse.wheel(0, 100);
+      await page.mouse.wheel(0, 100);
+      await page.waitForTimeout(600);
+      const zoomedOut = await cameraNow();
+      check(
+        "rolling the wheel back moves the camera away",
+        Math.abs(zoomedOut.wantedDistance - 4.5 * 1.15 ** 2) < 0.01 && Math.abs(zoomedOut.distance - zoomedOut.wantedDistance) < 0.05,
+        `wanted ${zoomedOut.wantedDistance.toFixed(2)} m, now ${zoomedOut.distance.toFixed(2)} m`,
+      );
+      for (let i = 0; i < 15; i += 1) {
+        await page.mouse.wheel(0, -100);
+      }
+      await page.waitForTimeout(800);
+      const zoomedIn = await cameraNow();
+      check(
+        "rolling the wheel forward stops at the nearest distance",
+        zoomedIn.wantedDistance === 1 && Math.abs(zoomedIn.distance - 1) < 0.05,
+        `wanted ${zoomedIn.wantedDistance.toFixed(2)} m, now ${zoomedIn.distance.toFixed(2)} m`,
+      );
 
       // Facing right of -Z, forward must now carry the character towards +X as well.
       const before = await page.evaluate(() => ({ ...window.__game.player }));

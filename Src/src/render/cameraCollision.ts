@@ -1,5 +1,6 @@
 import {
   CAMERA_DISTANCE,
+  CAMERA_FOLLOW_RATE,
   CAMERA_MIN_DISTANCE,
   CAMERA_PIVOT_HEIGHT,
   CAMERA_PULL_IN_SPEED,
@@ -39,8 +40,15 @@ export interface CameraFit {
  * Finds the camera distance and shoulder offset that fit the surroundings. Two sweeps: first
  * sideways from above the character to the shoulder point, because that point can itself be
  * inside a wall the character stands next to; then backwards from there to the camera.
+ * `wantedDistance` is how far back the player wants the camera (the wheel zoom).
  */
-export function fitCamera(character: Point, yaw: number, pitch: number, sweep: Sweep): CameraFit {
+export function fitCamera(
+  character: Point,
+  yaw: number,
+  pitch: number,
+  sweep: Sweep,
+  wantedDistance: number = CAMERA_DISTANCE,
+): CameraFit {
   const { forward, right } = viewAxes(yaw, pitch);
   const head = { x: character.x, y: character.y + CAMERA_PIVOT_HEIGHT, z: character.z };
 
@@ -50,8 +58,8 @@ export function fitCamera(character: Point, yaw: number, pitch: number, sweep: S
   );
   const shoulder = { x: head.x + right.x * shoulderOffset, y: head.y, z: head.z + right.z * shoulderOffset };
   const distance = limitDistance(
-    CAMERA_DISTANCE,
-    sweep(shoulder, { x: -forward.x, y: -forward.y, z: -forward.z }, CAMERA_DISTANCE),
+    wantedDistance,
+    sweep(shoulder, { x: -forward.x, y: -forward.y, z: -forward.z }, wantedDistance),
     CAMERA_MIN_DISTANCE,
   );
   return { distance, shoulderOffset };
@@ -75,15 +83,18 @@ export function updateCameraDistance(
   dtSeconds: number,
   pullInSpeed: number = CAMERA_PULL_IN_SPEED,
   recoverSpeed: number = CAMERA_RECOVER_SPEED,
+  followRate: number = CAMERA_FOLLOW_RATE,
 ): number {
   const dt = Math.max(dtSeconds, 0);
+  // A large gap (a long zoom) is closed faster than the fixed speed, in proportion to its size.
+  const gap = Math.abs(target - current);
   if (target >= current) {
-    return Math.min(target, current + recoverSpeed * dt);
+    return Math.min(target, current + Math.max(recoverSpeed, gap * followRate) * dt);
   }
   if (blockedHere) {
     return target;
   }
-  return Math.max(target, current - pullInSpeed * dt);
+  return Math.max(target, current - Math.max(pullInSpeed, gap * followRate) * dt);
 }
 
 /**
