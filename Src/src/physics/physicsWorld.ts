@@ -93,6 +93,21 @@ export class PhysicsWorld {
   }
 
   /**
+   * Adds immovable terrain from triangles: `positions` holds x, y, z per vertex and `indices`
+   * three vertices per triangle. Contacts are corrected along the edges between triangles, so
+   * a character crossing them is not tripped by the seams.
+   */
+  addStaticMesh(positions: Float32Array, indices: Uint32Array): number {
+    const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+    this.world.createCollider(
+      RAPIER.ColliderDesc.trimesh(positions, indices, RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES),
+      body,
+    );
+    this.queriesStale = true;
+    return body.handle;
+  }
+
+  /**
    * Adds an upright capsule that is moved with `moveCharacter` instead of by forces.
    * `center` is the middle of the capsule, so standing on ground at height h means
    * h + height / 2 + CHARACTER_SKIN.

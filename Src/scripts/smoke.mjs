@@ -92,7 +92,7 @@ try {
     check("frames keep rendering", later.frame > first.frame, `frame ${first.frame} -> ${later.frame}`);
     check("simulation keeps stepping", later.tick > first.tick, `tick ${first.tick} -> ${later.tick}`);
     check("world has entities", first.entityCount >= 1, `${first.entityCount} entities`);
-    check("physics world has the floor, the props and the player", first.bodyCount === 8, `${first.bodyCount} bodies`);
+    check("physics world has the terrain and the player", first.bodyCount === 2, `${first.bodyCount} bodies`);
     check(
       "drawing buffer matches the window",
       first.canvas.width >= 1280 && first.canvas.height >= 720,
@@ -145,7 +145,13 @@ try {
     await page.keyboard.up("KeyD");
     const movedRight = await readPlayer();
     check("D walks the character right", movedRight.x > movedBack.x + 0.5, `x ${movedBack.x.toFixed(2)} -> ${movedRight.x.toFixed(2)}`);
-    check("the character stays on the ground", Math.abs(movedRight.y - startedAt.y) < 0.03, `y ${movedRight.y.toFixed(3)}`);
+    // The capsule's centre rides 0.92 m above the terrain (half its height plus the skin).
+    const clearance = movedRight.y - movedRight.groundHeight;
+    check(
+      "the character follows the terrain",
+      movedRight.grounded && Math.abs(clearance - 0.92) < 0.1,
+      `${clearance.toFixed(3)} m above terrain at height ${movedRight.groundHeight.toFixed(2)}`,
+    );
 
     // Jumping: the character leaves the ground, rises close to the jump height (1.1 m) and
     // lands where it started.
@@ -263,7 +269,7 @@ try {
       const lookingUp = await cameraNow();
       check(
         "the ground stops the camera when looking up",
-        lookingUp.distance < 3 && lookingUp.y > 0.1,
+        lookingUp.distance < 3 && lookingUp.y > (await page.evaluate(() => window.__game.player.groundHeight)) - 0.5,
         `distance ${lookingUp.distance.toFixed(2)} m, height ${lookingUp.y.toFixed(2)} m`,
       );
       await page.mouse.move(1040, 3000, { steps: 8 });
@@ -285,34 +291,42 @@ try {
     }
   }
 
-  // Obstacles: from a fresh start, walking forward runs into the box, and pushing into it at
-  // an angle slides past it. The box's near face is at z = -3.25 and the capsule's radius is
-  // 0.35, so a blocked character stops with its centre near z = -2.9.
+  // Terrain: walking down the bank into the riverbed and back up the other side, the
+  // character stays on the surface the whole way. Start on the west bank, heading east.
   {
     await page.goto(url, { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
-    const playerNow = () => page.evaluate(() => ({ ...window.__game.player }));
-    // Let the box land first.
-    await page.waitForFunction(() => window.__game.simSeconds > 2, undefined, { timeout: 15_000 });
-
-    await page.keyboard.down("KeyW");
-    await page.waitForFunction(() => window.__game.simSeconds > 5, undefined, { timeout: 30_000 });
-    const blocked = await playerNow();
-    check(
-      "the box blocks the character",
-      blocked.z < -2.7 && blocked.z > -3.0 && Math.abs(blocked.x) < 0.05,
-      `stopped at x ${blocked.x.toFixed(2)}, z ${blocked.z.toFixed(2)}`,
-    );
-
+    await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
+    await page.evaluate(() => {
+      window.__smokeTerrain = { worst: 0, lowest: Infinity, highest: -Infinity, airborne: 0, samples: 0 };
+      window.__smokeTimer = setInterval(() => {
+        const { y, groundHeight, grounded } = window.__game.player;
+        const record = window.__smokeTerrain;
+        record.worst = Math.max(record.worst, Math.abs(y - groundHeight - 0.92));
+        record.lowest = Math.min(record.lowest, groundHeight);
+        record.highest = Math.max(record.highest, groundHeight);
+        record.airborne += grounded ? 0 : 1;
+        record.samples += 1;
+      }, 8);
+    });
+    const startX = await page.evaluate(() => window.__game.player.x);
     await page.keyboard.down("KeyD");
-    await page.waitForFunction(() => window.__game.simSeconds > 6.5, undefined, { timeout: 30_000 });
+    // East from the middle of the riverbed, up the bank and onto the plain: about 45 m.
+    await page.waitForFunction((x) => window.__game.player.x > x + 45, startX, { timeout: 60_000 });
     await page.keyboard.up("KeyD");
-    await page.keyboard.up("KeyW");
-    const slid = await playerNow();
+    const walk = await page.evaluate(() => {
+      clearInterval(window.__smokeTimer);
+      return window.__smokeTerrain;
+    });
     check(
-      "pushing at an angle slides past the box",
-      slid.x > 1.1 && slid.z < -3.5,
-      `reached x ${slid.x.toFixed(2)}, z ${slid.z.toFixed(2)}`,
+      "the walk climbs out of the riverbed",
+      walk.highest - walk.lowest > 1.5,
+      `terrain from ${walk.lowest.toFixed(2)} to ${walk.highest.toFixed(2)} m`,
+    );
+    check(
+      "the character neither sinks into the terrain nor floats above it",
+      walk.worst < 0.15 && walk.airborne <= walk.samples * 0.02,
+      `off by at most ${walk.worst.toFixed(3)} m, airborne in ${walk.airborne} of ${walk.samples} samples`,
     );
 
     // Opening the context menu swallows the key-up, which would leave the key stuck down.

@@ -7,6 +7,8 @@
 
   "hint.click_to_look": "Click to look around with the mouse (Esc to release)",
 
+  "zone.dry_riverbed.name": "Dry Riverbed",
+
   "quality.low": "Low",
   "quality.high": "High",
 
@@ -35,6 +37,7 @@
   "debug.entities": "Entities",
   "debug.bodies": "Physics bodies",
   "debug.position": "Player position",
+  "debug.ground_height": "Terrain height",
   "debug.grounded": "On ground",
   "debug.tick": "Tick",
   "debug.sim_time": "Sim time",

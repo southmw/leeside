@@ -1,26 +1,17 @@
 import {
   AmbientLight,
-  BoxGeometry,
   CapsuleGeometry,
   Color,
   DirectionalLight,
   Mesh,
   MeshStandardMaterial,
-  PlaneGeometry,
   Scene,
 } from "three";
 
-/** Placeholder scene used until zones exist (step 1.9): a floor and two lights. */
+/** Placeholder sky colour and lights, until the sky and weather exist (M2). */
 export function createTestScene(): Scene {
   const scene = new Scene();
   scene.background = new Color(0x8f9aa3);
-
-  const floor = new Mesh(
-    new PlaneGeometry(60, 60),
-    new MeshStandardMaterial({ color: 0xb9a57c, roughness: 1 }),
-  );
-  floor.rotation.x = -Math.PI / 2;
-  scene.add(floor);
 
   scene.add(new AmbientLight(0xffffff, 0.7));
 
@@ -29,33 +20,6 @@ export function createTestScene(): Scene {
   scene.add(sun);
 
   return scene;
-}
-
-/** Placeholder box mesh. It enters the scene through an entity, not directly. */
-export function createBoxMesh(): Mesh {
-  return new Mesh(
-    new BoxGeometry(1.5, 1.5, 1.5),
-    new MeshStandardMaterial({ color: 0xc2643b, roughness: 0.8 }),
-  );
-}
-
-/**
- * Placeholder ramp or platform: a box tilted around the X axis by `pitch` radians. It is
- * added to the scene directly, because an entity's transform cannot express a tilt.
- */
-export function createStaticBoxMesh(
-  center: { x: number; y: number; z: number },
-  halfExtents: { x: number; y: number; z: number },
-  pitch: number,
-  color: number,
-): Mesh {
-  const mesh = new Mesh(
-    new BoxGeometry(halfExtents.x * 2, halfExtents.y * 2, halfExtents.z * 2),
-    new MeshStandardMaterial({ color, roughness: 0.9 }),
-  );
-  mesh.position.set(center.x, center.y, center.z);
-  mesh.rotation.x = pitch;
-  return mesh;
 }
 
 /** Placeholder character: a capsule the size of the player's collider. */

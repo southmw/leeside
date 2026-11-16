@@ -7,6 +7,8 @@
 
   "hint.click_to_look": "화면을 클릭하면 마우스로 시점을 돌립니다 (Esc로 해제)",
 
+  "zone.dry_riverbed.name": "마른 강바닥",
+
   "quality.low": "낮음",
   "quality.high": "높음",
 
@@ -35,6 +37,7 @@
   "debug.entities": "엔티티",
   "debug.bodies": "물리 객체",
   "debug.position": "플레이어 위치",
+  "debug.ground_height": "지형 높이",
   "debug.grounded": "땅에 닿음",
   "debug.tick": "틱",
   "debug.sim_time": "시뮬레이션 시간",

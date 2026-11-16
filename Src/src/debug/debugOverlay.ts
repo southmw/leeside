@@ -180,6 +180,7 @@ export function createDebugOverlay(
         { label: t("debug.entities"), value: integer(debug.entityCount) },
         { label: t("debug.bodies"), value: integer(debug.bodyCount) },
         { label: t("debug.position"), value: `${fixed(player.x, 2)}, ${fixed(player.y, 2)}, ${fixed(player.z, 2)}` },
+        { label: t("debug.ground_height"), value: t("debug.metres", { value: fixed(player.groundHeight, 2) }) },
         { label: t("debug.grounded"), value: t(player.grounded ? "common.yes" : "common.no") },
         { label: t("debug.tick"), value: integer(debug.tick) },
         { label: t("debug.sim_time"), value: t("debug.sim_time_value", { seconds: fixed(debug.simSeconds, 1) }) },

@@ -48,8 +48,11 @@ export interface GameDebug {
   entityCount: number;
   /** Number of bodies in the physics world, static ones included. */
   bodyCount: number;
-  /** The local player's character: position of the capsule's centre in metres, and whether it stands on something. */
-  player: { x: number; y: number; z: number; grounded: boolean };
+  /**
+   * The local player's character: position of the capsule's centre in metres, whether it
+   * stands on something, and the height of the terrain under it.
+   */
+  player: { x: number; y: number; z: number; grounded: boolean; groundHeight: number };
   /** The local player's view in radians, and whether mouse movement currently turns it. */
   view: { yaw: number; pitch: number; locked: boolean };
   /** The camera: its current distance behind the character's shoulder, and its height, in metres. */
@@ -78,7 +81,7 @@ export function installDebugApi(language: Language): GameDebug {
     simSeconds: 0,
     entityCount: 0,
     bodyCount: 0,
-    player: { x: 0, y: 0, z: 0, grounded: false },
+    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0 },
     view: { yaw: 0, pitch: 0, locked: false },
     camera: { distance: 0, y: 0 },
     input: createEmptyActions(),
