@@ -42,6 +42,8 @@
   "debug.language": "언어",
   "debug.view": "시점",
   "debug.view_value": "좌우 {yaw}°, 상하 {pitch}°",
+  "debug.camera_distance": "카메라 거리",
+  "debug.metres": "{value} m",
   "debug.mouse_look": "마우스 시점",
   "debug.move": "이동",
   "debug.buttons": "버튼",

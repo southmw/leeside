@@ -255,6 +255,22 @@ try {
         `pitch ${((lookedDown.pitch * 180) / Math.PI).toFixed(1)} degrees`,
       );
 
+      // Looking up swings the camera down towards the ground, which must stop it: the camera
+      // comes closer instead of going under the floor, and moves back out afterwards.
+      const cameraNow = () => page.evaluate(() => ({ ...window.__game.camera }));
+      await page.mouse.move(1040, -3000, { steps: 8 });
+      await page.waitForTimeout(300);
+      const lookingUp = await cameraNow();
+      check(
+        "the ground stops the camera when looking up",
+        lookingUp.distance < 3 && lookingUp.y > 0.1,
+        `distance ${lookingUp.distance.toFixed(2)} m, height ${lookingUp.y.toFixed(2)} m`,
+      );
+      await page.mouse.move(1040, 3000, { steps: 8 });
+      await page.waitForTimeout(1500);
+      const lookingDown = await cameraNow();
+      check("the camera moves back out when nothing is in the way", Math.abs(lookingDown.distance - 4.5) < 0.01, `distance ${lookingDown.distance.toFixed(2)} m`);
+
       // Facing right of -Z, forward must now carry the character towards +X as well.
       const before = await page.evaluate(() => ({ ...window.__game.player }));
       await page.keyboard.down("KeyW");

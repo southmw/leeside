@@ -190,6 +190,7 @@ export function createDebugOverlay(
           label: t("debug.view"),
           value: t("debug.view_value", { yaw: degrees(view.yaw), pitch: degrees(view.pitch) }),
         },
+        { label: t("debug.camera_distance"), value: t("debug.metres", { value: fixed(debug.camera.distance, 2) }) },
         { label: t("debug.mouse_look"), value: t(view.locked ? "common.yes" : "common.no") },
         { label: t("debug.move"), value: `${fixed(input.moveX, 2)}, ${fixed(input.moveY, 2)}` },
         {

@@ -30,3 +30,15 @@ export const LOOK_UP_LIMIT_DEGREES = 70;
 
 /** Default mouse sensitivity: radians of turn per pixel of mouse movement. */
 export const MOUSE_SENSITIVITY = 0.0025;
+
+/** Radius of the sphere swept from the character to the camera to find obstacles, in metres. */
+export const CAMERA_COLLISION_RADIUS = 0.2;
+/** The camera never comes closer to its pivot than this, in metres. */
+export const CAMERA_MIN_DISTANCE = 0.3;
+/** How fast the camera moves back out once an obstacle is gone, in m/s. */
+export const CAMERA_RECOVER_SPEED = 6;
+/**
+ * How fast the camera closes in when something merely blocks its view of the character, in
+ * m/s. If the camera itself would be inside something, it moves in at once instead.
+ */
+export const CAMERA_PULL_IN_SPEED = 10;

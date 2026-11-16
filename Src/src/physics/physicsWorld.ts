@@ -207,6 +207,45 @@ export class PhysicsWorld {
     return true;
   }
 
+  /**
+   * Sweeps a sphere from `origin` along the unit vector `direction` and returns how far its
+   * centre travels before the sphere touches something, or undefined if it travels
+   * `maxDistance` freely. `ignoreBody` is left out of the test (the character the camera
+   * belongs to, for example). Sees the world as of the last step.
+   */
+  sweepSphere(origin: Vec3, direction: Vec3, maxDistance: number, radius: number, ignoreBody?: number): number | undefined {
+    const ignored = ignoreBody === undefined ? undefined : (this.world.getRigidBody(ignoreBody) ?? undefined);
+    const hit = this.world.castShape(
+      origin,
+      { x: 0, y: 0, z: 0, w: 1 },
+      direction,
+      new RAPIER.Ball(radius),
+      0,
+      maxDistance,
+      true,
+      undefined,
+      undefined,
+      undefined,
+      ignored,
+    );
+    return hit ? hit.time_of_impact : undefined;
+  }
+
+  /** Whether a sphere at `center` touches anything, leaving out `ignoreBody`. Sees the world as of the last step. */
+  overlapsSphere(center: Vec3, radius: number, ignoreBody?: number): boolean {
+    const ignored = ignoreBody === undefined ? undefined : (this.world.getRigidBody(ignoreBody) ?? undefined);
+    const hit = this.world.intersectionWithShape(
+      center,
+      { x: 0, y: 0, z: 0, w: 1 },
+      new RAPIER.Ball(radius),
+      undefined,
+      undefined,
+      undefined,
+      ignored,
+    );
+    return hit !== null;
+  }
+
   /** Speed of a body in m/s, or 0 if it does not exist. */
   speedOf(handle: number): number {
     const velocity = this.world.getRigidBody(handle)?.linvel();

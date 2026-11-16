@@ -18,6 +18,17 @@ export interface CameraRigOptions {
   pivotHeight?: number;
 }
 
+/** Unit vector the view faces along, and the horizontal unit vector to its right. */
+export function viewAxes(yaw: number, pitch: number): { forward: Point; right: { x: number; z: number } } {
+  const sinYaw = Math.sin(yaw);
+  const cosYaw = Math.cos(yaw);
+  const cosPitch = Math.cos(pitch);
+  return {
+    forward: { x: -sinYaw * cosPitch, y: Math.sin(pitch), z: -cosYaw * cosPitch },
+    right: { x: cosYaw, z: -sinYaw },
+  };
+}
+
 /**
  * Third-person camera placement as plain arithmetic: the camera sits `distance` behind a
  * pivot above the character, shifted to the right, and looks along the view direction, so
@@ -33,12 +44,7 @@ export function computeCameraPose(
   const shoulderOffset = options.shoulderOffset ?? CAMERA_SHOULDER_OFFSET;
   const pivotHeight = options.pivotHeight ?? CAMERA_PIVOT_HEIGHT;
 
-  const sinYaw = Math.sin(yaw);
-  const cosYaw = Math.cos(yaw);
-  const cosPitch = Math.cos(pitch);
-  // Unit vector the view faces along, and the horizontal unit vector to its right.
-  const forward = { x: -sinYaw * cosPitch, y: Math.sin(pitch), z: -cosYaw * cosPitch };
-  const right = { x: cosYaw, z: -sinYaw };
+  const { forward, right } = viewAxes(yaw, pitch);
 
   const position = {
     x: character.x + right.x * shoulderOffset - forward.x * distance,

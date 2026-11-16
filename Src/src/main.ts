@@ -6,7 +6,13 @@ import type { DevLog } from "./debug/devLog";
 import { FrameStats } from "./debug/frameStats";
 import { readHeapMb } from "./debug/memory";
 import { SectionTimer } from "./debug/sectionTimer";
-import { CHARACTER_HEIGHT, CHARACTER_RADIUS } from "./data/tuning";
+import {
+  CAMERA_COLLISION_RADIUS,
+  CAMERA_DISTANCE,
+  CAMERA_SHOULDER_OFFSET,
+  CHARACTER_HEIGHT,
+  CHARACTER_RADIUS,
+} from "./data/tuning";
 import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
 import { createView } from "./gameplay/view";
@@ -17,6 +23,7 @@ import { createMouse } from "./input/mouse";
 import { createI18n, detectLanguage } from "./locales/i18n";
 import { createPhysicsSystem } from "./physics/physicsSystem";
 import { CHARACTER_SKIN, initPhysics, PhysicsWorld } from "./physics/physicsWorld";
+import { easeCameraLength, fitCamera, type Sweep, updateCameraDistance } from "./render/cameraCollision";
 import { computeCameraPose } from "./render/cameraRig";
 import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
@@ -136,11 +143,19 @@ const inputSystem = createInputSystem(world, createLocalInput({ mouse }));
 const lookSystem = createLookSystem(world);
 const movementSystem = createMovementSystem(world, physics);
 
+// The camera's current reach. It shrinks at once when something is in the way and grows back
+// gradually, so it is kept between frames.
+const cameraFit = { distance: CAMERA_DISTANCE, shoulderOffset: CAMERA_SHOULDER_OFFSET };
+let lastFrameSeconds = 0;
+const cameraSweep: Sweep = (origin, direction, maxDistance) =>
+  physics.sweepSphere(origin, direction, maxDistance, CAMERA_COLLISION_RADIUS, player.body.handle);
+
 fitToWindow(renderer, camera);
 window.addEventListener("resize", () => fitToWindow(renderer, camera));
 
 startGameLoop({
   onFrame(frameMs, nowMs) {
+    lastFrameSeconds = frameMs / 1000;
     frameStats.add(frameMs);
     overlay?.update(nowMs);
     devLog?.update(nowMs);
@@ -161,13 +176,22 @@ startGameLoop({
     debug.view.yaw = player.view.yaw;
     debug.view.pitch = player.view.pitch;
     debug.view.locked = mouse.locked;
+    debug.camera.distance = cameraFit.distance;
+    debug.camera.y = camera.position.y;
     debug.tick += 1;
     debug.simSeconds += dt;
   },
   render() {
     sectionTimer.begin("render");
     renderSync.sync();
-    const pose = computeCameraPose(player.transform, player.view.yaw, player.view.pitch);
+    const { yaw, pitch } = player.view;
+    const fit = fitCamera(player.transform, yaw, pitch, cameraSweep);
+    cameraFit.shoulderOffset = easeCameraLength(cameraFit.shoulderOffset, fit.shoulderOffset, lastFrameSeconds);
+    // Where the camera would be if it stayed at its current distance, and whether that spot is free.
+    const stayed = computeCameraPose(player.transform, yaw, pitch, cameraFit).position;
+    const blockedHere = physics.overlapsSphere(stayed, CAMERA_COLLISION_RADIUS, player.body.handle);
+    cameraFit.distance = updateCameraDistance(cameraFit.distance, fit.distance, blockedHere, lastFrameSeconds);
+    const pose = computeCameraPose(player.transform, yaw, pitch, cameraFit);
     camera.position.set(pose.position.x, pose.position.y, pose.position.z);
     camera.lookAt(pose.target.x, pose.target.y, pose.target.z);
     renderer.render(scene, camera);
