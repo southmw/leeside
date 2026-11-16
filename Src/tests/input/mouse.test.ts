@@ -50,6 +50,15 @@ describe("createMouse", () => {
     expect(mouse.takeMovement()).toEqual({ x: 0, y: 0 });
   });
 
+  it("can be read without being reset", () => {
+    const { mouse, move, setLocked } = setup();
+    setLocked(true);
+    move(3, 4);
+    expect(mouse.peekMovement()).toEqual({ x: 3, y: 4 });
+    expect(mouse.takeMovement()).toEqual({ x: 3, y: 4 });
+    expect(mouse.peekMovement()).toEqual({ x: 0, y: 0 });
+  });
+
   it("ignores movement while not locked", () => {
     const { mouse, move } = setup();
     move(50, 50);
@@ -96,6 +105,17 @@ describe("createLocalInput with a mouse", () => {
     expect(actions.lookX).toBeCloseTo(0.2);
     expect(actions.lookY).toBeCloseTo(-0.05);
     expect(input.sample().lookX).toBe(0);
+  });
+
+  it("reports look input that is waiting for the next sample", () => {
+    const { input, move, setLocked } = setupInput();
+    setLocked(true);
+    move(20, -5);
+    expect(input.pendingLook().lookX).toBeCloseTo(0.2);
+    expect(input.pendingLook().lookY).toBeCloseTo(-0.05);
+
+    input.sample();
+    expect(input.pendingLook()).toEqual({ lookX: 0, lookY: 0 });
   });
 
   it("releases held keys when mouse look ends", () => {

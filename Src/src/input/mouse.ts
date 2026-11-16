@@ -20,6 +20,8 @@ export interface Mouse {
   readonly locked: boolean;
   /** Returns the movement in pixels since the previous call (x: right, y: down) and resets it. */
   takeMovement(): { x: number; y: number };
+  /** The movement collected so far, without resetting it. */
+  peekMovement(): { x: number; y: number };
   /** Calls `listener` whenever the lock is gained or lost. */
   onLockChange(listener: (locked: boolean) => void): void;
   dispose(): void;
@@ -66,6 +68,9 @@ export function createMouse(canvas: PointerLockCanvas, doc: PointerLockDocument)
       x = 0;
       y = 0;
       return movement;
+    },
+    peekMovement() {
+      return { x, y };
     },
     onLockChange(listener) {
       listeners.push(listener);

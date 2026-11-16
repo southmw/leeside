@@ -62,6 +62,90 @@ describe("createRenderSync", () => {
     expect(object.rotation.y).toBeCloseTo(0.5);
   });
 
+  it("draws between the captured and the current transform", () => {
+    const world = createWorld();
+    const renderSync = createRenderSync(world, new Scene());
+    const object = new Object3D();
+    const entity = world.add({ transform: createTransform(0, 0, 0, 0), renderable: { object } });
+
+    renderSync.capture();
+    Object.assign(entity.transform, { x: 10, y: 2, z: -4, rotationY: 1 });
+
+    renderSync.sync(0);
+    expect(object.position.toArray()).toEqual([0, 0, 0]);
+
+    renderSync.sync(0.25);
+    expect(object.position.x).toBeCloseTo(2.5);
+    expect(object.position.y).toBeCloseTo(0.5);
+    expect(object.position.z).toBeCloseTo(-1);
+    expect(object.rotation.y).toBeCloseTo(0.25);
+
+    renderSync.sync(1);
+    expect(object.position.toArray()).toEqual([10, 2, -4]);
+  });
+
+  it("does not change the transform itself", () => {
+    const world = createWorld();
+    const renderSync = createRenderSync(world, new Scene());
+    const entity = world.add({ transform: createTransform(0, 0, 0), renderable: { object: new Object3D() } });
+    renderSync.capture();
+    entity.transform.x = 10;
+    renderSync.sync(0.5);
+    expect(entity.transform.x).toBe(10);
+  });
+
+  it("blends from the latest capture when several steps run before a frame", () => {
+    const world = createWorld();
+    const renderSync = createRenderSync(world, new Scene());
+    const object = new Object3D();
+    const entity = world.add({ transform: createTransform(0, 0, 0), renderable: { object } });
+
+    renderSync.capture();
+    entity.transform.x = 1;
+    renderSync.capture();
+    entity.transform.x = 2;
+
+    renderSync.sync(0.5);
+    expect(object.position.x).toBeCloseTo(1.5);
+  });
+
+  it("draws an entity that has not been through a step where it is", () => {
+    const world = createWorld();
+    const renderSync = createRenderSync(world, new Scene());
+    const object = new Object3D();
+    world.add({ transform: createTransform(5, 0, 0), renderable: { object } });
+
+    renderSync.sync(0.3);
+    expect(object.position.x).toBe(5);
+  });
+
+  it("turns the shorter way round", () => {
+    const world = createWorld();
+    const renderSync = createRenderSync(world, new Scene());
+    const object = new Object3D();
+    const entity = world.add({ transform: createTransform(0, 0, 0, Math.PI - 0.1), renderable: { object } });
+
+    renderSync.capture();
+    entity.transform.rotationY = -Math.PI + 0.1;
+    renderSync.sync(0.5);
+
+    // Half way across the +-PI seam, not half way back through zero.
+    expect(Math.abs(object.rotation.y)).toBeCloseTo(Math.PI);
+  });
+
+  it("does not slide an entity across a gap after snap", () => {
+    const world = createWorld();
+    const renderSync = createRenderSync(world, new Scene());
+    const object = new Object3D();
+    const entity = world.add({ transform: createTransform(0, 0, 0), renderable: { object } });
+
+    renderSync.capture();
+    entity.transform.x = 500;
+    renderSync.snap(entity);
+    renderSync.sync(0.5);
+    expect(object.position.x).toBe(500);
+  });
+
   it("stops tracking after dispose", () => {
     const world = createWorld();
     const scene = new Scene();

@@ -6,6 +6,11 @@ import type { Mouse } from "./mouse";
 export interface LocalInput {
   /** Reads the devices and returns this step's actions for the player at this machine. */
   sample(): PlayerActions;
+  /**
+   * Look input that has arrived since the last `sample` and will be part of the next one, in
+   * radians. Drawing adds it to the view, so the camera follows the mouse every frame.
+   */
+  pendingLook(): { lookX: number; lookY: number };
   dispose(): void;
 }
 
@@ -50,6 +55,10 @@ export function createLocalInput(options: LocalInputOptions = {}): LocalInput {
         actions.lookY = movement.y * sensitivity;
       }
       return actions;
+    },
+    pendingLook() {
+      const movement = mouse?.peekMovement() ?? { x: 0, y: 0 };
+      return { lookX: movement.x * sensitivity, lookY: movement.y * sensitivity };
     },
     dispose: () => keyboard.dispose(),
   };

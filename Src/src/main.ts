@@ -15,7 +15,7 @@ import {
 } from "./data/tuning";
 import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
-import { createView } from "./gameplay/view";
+import { createView, previewLook } from "./gameplay/view";
 import { createEmptyActions } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
 import { createLocalInput } from "./input/localInput";
@@ -139,7 +139,8 @@ const player = world.add({
 });
 const mouse = createMouse(canvas, document);
 createLookHint(mouse, i18n);
-const inputSystem = createInputSystem(world, createLocalInput({ mouse }));
+const localInput = createLocalInput({ mouse });
+const inputSystem = createInputSystem(world, localInput);
 const lookSystem = createLookSystem(world);
 const movementSystem = createMovementSystem(world, physics);
 
@@ -162,6 +163,7 @@ startGameLoop({
   },
   update(dt) {
     sectionTimer.begin("sim");
+    renderSync.capture();
     inputSystem();
     lookSystem();
     movementSystem(dt);
@@ -181,17 +183,21 @@ startGameLoop({
     debug.tick += 1;
     debug.simSeconds += dt;
   },
-  render() {
+  render(alpha) {
     sectionTimer.begin("render");
-    renderSync.sync();
-    const { yaw, pitch } = player.view;
-    const fit = fitCamera(player.transform, yaw, pitch, cameraSweep);
+    renderSync.sync(alpha);
+    // The camera follows the character where it is drawn, not where the simulation has it,
+    // and shows mouse movement that the next step has yet to apply.
+    const drawnAt = player.renderable.object.position;
+    const pending = localInput.pendingLook();
+    const { yaw, pitch } = previewLook(player.view, pending.lookX, pending.lookY);
+    const fit = fitCamera(drawnAt, yaw, pitch, cameraSweep);
     cameraFit.shoulderOffset = easeCameraLength(cameraFit.shoulderOffset, fit.shoulderOffset, lastFrameSeconds);
     // Where the camera would be if it stayed at its current distance, and whether that spot is free.
-    const stayed = computeCameraPose(player.transform, yaw, pitch, cameraFit).position;
+    const stayed = computeCameraPose(drawnAt, yaw, pitch, cameraFit).position;
     const blockedHere = physics.overlapsSphere(stayed, CAMERA_COLLISION_RADIUS, player.body.handle);
     cameraFit.distance = updateCameraDistance(cameraFit.distance, fit.distance, blockedHere, lastFrameSeconds);
-    const pose = computeCameraPose(player.transform, yaw, pitch, cameraFit);
+    const pose = computeCameraPose(drawnAt, yaw, pitch, cameraFit);
     camera.position.set(pose.position.x, pose.position.y, pose.position.z);
     camera.lookAt(pose.target.x, pose.target.y, pose.target.z);
     renderer.render(scene, camera);

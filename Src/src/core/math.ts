@@ -20,3 +20,17 @@ export function lerp(a: number, b: number, t: number): number {
 export function yawFromQuaternion(q: { x: number; y: number; z: number; w: number }): number {
   return Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y));
 }
+
+/** Wraps an angle in radians into -PI..PI. */
+export function wrapAngle(angle: number): number {
+  const turn = 2 * Math.PI;
+  return angle - turn * Math.floor((angle + Math.PI) / turn);
+}
+
+/**
+ * Interpolates between two angles in radians along the shorter way round, so going from
+ * just below PI to just above -PI is a small step and not almost a full turn back.
+ */
+export function lerpAngle(a: number, b: number, t: number): number {
+  return a + wrapAngle(b - a) * t;
+}

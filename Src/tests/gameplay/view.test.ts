@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyLook, createView, MAX_PITCH, MIN_PITCH, moveDirection, wrapAngle } from "../../src/gameplay/view";
+import { wrapAngle } from "../../src/core/math";
+import { applyLook, createView, MAX_PITCH, MIN_PITCH, moveDirection, previewLook } from "../../src/gameplay/view";
 
 const DEGREES = Math.PI / 180;
 
@@ -36,6 +37,17 @@ describe("applyLook", () => {
     }
     expect(Math.abs(view.yaw)).toBeLessThanOrEqual(Math.PI);
     expect(wrapAngle(view.yaw - wrapAngle(-500))).toBeCloseTo(0);
+  });
+});
+
+describe("previewLook", () => {
+  it("gives the same result as applying the look, and leaves the view alone", () => {
+    const view = createView(0.3, 0.1);
+    const preview = previewLook(view, 0.2, 5);
+    expect(view).toEqual({ yaw: 0.3, pitch: 0.1 });
+
+    applyLook(view, 0.2, 5);
+    expect(preview).toEqual(view);
   });
 });
 

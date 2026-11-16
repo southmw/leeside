@@ -1,4 +1,4 @@
-import { clamp } from "../core/math";
+import { clamp, wrapAngle } from "../core/math";
 import { LOOK_DOWN_LIMIT_DEGREES, LOOK_UP_LIMIT_DEGREES } from "../data/tuning";
 
 /**
@@ -23,12 +23,6 @@ export function createView(yaw = 0, pitch = 0): View {
   return { yaw, pitch };
 }
 
-/** Wraps an angle into -PI..PI, so it never grows without bound. */
-export function wrapAngle(angle: number): number {
-  const turn = 2 * Math.PI;
-  return angle - turn * Math.floor((angle + Math.PI) / turn);
-}
-
 /**
  * Turns the view. `lookX` is radians to the right and `lookY` radians downwards, the way a
  * mouse moves. Pitch stops at its limits.
@@ -36,6 +30,16 @@ export function wrapAngle(angle: number): number {
 export function applyLook(view: View, lookX: number, lookY: number): void {
   view.yaw = wrapAngle(view.yaw - lookX);
   view.pitch = clamp(view.pitch - lookY, MIN_PITCH, MAX_PITCH);
+}
+
+/**
+ * The view as it will be once `lookX` and `lookY` have been applied, without changing `view`.
+ * Drawing uses it to show mouse movement at once instead of waiting for the next step.
+ */
+export function previewLook(view: View, lookX: number, lookY: number): View {
+  const preview = { yaw: view.yaw, pitch: view.pitch };
+  applyLook(preview, lookX, lookY);
+  return preview;
 }
 
 /**
