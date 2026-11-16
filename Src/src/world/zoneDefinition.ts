@@ -141,6 +141,14 @@ export const zoneDefinitionSchema = z
       });
     }
 
+    zone.buildings.forEach((building, index) => {
+      const [width, depth] = building.size;
+      const wallLength = building.door.side === "north" || building.door.side === "south" ? width : depth;
+      if (building.door.width > wallLength - 1) {
+        issue(["buildings", index, "door", "width"], `is too wide for a wall ${wallLength} m long (leave at least 1 m of wall)`);
+      }
+    });
+
     zone.exits.forEach((exit, index) => {
       if (!exit.blocked && (!exit.to || !exit.entry)) {
         issue(["exits", index], `an exit that is not blocked needs both "to" and "entry"`);

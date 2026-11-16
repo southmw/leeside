@@ -50,9 +50,12 @@ export interface GameDebug {
   bodyCount: number;
   /**
    * The local player's character: position of the capsule's centre in metres, whether it
-   * stands on something, and the height of the terrain under it.
+   * stands on something, the height of the terrain under it, and the id of the building it
+   * is inside (null outdoors).
    */
-  player: { x: number; y: number; z: number; grounded: boolean; groundHeight: number };
+  player: { x: number; y: number; z: number; grounded: boolean; groundHeight: number; inside: string | null };
+  /** The zone the player is in: its id, the text key of its name, and how many buildings it has. */
+  zone: { id: string; nameKey: string; buildings: number };
   /** The local player's view in radians, and whether mouse movement currently turns it. */
   view: { yaw: number; pitch: number; locked: boolean };
   /**
@@ -84,7 +87,8 @@ export function installDebugApi(language: Language): GameDebug {
     simSeconds: 0,
     entityCount: 0,
     bodyCount: 0,
-    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0 },
+    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null },
+    zone: { id: "", nameKey: "", buildings: 0 },
     view: { yaw: 0, pitch: 0, locked: false },
     camera: { distance: 0, wantedDistance: 0, y: 0 },
     input: createEmptyActions(),

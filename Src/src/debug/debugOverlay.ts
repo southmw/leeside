@@ -177,6 +177,14 @@ export function createDebugOverlay(
         },
       ]) +
       section(t("debug.section.world"), [
+        {
+          label: t("debug.zone"),
+          value: t("debug.zone_value", {
+            name: debug.zone.nameKey ? i18n.tData(debug.zone.nameKey) : "-",
+            buildings: debug.zone.buildings,
+          }),
+        },
+        { label: t("debug.inside"), value: player.inside ?? "-" },
         { label: t("debug.entities"), value: integer(debug.entityCount) },
         { label: t("debug.bodies"), value: integer(debug.bodyCount) },
         { label: t("debug.position"), value: `${fixed(player.x, 2)}, ${fixed(player.y, 2)}, ${fixed(player.z, 2)}` },

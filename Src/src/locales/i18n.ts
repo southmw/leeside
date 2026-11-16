@@ -76,6 +76,11 @@ export interface I18n {
   setLanguage(language: Language): void;
   /** Returns the text for `key` in the active language, with `{name}` values filled in. */
   t(key: MessageKey, params?: MessageParams): string;
+  /**
+   * Like `t`, for keys that come from data (a zone's or an item's name key) and so cannot be
+   * checked at compile time. An unknown key is reported and shown as it is.
+   */
+  tData(key: string, params?: MessageParams): string;
   /** Calls `listener` after every language change. Returns a function that unsubscribes. */
   onChange(listener: (language: Language) => void): () => void;
 }
@@ -119,6 +124,9 @@ export function createI18n(initial: Language, options: I18nOptions = {}): I18n {
       }
     },
     t(key, params) {
+      return translate(messages[language], key, params, reportMissing);
+    },
+    tData(key, params) {
       return translate(messages[language], key, params, reportMissing);
     },
     onChange(listener) {

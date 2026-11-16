@@ -92,7 +92,14 @@ try {
     check("frames keep rendering", later.frame > first.frame, `frame ${first.frame} -> ${later.frame}`);
     check("simulation keeps stepping", later.tick > first.tick, `tick ${first.tick} -> ${later.tick}`);
     check("world has entities", first.entityCount >= 1, `${first.entityCount} entities`);
-    check("physics world has the terrain and the player", first.bodyCount === 2, `${first.bodyCount} bodies`);
+    // Terrain, 7 boxes for each of the 3 houses, and the player.
+    check("physics world has the terrain, the buildings and the player", first.bodyCount === 23, `${first.bodyCount} bodies`);
+    const zoneInfo = await page.evaluate(() => ({ ...window.__game.zone }));
+    check(
+      "the zone is loaded with its buildings",
+      zoneInfo.id === "dry_riverbed" && zoneInfo.buildings === 3,
+      `${zoneInfo.id}, ${zoneInfo.buildings} buildings`,
+    );
     check(
       "drawing buffer matches the window",
       first.canvas.width >= 1280 && first.canvas.height >= 720,
@@ -325,6 +332,36 @@ try {
         `moved ${(after.x - before.x).toFixed(2)}, ${(after.z - before.z).toFixed(2)}`,
       );
     }
+  }
+
+  // Buildings: starting outside house A's door (`?at`, `?face`), walking forward goes in
+  // through the doorway; starting beside it, the wall stops the character.
+  {
+    const walkFrom = async (at) => {
+      await page.goto(`${url}?at=${at}&face=270`, { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+      await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
+      const before = await page.evaluate(() => ({ ...window.__game.player, sim: window.__game.simSeconds }));
+      await page.keyboard.down("KeyW");
+      await page.waitForFunction((sim) => window.__game.simSeconds > sim + 2.5, before.sim, { timeout: 60_000 });
+      await page.keyboard.up("KeyW");
+      return { before, after: await page.evaluate(() => ({ ...window.__game.player })) };
+    };
+
+    const throughDoor = await walkFrom("162,150");
+    check("the start position can be set with ?at", Math.abs(throughDoor.before.x - 162) < 0.5 && Math.abs(throughDoor.before.z - 150) < 0.5);
+    check(
+      "walking through the doorway enters the house",
+      throughDoor.before.inside === null && throughDoor.after.inside === "house_a",
+      `inside: ${throughDoor.after.inside}, x ${throughDoor.after.x.toFixed(2)}`,
+    );
+
+    const intoWall = await walkFrom("162,152.5");
+    check(
+      "the wall beside the doorway stops the character",
+      intoWall.after.inside === null && intoWall.after.x > 155.3 && intoWall.after.x < 155.6,
+      `inside: ${intoWall.after.inside}, x ${intoWall.after.x.toFixed(2)}`,
+    );
   }
 
   // Terrain: walking down the bank into the riverbed and back up the other side, the

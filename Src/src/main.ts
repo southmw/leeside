@@ -29,9 +29,11 @@ import { applyZoom } from "./render/cameraZoom";
 import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
 import { createLookHint } from "./ui/lookHint";
-import { createTerrainMesh } from "./render/terrainMesh";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
-import { buildTerrainGeometry, createHeightfield, heightAt } from "./world/terrain";
+import { buildingAt, yawFromDegrees } from "./world/building";
+import { resolveStart } from "./world/startPoint";
+import { heightAt } from "./world/terrain";
+import { loadZone } from "./world/zoneLoader";
 import { loadDryRiverbed } from "./world/zones/dryRiverbed";
 
 /** The view starts tilted slightly down, so the ground ahead is in sight. Radians. */
@@ -81,27 +83,26 @@ await initPhysics();
 const physics = new PhysicsWorld();
 const physicsSystem = createPhysicsSystem(world, physics);
 
-// The zone's terrain: one set of triangles for both the picture and the collider.
-const zone = loadDryRiverbed();
-const heightfield = createHeightfield(zone.terrain.samples, zone.size, zone.terrain.heights);
-const terrain = buildTerrainGeometry(heightfield);
-physics.addStaticMesh(terrain.positions, terrain.indices);
-scene.add(createTerrainMesh(terrain));
+const zone = loadZone(loadDryRiverbed(), physics, scene);
+const zoneDefinition = zone.definition;
+debug.zone.id = zoneDefinition.id;
+debug.zone.nameKey = zoneDefinition.nameKey;
+debug.zone.buildings = zoneDefinition.buildings.length;
 
-// Positions in a zone are [east, south], which is [x, z] in the world.
-const [spawnX, spawnZ] = zone.spawn.position;
+// Where the player starts: the zone's start point, or `?at=east,south` and `?face=degrees`
+// (clockwise from north) to start anywhere, for checking a place without walking to it.
+const start = resolveStart(zoneDefinition, startParams.get("at"), startParams.get("face"));
 const PLAYER_START = {
-  x: spawnX,
-  y: heightAt(heightfield, spawnX, spawnZ) + CHARACTER_HEIGHT / 2 + CHARACTER_SKIN,
-  z: spawnZ,
+  x: start.east,
+  y: heightAt(zone.terrain, start.east, start.south) + CHARACTER_HEIGHT / 2 + CHARACTER_SKIN,
+  z: start.south,
 };
 
 const player = world.add({
   localPlayer: true,
   input: createEmptyActions(),
   character: createCharacter(),
-  // Zone directions are clockwise from north; yaw is counter-clockwise from -Z, which is north.
-  view: createView((-zone.spawn.facing * Math.PI) / 180, START_PITCH),
+  view: createView(yawFromDegrees(start.facing), START_PITCH),
   transform: createTransform(PLAYER_START.x, PLAYER_START.y, PLAYER_START.z),
   renderable: { object: createCharacterMesh(CHARACTER_HEIGHT, CHARACTER_RADIUS) },
   body: { handle: physics.addCharacter(PLAYER_START) },
@@ -146,7 +147,8 @@ startGameLoop({
     debug.player.y = player.transform.y;
     debug.player.z = player.transform.z;
     debug.player.grounded = player.character.grounded;
-    debug.player.groundHeight = heightAt(heightfield, player.transform.x, player.transform.z);
+    debug.player.groundHeight = heightAt(zone.terrain, player.transform.x, player.transform.z);
+    debug.player.inside = buildingAt(zoneDefinition.buildings, player.transform.x, player.transform.z)?.id ?? null;
     debug.view.yaw = player.view.yaw;
     debug.view.pitch = player.view.pitch;
     debug.view.locked = mouse.locked;

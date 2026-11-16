@@ -43,8 +43,34 @@ export function dryRiverbedHeight(x: number, z: number): number {
   return PLAIN_HEIGHT * outOfChannel + mound + ripple * (0.35 + 0.65 * outOfChannel);
 }
 
+/** A circle of ground to level, for a building to stand on. */
+export interface TerrainPad {
+  x: number;
+  z: number;
+  /** Fully level within this distance of the centre. */
+  radius: number;
+}
+
+/** Beyond a pad's radius the ground returns to its natural height over this distance. */
+const PAD_BLEND_WIDTH = 10;
+
+/**
+ * Terrain height with the ground levelled at each pad: inside a pad the height is that of
+ * the natural terrain at the pad's centre, and it blends back smoothly outside.
+ */
+export function paddedHeight(x: number, z: number, pads: readonly TerrainPad[]): number {
+  let height = dryRiverbedHeight(x, z);
+  for (const pad of pads) {
+    const distance = Math.hypot(x - pad.x, z - pad.z);
+    const natural = 1 - smoothstep(pad.radius + PAD_BLEND_WIDTH, pad.radius, distance);
+    height = dryRiverbedHeight(pad.x, pad.z) * (1 - natural) + height * natural;
+  }
+  return height;
+}
+
 /** The height grid for the zone definition: row by row from the north, each row west to east. */
 export function generateDryRiverbedHeights(
+  pads: readonly TerrainPad[] = [],
   samples: number = DRY_RIVERBED_SAMPLES,
   size: number = DRY_RIVERBED_SIZE,
 ): number[] {
@@ -52,7 +78,7 @@ export function generateDryRiverbedHeights(
   const heights: number[] = [];
   for (let row = 0; row < samples; row += 1) {
     for (let column = 0; column < samples; column += 1) {
-      heights.push(Math.round(dryRiverbedHeight(column * cell, row * cell) * 100) / 100);
+      heights.push(Math.round(paddedHeight(column * cell, row * cell, pads) * 100) / 100);
     }
   }
   return heights;

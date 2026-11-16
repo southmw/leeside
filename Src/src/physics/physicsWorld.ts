@@ -75,14 +75,20 @@ export class PhysicsWorld {
   /**
    * Adds an immovable box (ground, walls, ramps). Sizes are half extents, as Rapier takes
    * them. `pitch` tilts the box around the X axis, in radians, which turns it into a ramp
-   * rising towards -Z for positive values.
+   * rising towards -Z for positive values. `yaw` then turns it around the vertical axis,
+   * counter-clockwise seen from above.
    */
-  addStaticBox(center: Vec3, halfExtents: Vec3, pitch = 0): number {
+  addStaticBox(center: Vec3, halfExtents: Vec3, pitch = 0, yaw = 0): number {
+    // Yaw applied after pitch: the product of a rotation about Y and one about X.
+    const sinPitch = Math.sin(pitch / 2);
+    const cosPitch = Math.cos(pitch / 2);
+    const sinYaw = Math.sin(yaw / 2);
+    const cosYaw = Math.cos(yaw / 2);
     const description = RAPIER.RigidBodyDesc.fixed().setRotation({
-      x: Math.sin(pitch / 2),
-      y: 0,
-      z: 0,
-      w: Math.cos(pitch / 2),
+      x: cosYaw * sinPitch,
+      y: sinYaw * cosPitch,
+      z: -sinYaw * sinPitch,
+      w: cosYaw * cosPitch,
     });
     return this.addBox(description, center, halfExtents);
   }
