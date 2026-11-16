@@ -101,6 +101,11 @@ export class FrameStats {
     }
   }
 
+  /** Frame times in the window, oldest first. Read-only view; do not keep it across frames. */
+  times(): readonly number[] {
+    return this.window;
+  }
+
   snapshot(): FrameStatsSnapshot {
     const window = this.window;
     const recent = window.slice(-this.recentCount);

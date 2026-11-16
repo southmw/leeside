@@ -139,6 +139,15 @@ try {
       `${stats.drawCalls} draw calls, ${stats.triangles} triangles, ${stats.samples} samples`,
     );
 
+    const { sim, render } = stats.sections ?? {};
+    check(
+      "section timings are populated",
+      sim?.avgMs >= 0 && sim?.maxMs > 0 && render?.avgMs > 0 && render?.maxMs >= render?.avgMs,
+      `sim ${sim?.avgMs.toFixed(3)} ms, render ${render?.avgMs.toFixed(2)} ms per frame`,
+    );
+    // Edge and Chrome both report heap size; other browsers would leave it undefined.
+    check("memory use is reported", stats.heapMb > 0, `${stats.heapMb?.toFixed(1)} MB`);
+
     // F3 toggles the debug overlay.
     const overlay = page.locator("#debug-overlay");
     await overlay.waitFor({ state: "attached", timeout: 5_000 });
@@ -151,6 +160,18 @@ try {
       hiddenAtStart && text.includes("FPS") && text.includes("Draw calls"),
       text ? `${text.split("\n").length} lines` : "overlay not visible",
     );
+
+    // The frame graph must have something drawn on it.
+    const paintedPixels = await page.evaluate(() => {
+      const graph = document.querySelector("#debug-frame-graph");
+      const data = graph?.getContext("2d")?.getImageData(0, 0, graph.width, graph.height).data ?? [];
+      let painted = 0;
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] > 0) painted += 1;
+      }
+      return painted;
+    });
+    check("frame graph is drawn", paintedPixels > 0, `${paintedPixels} pixels`);
   }
 
   await mkdir(outDir, { recursive: true });

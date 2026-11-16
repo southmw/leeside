@@ -1,9 +1,11 @@
 import { createTransform, createWorld } from "./core/ecs";
 import { startGameLoop } from "./core/gameLoop";
-import { installDebugApi } from "./debug/debugApi";
+import { installDebugApi, TIMED_SECTIONS } from "./debug/debugApi";
 import type { DebugOverlay } from "./debug/debugOverlay";
 import type { DevLog } from "./debug/devLog";
 import { FrameStats } from "./debug/frameStats";
+import { readHeapMb } from "./debug/memory";
+import { SectionTimer } from "./debug/sectionTimer";
 import { createSpinSystem } from "./gameplay/spinSystem";
 import { createEmptyActions } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
@@ -33,6 +35,7 @@ i18n.onChange((language) => {
   debug.language = language;
 });
 const frameStats = new FrameStats();
+const sectionTimer = new SectionTimer(TIMED_SECTIONS, () => performance.now());
 
 const renderer = createRenderer(canvas);
 
@@ -41,7 +44,7 @@ let overlay: DebugOverlay | undefined;
 let devLog: DevLog | undefined;
 if (import.meta.env.DEV) {
   void import("./debug/debugOverlay").then(({ createDebugOverlay }) => {
-    overlay = createDebugOverlay(debug, i18n);
+    overlay = createDebugOverlay(debug, i18n, frameStats);
   });
   void import("./debug/devLog").then(({ createDevLog }) => {
     devLog = createDevLog(debug, renderer);
@@ -77,8 +80,10 @@ startGameLoop({
     devLog?.update(nowMs);
   },
   update(dt) {
+    sectionTimer.begin("sim");
     inputSystem();
     spinSystem(dt);
+    sectionTimer.end("sim");
 
     if (player.input) {
       Object.assign(debug.input, player.input);
@@ -87,8 +92,11 @@ startGameLoop({
     debug.simSeconds += dt;
   },
   render() {
+    sectionTimer.begin("render");
     renderSync.sync();
     renderer.render(scene, camera);
+    sectionTimer.end("render");
+    sectionTimer.endFrame();
 
     // renderer.info counts reset on every render call, so read them straight afterwards.
     const { render, memory } = renderer.info;
@@ -97,6 +105,8 @@ startGameLoop({
       triangles: render.triangles,
       geometries: memory.geometries,
       textures: memory.textures,
+      sections: sectionTimer.snapshot(),
+      heapMb: readHeapMb(),
     });
 
     debug.frame += 1;

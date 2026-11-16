@@ -75,6 +75,16 @@ for (const session of shown) {
     `  Frame time     average ${fixed(mean(stats.map((s) => 1000 / Math.max(s.avgFps, 0.001))))} ms   worst frame ${fixed(Math.max(...stats.map((s) => s.maxFrameMs)))} ms`,
   );
   console.log(`  Long frames    over 34 ms: ${last.stats.longFrames}   over 50 ms: ${last.stats.veryLongFrames}`);
+  const timed = stats.filter((s) => s.sections);
+  if (timed.length > 0) {
+    const part = (name) =>
+      `${name} ${fixed(mean(timed.map((s) => s.sections[name].avgMs)), 2)} ms (max ${fixed(Math.max(...timed.map((s) => s.sections[name].maxMs)))})`;
+    console.log(`  CPU per frame  ${part("sim")}   ${part("render")}`);
+  }
+  const heaps = stats.map((s) => s.heapMb).filter((mb) => typeof mb === "number");
+  if (heaps.length > 0) {
+    console.log(`  Memory         JS heap ${fixed(heaps[0])} -> ${fixed(heaps[heaps.length - 1])} MB (peak ${fixed(Math.max(...heaps))})`);
+  }
   console.log(
     `  Render         draw calls up to ${Math.max(...stats.map((s) => s.drawCalls))}, triangles up to ${Math.max(...stats.map((s) => s.triangles)).toLocaleString("en-US")}`,
   );

@@ -1,5 +1,10 @@
 import { createEmptyActions, type PlayerActions } from "../input/actions";
 import type { Language } from "../locales/i18n";
+import type { SectionStats } from "./sectionTimer";
+
+/** Parts of a frame that are timed separately. */
+export const TIMED_SECTIONS = ["sim", "render"] as const;
+export type TimedSection = (typeof TIMED_SECTIONS)[number];
 
 /** Performance figures: frame timing plus what the renderer drew in the latest frame. */
 export interface DebugStats {
@@ -16,6 +21,13 @@ export interface DebugStats {
   /** Geometries and textures held in GPU memory. These must not grow as zones come and go. */
   geometries: number;
   textures: number;
+  /**
+   * CPU time per frame spent in the simulation and in issuing draw calls. Time the GPU needs
+   * afterwards is not included, so a slow frame with small numbers here points at the GPU.
+   */
+  sections: Record<TimedSection, SectionStats>;
+  /** JavaScript heap in use, in megabytes. Undefined where the browser does not report it. */
+  heapMb: number | undefined;
 }
 
 /**
@@ -73,6 +85,11 @@ export function installDebugApi(language: Language): GameDebug {
       triangles: 0,
       geometries: 0,
       textures: 0,
+      sections: {
+        sim: { ms: 0, avgMs: 0, maxMs: 0 },
+        render: { ms: 0, avgMs: 0, maxMs: 0 },
+      },
+      heapMb: undefined,
     },
   };
   if (import.meta.env.DEV) {

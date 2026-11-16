@@ -6,6 +6,7 @@
   "quality.high": "High",
 
   "debug.section.performance": "PERFORMANCE (budget: {quality})",
+  "debug.section.timing": "TIME PER FRAME (CPU)",
   "debug.section.render": "RENDER",
   "debug.section.world": "WORLD",
   "debug.section.input": "INPUT",
@@ -15,6 +16,12 @@
   "debug.frame_time": "Frame time",
   "debug.frame_time_value": "{ms} ms (max {max})",
   "debug.frames_over": "Frames > {ms} ms",
+  "debug.timing_sim": "Simulation",
+  "debug.timing_render": "Render",
+  "debug.section_time_value": "{avg} ms (max {max})",
+  "debug.memory": "JS memory",
+  "debug.memory_value": "{mb} MB",
+  "debug.not_supported": "not supported",
   "debug.draw_calls": "Draw calls",
   "debug.triangles": "Triangles",
   "debug.geometries": "Geometries",
@@ -31,5 +38,6 @@
   "debug.button.interact": "interact",
   "debug.button.water": "water",
   "debug.button.bandage": "bandage",
-  "debug.hint_hide": "F3 to hide"
+  "debug.hint_hide": "F3 to hide",
+  "debug.graph_title": "FRAME TIME: last {count} frames, 0-{max} ms"
 }

@@ -1,6 +1,7 @@
 import type { I18n } from "../locales/i18n";
 import type { GameDebug } from "./debugApi";
-import { LONG_FRAME_MS, VERY_LONG_FRAME_MS } from "./frameStats";
+import { GRAPH_GUIDES_MS, GRAPH_SCALE_MS, graphBar, type FrameLevel } from "./frameGraph";
+import { LONG_FRAME_MS, VERY_LONG_FRAME_MS, type FrameStats } from "./frameStats";
 import { evaluateBudget, PERF_BUDGETS, type Quality } from "./perfBudget";
 
 /** How often the text is rebuilt. Fast enough to follow, slow enough to read. */
@@ -34,7 +35,14 @@ const css = `
 #debug-overlay .over { color: #ff7a59; font-weight: 700; }
 #debug-overlay .title { opacity: 0.55; margin: 6px 0 2px; letter-spacing: 0.08em; }
 #debug-overlay .title:first-child { margin-top: 0; }
+#debug-overlay canvas { display: block; width: 100%; height: 48px; background: rgba(0, 0, 0, 0.35); }
 `;
+
+/** Graph size in canvas pixels. One column per frame in the statistics window. */
+const GRAPH_WIDTH = 300;
+const GRAPH_HEIGHT = 48;
+const GRAPH_COLORS: Readonly<Record<FrameLevel, string>> = { ok: "#9fb58a", long: "#ffb347", veryLong: "#ff5a3c" };
+const GRAPH_GUIDE_COLOR = "rgba(232, 220, 192, 0.3)";
 
 const fixed = (value: number, digits = 0): string => value.toFixed(digits);
 const integer = (value: number): string => Math.round(value).toLocaleString("en-US");
@@ -43,7 +51,12 @@ const integer = (value: number): string => Math.round(value).toLocaleString("en-
  * Development-only panel with performance figures and live state, toggled with F3.
  * Start with `?debug` in the URL to show it from the first frame.
  */
-export function createDebugOverlay(debug: GameDebug, i18n: I18n, quality: Quality = "high"): DebugOverlay {
+export function createDebugOverlay(
+  debug: GameDebug,
+  i18n: I18n,
+  frameStats: FrameStats,
+  quality: Quality = "high",
+): DebugOverlay {
   const { t } = i18n;
   const style = document.createElement("style");
   style.textContent = css;
@@ -52,7 +65,38 @@ export function createDebugOverlay(debug: GameDebug, i18n: I18n, quality: Qualit
   const panel = document.createElement("div");
   panel.id = "debug-overlay";
   panel.hidden = !new URLSearchParams(window.location.search).has("debug");
+  // The text is rebuilt on every refresh; the graph canvas stays, so it sits beside the text.
+  const content = document.createElement("div");
+  const graphTitle = document.createElement("div");
+  graphTitle.className = "title";
+  const graph = document.createElement("canvas");
+  graph.id = "debug-frame-graph";
+  graph.width = GRAPH_WIDTH;
+  graph.height = GRAPH_HEIGHT;
+  const hint = document.createElement("div");
+  hint.className = "title";
+  panel.append(content, graphTitle, graph, hint);
   document.body.append(panel);
+  const graphContext = graph.getContext("2d");
+
+  /** Newest frame at the right edge, one pixel column per frame. */
+  const drawGraph = (): void => {
+    if (!graphContext) {
+      return;
+    }
+    graphContext.clearRect(0, 0, GRAPH_WIDTH, GRAPH_HEIGHT);
+    const times = frameStats.times();
+    const offset = GRAPH_WIDTH - times.length;
+    for (let i = Math.max(0, -offset); i < times.length; i += 1) {
+      const { height, level } = graphBar(times[i] ?? 0, GRAPH_HEIGHT);
+      graphContext.fillStyle = GRAPH_COLORS[level];
+      graphContext.fillRect(offset + i, GRAPH_HEIGHT - height, 1, height);
+    }
+    graphContext.fillStyle = GRAPH_GUIDE_COLOR;
+    for (const guideMs of GRAPH_GUIDES_MS) {
+      graphContext.fillRect(0, GRAPH_HEIGHT - Math.round((guideMs / GRAPH_SCALE_MS) * GRAPH_HEIGHT), GRAPH_WIDTH, 1);
+    }
+  };
 
   window.addEventListener("keydown", (event) => {
     if (event.code === TOGGLE_KEY) {
@@ -92,7 +136,12 @@ export function createDebugOverlay(debug: GameDebug, i18n: I18n, quality: Qualit
     // Averages are meaningless for the first moments, so hold the verdict until there is data.
     const warmedUp = stats.samples >= 60;
 
-    panel.innerHTML =
+    const sectionRow = (label: string, { avgMs, maxMs }: { avgMs: number; maxMs: number }): Row => ({
+      label,
+      value: t("debug.section_time_value", { avg: fixed(avgMs, 2), max: fixed(maxMs, 1) }),
+    });
+
+    content.innerHTML =
       section(t("debug.section.performance", { quality: t(`quality.${quality}`) }), [
         { label: t("debug.fps"), value: fixed(stats.fps) },
         { label: t("debug.fps_average"), value: fixed(stats.avgFps, 1), ok: !warmedUp || verdict.avgFps },
@@ -108,12 +157,23 @@ export function createDebugOverlay(debug: GameDebug, i18n: I18n, quality: Qualit
           ok: verdict.veryLongFrames,
         },
       ]) +
+      section(t("debug.section.timing"), [
+        sectionRow(t("debug.timing_sim"), stats.sections.sim),
+        sectionRow(t("debug.timing_render"), stats.sections.render),
+      ]) +
       section(t("debug.section.render"), [
         { label: t("debug.draw_calls"), value: integer(stats.drawCalls), ok: verdict.drawCalls },
         { label: t("debug.triangles"), value: integer(stats.triangles), ok: verdict.triangles },
         { label: t("debug.geometries"), value: integer(stats.geometries) },
         { label: t("debug.textures"), value: integer(stats.textures) },
         { label: t("debug.buffer"), value: `${debug.canvas.width} x ${debug.canvas.height}` },
+        {
+          label: t("debug.memory"),
+          value:
+            stats.heapMb === undefined
+              ? t("debug.not_supported")
+              : t("debug.memory_value", { mb: fixed(stats.heapMb, 1) }),
+        },
       ]) +
       section(t("debug.section.world"), [
         { label: t("debug.entities"), value: integer(debug.entityCount) },
@@ -135,8 +195,11 @@ export function createDebugOverlay(debug: GameDebug, i18n: I18n, quality: Qualit
               .filter(Boolean)
               .join(" ") || "-",
         },
-      ]) +
-      `<div class="title">${t("debug.hint_hide")}</div>`;
+      ]);
+
+    graphTitle.textContent = t("debug.graph_title", { count: GRAPH_WIDTH, max: GRAPH_SCALE_MS });
+    hint.textContent = t("debug.hint_hide");
+    drawGraph();
   };
 
   return {
