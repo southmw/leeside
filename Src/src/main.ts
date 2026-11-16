@@ -1,7 +1,12 @@
 import { Group } from "three";
 import { createCharacter, createTransform, createWorld } from "./core/ecs";
 import { startGameLoop } from "./core/gameLoop";
+import { benchCameraAt } from "./bench/benchPath";
+import { benchRows, BenchRecorder, judge } from "./bench/benchRecorder";
+import { benchRoute, DRY_RIVERBED_STOPS } from "./bench/benchRoute";
 import { installDebugApi, TIMED_SECTIONS } from "./debug/debugApi";
+import { readDevice } from "./debug/deviceInfo";
+import { isWithinBudget, PERF_BUDGETS } from "./debug/perfBudget";
 import type { DebugOverlay } from "./debug/debugOverlay";
 import type { DevLog } from "./debug/devLog";
 import { FrameStats } from "./debug/frameStats";
@@ -30,6 +35,7 @@ import { computeCameraPose } from "./render/cameraRig";
 import { applyZoom } from "./render/cameraZoom";
 import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
+import { createBenchPanel } from "./ui/benchPanel";
 import { createLookHint } from "./ui/lookHint";
 import { loadCharacterModel, type CharacterModel } from "./render/characterModel";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
@@ -38,6 +44,13 @@ import { numberParam, resolveStart } from "./world/startPoint";
 import { heightAt } from "./world/terrain";
 import { loadZone } from "./world/zoneLoader";
 import { loadDryRiverbed } from "./world/zones/dryRiverbed";
+
+/** Performance measurement: how long it lasts by default, and how the camera flies. */
+const BENCH_SECONDS = 60;
+const BENCH_CAMERA_HEIGHT = 6;
+const BENCH_LOOK_AHEAD = 40;
+/** The budget results are judged against, until the quality setting exists (step 2.22). */
+const BENCH_QUALITY = "high";
 
 /** The view starts tilted slightly down, so the ground ahead is in sight. Radians. */
 const START_PITCH = -0.2;
@@ -137,7 +150,24 @@ const player = world.add({
   body: { handle: physics.addCharacter(PLAYER_START) },
 });
 const mouse = createMouse(canvas, document);
-createLookHint(mouse, i18n);
+
+// `?bench` (or `?bench=seconds`) measures performance: the camera flies a fixed route round
+// the zone by itself, so every run sees the same thing, and a result is shown at the end.
+const benchSeconds = startParams.has("bench") ? numberParam(startParams.get("bench"), 1, 600, BENCH_SECONDS) : 0;
+const bench =
+  benchSeconds > 0
+    ? {
+        recorder: new BenchRecorder(benchSeconds),
+        route: benchRoute(zoneDefinition, DRY_RIVERBED_STOPS),
+        panel: createBenchPanel(i18n),
+        reported: false,
+      }
+    : undefined;
+if (bench) {
+  debug.bench.state = "running";
+} else {
+  createLookHint(mouse, i18n);
+}
 const localInput = createLocalInput({ mouse });
 const inputSystem = createInputSystem(world, localInput);
 const lookSystem = createLookSystem(world);
@@ -168,7 +198,10 @@ startGameLoop({
   update(dt) {
     sectionTimer.begin("sim");
     renderSync.capture();
-    inputSystem();
+    // During a measurement nobody plays: the character stands still and the camera flies itself.
+    if (!bench) {
+      inputSystem();
+    }
     lookSystem();
     movementSystem(dt);
     physicsSystem.update();
@@ -218,6 +251,15 @@ startGameLoop({
     const pose = computeCameraPose(drawnAt, yaw, pitch, cameraFit);
     camera.position.set(pose.position.x, pose.position.y, pose.position.z);
     camera.lookAt(pose.target.x, pose.target.y, pose.target.z);
+    if (bench) {
+      const flight = benchCameraAt(bench.route, bench.recorder.progress, BENCH_LOOK_AHEAD);
+      camera.position.set(
+        flight.position.x,
+        heightAt(zone.terrain, flight.position.x, flight.position.z) + BENCH_CAMERA_HEIGHT,
+        flight.position.z,
+      );
+      camera.lookAt(flight.target.x, heightAt(zone.terrain, flight.target.x, flight.target.z) + 1.5, flight.target.z);
+    }
     renderer.render(scene, camera);
     sectionTimer.end("render");
     sectionTimer.endFrame();
@@ -232,6 +274,33 @@ startGameLoop({
       sections: sectionTimer.snapshot(),
       heapMb: readHeapMb(),
     });
+
+    if (bench && !bench.reported) {
+      bench.recorder.add({
+        frameMs: lastFrameSeconds * 1000,
+        drawCalls: render.calls,
+        triangles: render.triangles,
+        simMs: debug.stats.sections.sim.ms,
+        renderMs: debug.stats.sections.render.ms,
+      });
+      debug.bench.progress = bench.recorder.progress;
+      bench.panel.showProgress(bench.recorder.progress);
+      if (bench.recorder.done) {
+        bench.reported = true;
+        const summary = bench.recorder.summary();
+        const verdict = judge(summary, PERF_BUDGETS[BENCH_QUALITY]);
+        debug.bench.state = "done";
+        debug.bench.summary = summary;
+        debug.bench.withinBudget = isWithinBudget(verdict);
+        bench.panel.showResult({
+          rows: benchRows(summary, verdict),
+          withinBudget: isWithinBudget(verdict),
+          qualityKey: `quality.${BENCH_QUALITY}`,
+          device: readDevice(renderer),
+          buffer: `${canvas.width} x ${canvas.height}`,
+        });
+      }
+    }
 
     debug.frame += 1;
     debug.entityCount = world.entities.length;

@@ -1,4 +1,5 @@
 import { createEmptyActions, type PlayerActions } from "../input/actions";
+import type { BenchSummary } from "../bench/benchRecorder";
 import type { Language } from "../locales/i18n";
 import type { SectionStats } from "./sectionTimer";
 
@@ -74,6 +75,11 @@ export interface GameDebug {
    * chosen with the wheel (the current one is shorter when something is in the way), and its height.
    */
   camera: { distance: number; wantedDistance: number; y: number };
+  /**
+   * Performance measurement (`?bench`): whether one is running, how far along it is (0 to 1),
+   * and once it is done its summary and whether every figure is within budget.
+   */
+  bench: { state: "off" | "running" | "done"; progress: number; summary: BenchSummary | null; withinBudget: boolean | null };
   /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
   moveSpeed: number;
   /** The local player's actions as of the latest simulation step. */
@@ -103,6 +109,7 @@ export function installDebugApi(language: Language): GameDebug {
     player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, model: "capsule", animation: "none" },
     zone: { id: "", nameKey: "", buildings: 0, props: 0, rocks: 0 },
     view: { yaw: 0, pitch: 0, looking: false },
+    bench: { state: "off", progress: 0, summary: null, withinBudget: null },
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },
     input: createEmptyActions(),

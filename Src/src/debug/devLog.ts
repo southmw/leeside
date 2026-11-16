@@ -1,5 +1,6 @@
 import type { WebGLRenderer } from "three";
 import type { GameDebug } from "./debugApi";
+import { readDevice } from "./deviceInfo";
 
 /** Must match DEV_LOG_PATH in scripts/devLogPlugin.mjs. */
 const DEV_LOG_PATH = "/__devlog";
@@ -11,33 +12,6 @@ const WARM_UP_SAMPLES = 60;
 export interface DevLog {
   /** Call once per rendered frame. */
   update(nowMs: number): void;
-}
-
-interface DeviceInfo {
-  userAgent: string;
-  gpu: string;
-  devicePixelRatio: number;
-  screen: string;
-  hardwareConcurrency: number;
-}
-
-function readGpuName(renderer: WebGLRenderer): string {
-  const gl = renderer.getContext();
-  const extension = gl.getExtension("WEBGL_debug_renderer_info");
-  const name: unknown = extension
-    ? gl.getParameter(extension.UNMASKED_RENDERER_WEBGL)
-    : gl.getParameter(gl.RENDERER);
-  return typeof name === "string" ? name : "unknown";
-}
-
-function readDevice(renderer: WebGLRenderer): DeviceInfo {
-  return {
-    userAgent: navigator.userAgent,
-    gpu: readGpuName(renderer),
-    devicePixelRatio: window.devicePixelRatio,
-    screen: `${window.screen.width}x${window.screen.height}`,
-    hardwareConcurrency: navigator.hardwareConcurrency,
-  };
 }
 
 function send(entry: Record<string, unknown>): void {

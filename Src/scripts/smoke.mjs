@@ -488,6 +488,38 @@ try {
     check("the context menu is suppressed over the game", !menuShown);
   }
 
+  // Performance measurement: `?bench` flies the camera round by itself and ends with a result.
+  // A short run is enough here; the numbers themselves mean nothing in a headless browser.
+  {
+    await page.goto(`${url}?bench=3`, { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    const benchStart = await page.evaluate(() => ({ state: window.__game.bench.state, player: { ...window.__game.player } }));
+    check("?bench starts a measurement", benchStart.state === "running", benchStart.state);
+
+    let finished = true;
+    try {
+      await page.waitForFunction(() => window.__game.bench.state === "done", undefined, { timeout: 60_000 });
+    } catch {
+      finished = false;
+    }
+    const bench = await page.evaluate(() => ({ ...window.__game.bench, player: { ...window.__game.player } }));
+    check(
+      "the measurement runs to the end and gives a result",
+      finished && bench.summary?.frames > 0 && bench.summary?.maxDrawCalls > 0 && typeof bench.withinBudget === "boolean",
+      finished ? `${bench.summary.frames} frames in ${bench.summary.seconds.toFixed(1)} s` : `stopped at ${Math.round(bench.progress * 100)}%`,
+    );
+    check(
+      "the character stays put during a measurement",
+      Math.abs(bench.player.x - benchStart.player.x) < 0.01 && Math.abs(bench.player.z - benchStart.player.z) < 0.01,
+    );
+    const resultText = (await page.locator("#bench-result").isVisible()) ? await page.locator("#bench-result").innerText() : "";
+    check(
+      "the result is shown with a copy button",
+      resultText.includes("FPS") && (await page.locator("#bench-copy").count()) === 1,
+      resultText ? `${resultText.split("\n").length} lines` : "panel not visible",
+    );
+  }
+
   // Screen text follows `?lang`, and without it the browser's language.
   const overlayTextFor = async (targetPage, query) => {
     await targetPage.goto(`${url}${query}`, { waitUntil: "load" });
