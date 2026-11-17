@@ -34,6 +34,9 @@ async function launchBrowser() {
   throw new Error(`No usable browser found (tried ${channels.join(", ")}).\n${failures.join("\n")}`);
 }
 
+// Loading takes a while in software rendering, longest in a fresh browser context with nothing cached.
+const READY_TIMEOUT_MS = 60_000;
+
 const results = [];
 function check(name, passed, detail = "") {
   results.push({ name, passed, detail });
@@ -78,7 +81,7 @@ try {
   // The game sets `ready` after its first rendered frame.
   let ready = true;
   try {
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
   } catch {
     ready = false;
   }
@@ -293,7 +296,7 @@ try {
   // Camera: the view turns while a mouse button is held and the mouse moves, and walking follows it.
   {
     await page.goto(gameUrl(), { waitUntil: "load" });
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     const viewNow = () => page.evaluate(() => ({ ...window.__game.view }));
     const hint = page.locator("#look-hint");
     check("the look hint is shown at first", await hint.isVisible());
@@ -311,7 +314,7 @@ try {
       `wanted ${farOut.wantedDistance.toFixed(2)} m, now ${farOut.distance.toFixed(2)} m`,
     );
     await page.reload({ waitUntil: "load" });
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
 
     // Moving the mouse without a button held must not turn the view.
     const beforeHover = await viewNow();
@@ -421,7 +424,7 @@ try {
   {
     const walkFrom = async (at) => {
       await page.goto(gameUrl(`at=${at}&face=270`), { waitUntil: "load" });
-      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
       await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
       const before = await page.evaluate(() => ({ ...window.__game.player, sim: window.__game.simSeconds }));
       await page.keyboard.down("KeyW");
@@ -440,7 +443,7 @@ try {
 
     // The zone cannot be left: walking at its southern edge ends against the invisible wall.
     await page.goto(gameUrl("at=360,705&face=180"), { waitUntil: "load" });
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
     const edgeStart = await page.evaluate(() => window.__game.simSeconds);
     await page.keyboard.down("KeyW");
@@ -465,7 +468,7 @@ try {
   // character stays on the surface the whole way. Start on the west bank, heading east.
   {
     await page.goto(gameUrl(), { waitUntil: "load" });
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
     await page.evaluate(() => {
       window.__smokeTerrain = { worst: 0, lowest: Infinity, highest: -Infinity, airborne: 0, samples: 0 };
@@ -514,7 +517,7 @@ try {
     await page.goto(url, { waitUntil: "load" });
     const titleScreen = page.locator("#title-screen");
     await titleScreen.waitFor({ state: "visible", timeout: 15_000 });
-    await page.locator("#title-start").waitFor({ state: "visible", timeout: 30_000 });
+    await page.locator("#title-start").waitFor({ state: "visible", timeout: READY_TIMEOUT_MS });
     const atTitle = await page.evaluate(() => ({ phase: window.__game.phase, x: window.__game.player.x, z: window.__game.player.z }));
     check("the HUD is hidden behind the title", !(await page.locator("#hud").isVisible()));
     check("the title screen comes up with a START button", atTitle.phase === "title" && (await titleScreen.innerText()).includes("LEESIDE"));
@@ -577,19 +580,19 @@ try {
 
     // Enter starts the game as well.
     await page.goto(url, { waitUntil: "load" });
-    await page.locator("#title-start").waitFor({ state: "visible", timeout: 30_000 });
+    await page.locator("#title-start").waitFor({ state: "visible", timeout: READY_TIMEOUT_MS });
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__game.phase === "playing", undefined, { timeout: 5_000 }).catch(() => {});
     check("Enter starts the game from the title", (await page.evaluate(() => window.__game.phase)) === "playing");
     check("the chosen character is remembered on the next visit", (await characterNow()) === "sam", await characterNow());
     await page.goto(gameUrl("character=shaun"), { waitUntil: "load" });
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     check("?character picks a character for one visit", (await characterNow()) === "shaun", await characterNow());
     await page.evaluate(() => window.localStorage.removeItem("leeside.character"));
 
     // The development panel does on screen what the start conditions do in the address.
     await page.goto(gameUrl(), { waitUntil: "load" });
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
     await page.keyboard.press("F2");
     await page.locator("#dev-panel").waitFor({ state: "visible", timeout: 5_000 });
@@ -639,19 +642,31 @@ try {
     // The clock: day 1 from 06:00, shown top right. `?time` and `?timescale` change where it
     // starts and how fast it runs.
     await page.goto(gameUrl("lang=en"), { waitUntil: "load" });
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     const morning = await page.evaluate(() => ({ ...window.__game.clock }));
     const hudClock = await page.locator("#hud-clock").innerText();
+    const morningSky = await page.evaluate(() => ({ ...window.__game.sky }));
+    check(
+      "the sun is up and shining when the day starts",
+      morningSky.sunElevation > 5 && morningSky.sunIntensity > 0.8,
+      `sun at ${morningSky.sunElevation.toFixed(1)} degrees, strength ${morningSky.sunIntensity.toFixed(2)}`,
+    );
     check(
       "the day starts at 06:00 and the HUD shows it",
       morning.day === 1 && morning.hour >= 6 && morning.hour < 6.5 && morning.phase === "day" && hudClock.includes("Day 1") && hudClock.includes("06:00"),
       `day ${morning.day}, ${morning.hour.toFixed(2)}, "${hudClock.replace(/\s+/g, " ")}"`,
     );
     await page.goto(gameUrl("lang=en&time=18:00&timescale=60"), { waitUntil: "load" });
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     const dusk = await page.evaluate(() => ({ ...window.__game.clock }));
     await page.waitForFunction(() => window.__game.clock.phase === "night", undefined, { timeout: 15_000 }).catch(() => {});
     const night = await page.evaluate(() => ({ ...window.__game.clock }));
+    const nightSky = await page.evaluate(() => ({ ...window.__game.sky }));
+    check(
+      "at night the sun is down and gives no light, but it is not pitch dark",
+      nightSky.sunElevation < 0 && nightSky.sunIntensity === 0 && nightSky.ambientIntensity > 0.15,
+      `sun at ${nightSky.sunElevation.toFixed(1)} degrees, ambient ${nightSky.ambientIntensity.toFixed(2)}`,
+    );
     check(
       "?time starts at that hour and ?timescale runs the clock faster",
       dusk.hour >= 18 && dusk.hour < 19 && dusk.phase === "dusk" && dusk.scale === 60 && night.phase === "night",
@@ -666,7 +681,7 @@ try {
 
     // `?props=` picks the set from the address as well.
     await page.goto(gameUrl("props=boxes"), { waitUntil: "load" });
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     const boxed = await page.evaluate(() => ({ ...window.__game.zone }));
     check("?props=boxes draws props and rocks as plain shapes", boxed.propModels === 0 && boxed.rockModels === false, `${boxed.propModels} models`);
 
@@ -696,7 +711,7 @@ try {
   // keys from the game, and the UI scales with the window.
   {
     await page.goto(gameUrl(), { waitUntil: "load" });
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
     const uiNow = () => page.evaluate(() => ({ ...window.__game.ui }));
     const sampleWindow = page.locator('[data-window="sample"]');
@@ -775,7 +790,7 @@ try {
   // A short run is enough here; the numbers themselves mean nothing in a headless browser.
   {
     await page.goto(`${url}?bench=3`, { waitUntil: "load" });
-    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     const benchStart = await page.evaluate(() => ({ state: window.__game.bench.state, player: { ...window.__game.player } }));
     check("?bench starts a measurement", benchStart.state === "running", benchStart.state);
 
@@ -806,7 +821,7 @@ try {
   // Screen text follows `?lang`, and without it the browser's language.
   const overlayTextFor = async (targetPage, query) => {
     await targetPage.goto(gameUrl(query), { waitUntil: "load" });
-    await targetPage.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await targetPage.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     const panel = targetPage.locator("#debug-overlay");
     await panel.waitFor({ state: "visible", timeout: 5_000 });
     await targetPage.waitForFunction(() => document.querySelector("#debug-overlay")?.textContent !== "");

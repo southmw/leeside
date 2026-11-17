@@ -43,7 +43,9 @@ import { createLookHint } from "./ui/lookHint";
 import type { Ui } from "./ui/uiRoot";
 import { characterById, CHARACTERS } from "./render/characterCatalog";
 import { loadCharacterModel, type CharacterModel } from "./render/characterModel";
+import { daylightAt } from "./render/daylight";
 import { loadPropModels, type PropModelLibrary } from "./render/propModel";
+import { createSky } from "./render/sky";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
 import { buildingAt, yawFromDegrees } from "./world/building";
 import { numberParam, resolveStart, zonePlaces } from "./world/startPoint";
@@ -273,6 +275,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     parseTimeOfDay(startParams.get("time")),
     numberParam(startParams.get("timescale"), 0, MAX_TIME_SCALE, 1),
   );
+  // The sky and lights follow the clock.
+  const sky = createSky(scene);
   const hud = createHud(ui, i18n);
   const showClock = (): void => {
     const time = readClock(clock);
@@ -283,6 +287,15 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     hud.update(time);
   };
   showClock();
+  // Called once the camera is placed, every frame: the sky is centred on the camera.
+  const showSky = (): void => {
+    const light = daylightAt(readClock(clock).hour);
+    sky.update(light, camera.position);
+    debug.sky.sunElevation = light.sunElevation;
+    debug.sky.sunIntensity = light.sunIntensity;
+    debug.sky.ambientIntensity = light.ambientIntensity;
+  };
+  showSky();
 
   let titleSeconds = 0;
   const localInput = createLocalInput({ mouse });
@@ -451,6 +464,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         );
         camera.lookAt(flight.target.x, heightAt(zone.terrain, flight.target.x, flight.target.z) + 1.5, flight.target.z);
       }
+      showSky();
       renderer.render(scene, camera);
       sectionTimer.end("render");
       sectionTimer.endFrame();
