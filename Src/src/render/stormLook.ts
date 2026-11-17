@@ -14,6 +14,8 @@ export interface SceneLook extends Daylight {
    * visible any more. The haze begins at a tenth of it.
    */
   fogFar: number;
+  /** The colour of dust in the air under this daylight, which the storm wall has too. */
+  dust: Rgb;
 }
 
 /**
@@ -64,6 +66,19 @@ export function dustColor(daylight: Daylight): Rgb {
   return [tinted[0] * share, tinted[1] * share, tinted[2] * share];
 }
 
+/**
+ * What the storm's coming does before it arrives, at the end of the warning: how strong a
+ * storm the air already looks like. The light dims, the sky browns and the far distance
+ * hazes over, most of it in the warning's second half.
+ */
+const APPROACH_STRENGTH = 0.3;
+
+/** The storm strength the scene is drawn with: the storm itself, or what its approach amounts to. */
+export function apparentStrength(intensity: number, approach: number): number {
+  const near = Math.min(Math.max(approach, 0), 1);
+  return Math.max(Math.min(Math.max(intensity, 0), 1), APPROACH_STRENGTH * near * near);
+}
+
 /** How far one can see at a storm strength of 0 to 1. */
 export function visibilityAt(intensity: number): number {
   const strength = Math.min(Math.max(intensity, 0), 1);
@@ -72,9 +87,12 @@ export function visibilityAt(intensity: number): number {
   return CLEAR_VISIBILITY * (STORM_VISIBILITY / CLEAR_VISIBILITY) ** strength;
 }
 
-/** The scene's look under `daylight` in a storm of strength `intensity` (0 is clear weather). */
-export function sceneLook(daylight: Daylight, intensity: number): SceneLook {
-  const strength = Math.min(Math.max(intensity, 0), 1);
+/**
+ * The scene's look under `daylight` in a storm of strength `intensity` (0 is clear weather).
+ * `approach` is how near a storm still on its way has come (0 to 1).
+ */
+export function sceneLook(daylight: Daylight, intensity: number, approach = 0): SceneLook {
+  const strength = apparentStrength(intensity, approach);
   const dust = dustColor(daylight);
   const visibility = visibilityAt(strength);
   // The sky fills with dust sooner than the view closes in: half strength already hides it.
@@ -92,5 +110,6 @@ export function sceneLook(daylight: Daylight, intensity: number): SceneLook {
     skyHorizon: mixColor(daylight.skyHorizon, dust, sky),
     fogColor: mixColor(daylight.skyHorizon, dust, sky),
     fogFar: visibility,
+    dust,
   };
 }

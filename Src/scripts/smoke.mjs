@@ -706,6 +706,16 @@ try {
     await page.goto(gameUrl("seed=1&storm=warning&timescale=10"), { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     const warned = await page.evaluate(() => ({ ...window.__game.weather }));
+    // The wall of the storm takes shape in the south and comes nearer through the warning.
+    await page.waitForFunction(() => window.__game.weather.wallOpacity === 1, undefined, { timeout: 10_000 }).catch(() => {});
+    const wallFar = await page.evaluate(() => ({ ...window.__game.weather }));
+    await page.waitForFunction((from) => window.__game.weather.wallDistance < from - 300 || window.__game.weather.phase !== "warning", wallFar.wallDistance, { timeout: 10_000 }).catch(() => {});
+    const wallNear = await page.evaluate(() => ({ ...window.__game.weather }));
+    check(
+      "the storm wall comes nearer during the warning",
+      wallFar.wallOpacity === 1 && wallFar.wallDistance > 300 && wallNear.wallDistance < wallFar.wallDistance - 300,
+      `${wallFar.wallDistance.toFixed(0)} m -> ${wallNear.wallDistance.toFixed(0)} m`,
+    );
     await page.waitForFunction(() => window.__game.weather.intensity === 1, undefined, { timeout: 20_000 }).catch(() => {});
     const raging = await page.evaluate(() => ({ ...window.__game.weather }));
     await page.waitForFunction(() => window.__game.weather.phase === "clear", undefined, { timeout: 30_000 }).catch(() => {});
@@ -715,6 +725,7 @@ try {
       warned.phase === "warning" && warned.intensity === 0 && raging.phase === "storm" && raging.approach === 1 && passed.phase === "clear" && passed.intensity === 0,
       `${warned.phase} -> ${raging.phase} ${raging.intensity} -> ${passed.phase}`,
     );
+    check("the wall is gone once the storm has passed", passed.wallOpacity === 0, `opacity ${passed.wallOpacity}`);
     await page.goto(gameUrl("storm=now"), { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     check("?storm=now starts in the storm", (await page.evaluate(() => window.__game.weather.phase)) === "storm");

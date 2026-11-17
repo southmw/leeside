@@ -25,21 +25,30 @@ export function fitToWindow(renderer: WebGLRenderer, camera: PerspectiveCamera):
 }
 
 /**
- * Draws everything in the scene once, whether or not the camera can see it. The first time
+ * Draws everything in the scene once, whether or not the camera can see it and whether or not
+ * it is hidden at the moment (the storm's sand, for one, only shows in a storm). The first time
  * an object is drawn its shaders are compiled and its geometry and textures are sent to the
  * graphics card, which takes long enough to be felt as a stutter (measured: up to 200 ms
  * when a car model first came into view). Doing it while loading keeps it out of play.
  */
 export function warmUpScene(renderer: WebGLRenderer, scene: Object3D, camera: Camera): void {
   const culled: Object3D[] = [];
+  const hidden: Object3D[] = [];
   scene.traverse((object) => {
     if (object.frustumCulled) {
       object.frustumCulled = false;
       culled.push(object);
     }
+    if (!object.visible) {
+      object.visible = true;
+      hidden.push(object);
+    }
   });
   renderer.render(scene, camera);
   for (const object of culled) {
     object.frustumCulled = true;
+  }
+  for (const object of hidden) {
+    object.visible = false;
   }
 }

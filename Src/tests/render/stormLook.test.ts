@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { STORM_VISIBILITY } from "../../src/data/tuning";
 import { daylightAt, luminance } from "../../src/render/daylight";
-import { CLEAR_VISIBILITY, dustColor, sceneLook, visibilityAt } from "../../src/render/stormLook";
+import { apparentStrength, CLEAR_VISIBILITY, dustColor, sceneLook, visibilityAt } from "../../src/render/stormLook";
 
 const noon = daylightAt(12);
 const night = daylightAt(0);
@@ -27,6 +27,35 @@ describe("visibilityAt", () => {
   it("stays within its limits for strengths that make no sense", () => {
     expect(visibilityAt(-1)).toBe(CLEAR_VISIBILITY);
     expect(visibilityAt(5)).toBeCloseTo(STORM_VISIBILITY);
+  });
+});
+
+describe("a storm on its way", () => {
+  it("changes nothing when the warning begins", () => {
+    expect(apparentStrength(0, 0)).toBe(0);
+    expect(sceneLook(noon, 0, 0)).toEqual(sceneLook(noon, 0));
+  });
+
+  it("dims the light and hazes the distance more and more as it comes nearer", () => {
+    const early = sceneLook(noon, 0, 0.3);
+    const late = sceneLook(noon, 0, 1);
+    expect(late.sunIntensity).toBeLessThan(early.sunIntensity);
+    expect(late.sunIntensity).toBeLessThan(noon.sunIntensity * 0.9);
+    expect(late.fogFar).toBeLessThan(early.fogFar);
+    expect(late.fogFar).toBeLessThan(CLEAR_VISIBILITY / 2);
+    // Still far from the storm itself: the player can see where to run.
+    expect(late.fogFar).toBeGreaterThan(300);
+  });
+
+  it("does most of it in the second half of the warning", () => {
+    expect(apparentStrength(0, 0.5)).toBeLessThan(apparentStrength(0, 1) / 3);
+  });
+
+  it("hands over to the storm without a step back", () => {
+    // The storm starts at strength 0 with the approach at 1: the look must not clear up.
+    expect(apparentStrength(0, 1)).toBeGreaterThan(0.2);
+    expect(apparentStrength(0.1, 1)).toBe(apparentStrength(0, 1));
+    expect(apparentStrength(0.8, 1)).toBe(0.8);
   });
 });
 

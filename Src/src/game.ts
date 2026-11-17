@@ -4,6 +4,7 @@ import { startGameLoop } from "./core/gameLoop";
 import { benchCameraAt } from "./bench/benchPath";
 import { benchRows, BenchRecorder, judge } from "./bench/benchRecorder";
 import { benchRoute, DRY_RIVERBED_STOPS } from "./bench/benchRoute";
+import { benchWeather } from "./bench/benchWeather";
 import { installDebugApi, TIMED_SECTIONS } from "./debug/debugApi";
 import { readDevice } from "./debug/deviceInfo";
 import { isWithinBudget, PERF_BUDGETS } from "./debug/perfBudget";
@@ -24,7 +25,7 @@ import { advanceClock, createClock, parseTimeOfDay, readClock, setHour } from ".
 import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
 import { createView, previewLook } from "./gameplay/view";
-import { callStorm, calmWeather, createWeather, readWeather, stormOfDay } from "./gameplay/weather";
+import { callStorm, calmWeather, createWeather, readWeather, stormOfDay, type WeatherReading } from "./gameplay/weather";
 import { createEmptyActions } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
 import { createLocalInput } from "./input/localInput";
@@ -47,7 +48,9 @@ import { loadCharacterModel, type CharacterModel } from "./render/characterModel
 import { daylightAt } from "./render/daylight";
 import { loadPropModels, type PropModelLibrary } from "./render/propModel";
 import { createSky } from "./render/sky";
-import { sceneLook } from "./render/stormLook";
+import { apparentStrength, sceneLook } from "./render/stormLook";
+import { createStormParticles } from "./render/stormParticles";
+import { stormWallAt } from "./render/stormWall";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
 import { buildingAt, yawFromDegrees } from "./world/building";
 import { numberParam, resolveStart, zonePlaces } from "./world/startPoint";
@@ -285,8 +288,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     callStorm(weather, clock.elapsed, stormOfDay(weather.seed, readClock(clock).day), stormWish === "warning");
   }
   debug.weather.seed = weather.seed;
+  // During a measurement the clock stands still and the weather follows the measurement instead.
+  let benchReading: WeatherReading | undefined;
+  let latestWeather = readWeather(weather, clock.elapsed);
   const showWeather = (): void => {
-    const reading = readWeather(weather, clock.elapsed);
+    const reading = benchReading ?? readWeather(weather, clock.elapsed);
+    latestWeather = reading;
     debug.weather.phase = reading.phase;
     debug.weather.intensity = reading.intensity;
     debug.weather.approach = reading.approach;
@@ -307,12 +314,22 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   };
   showClock();
   // Called once the camera is placed, every frame: the sky is centred on the camera.
-  // How far the camera is from the character it looks at; 0 when it is not following one.
-  let cameraFocusDistance = 0;
+  // What the camera looks at: the character, or the camera itself when it follows nobody.
+  const cameraFocus = { x: 0, y: 0, z: 0 };
+  const stormParticles = createStormParticles();
+  scene.add(stormParticles.object);
+  let skySeconds = 0;
   const showSky = (): void => {
-    // The storm's strength as of the latest step: dust in the air, a dimmer sun, a shorter view.
-    const light = sceneLook(daylightAt(readClock(clock).hour), debug.weather.intensity);
-    sky.update(light, camera.position, cameraFocusDistance);
+    // The weather as of the latest step: dust in the air, a dimmer sun, a shorter view, and
+    // the wall of the storm on its way.
+    const light = sceneLook(daylightAt(readClock(clock).hour), latestWeather.intensity, latestWeather.approach);
+    const wall = stormWallAt(latestWeather);
+    sky.update(light, wall, camera, cameraFocus, skySeconds);
+    // The first grains fly as the wall draws near; the air fills with them when it breaks.
+    const sand = apparentStrength(latestWeather.intensity, latestWeather.approach);
+    stormParticles.update(sand, skySeconds, light.dust, renderer.domElement.height, camera.fov);
+    debug.weather.wallDistance = wall.distance;
+    debug.weather.wallOpacity = wall.opacity;
     debug.sky.visibility = light.fogFar;
     debug.sky.sunElevation = light.sunElevation;
     debug.sky.sunIntensity = light.sunIntensity;
@@ -432,6 +449,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       }
       sectionTimer.end("sim");
       showClock();
+      if (bench) {
+        benchReading = benchWeather(bench.recorder.progress, benchSeconds);
+      }
       showWeather();
 
       Object.assign(debug.input, player.input);
@@ -497,7 +517,11 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         );
         camera.lookAt(flight.target.x, heightAt(zone.terrain, flight.target.x, flight.target.z) + 1.5, flight.target.z);
       }
-      cameraFocusDistance = bench ? 0 : camera.position.distanceTo(drawnAt);
+      const focus = bench ? camera.position : drawnAt;
+      cameraFocus.x = focus.x;
+      cameraFocus.y = focus.y;
+      cameraFocus.z = focus.z;
+      skySeconds += lastFrameSeconds;
       showSky();
       renderer.render(scene, camera);
       sectionTimer.end("render");

@@ -106,7 +106,16 @@ export interface GameDebug {
    * seconds of game time until the next phase (infinite when no storm is ahead today), and the
    * seed that decides each day's storm.
    */
-  weather: { phase: "clear" | "warning" | "storm" | "fading"; intensity: number; approach: number; secondsLeft: number; seed: number };
+  weather: {
+    phase: "clear" | "warning" | "storm" | "fading";
+    intensity: number;
+    approach: number;
+    secondsLeft: number;
+    seed: number;
+    /** The storm wall: metres south of the player (negative once past), and how solid it looks (0 to 1). */
+    wallDistance: number;
+    wallOpacity: number;
+  };
   /**
    * The sky: how high the sun stands in degrees, how strong the sunlight and the ambient light
    * are, and how far one can see in metres before the haze hides everything.
@@ -145,7 +154,7 @@ export function installDebugApi(language: Language): GameDebug {
     bench: { state: "off", progress: 0, summary: null, withinBudget: null },
     ui: { scale: 1, tooSmall: false, window: null, selectedButton: -1 },
     clock: { day: 1, hour: 0, phase: "day", scale: 1 },
-    weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0 },
+    weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0, wallDistance: 0, wallOpacity: 0 },
     sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0, visibility: 0 },
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },
