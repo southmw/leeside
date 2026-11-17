@@ -1,4 +1,5 @@
 import { createRandom } from "../core/random";
+import { DEFAULT_PROP_SET, type PropSetId } from "./propModels";
 import { propRadius } from "./props";
 import type { ZoneDefinition } from "./zoneDefinition";
 
@@ -37,7 +38,7 @@ interface Clearance {
   radius: number;
 }
 
-function clearances(zone: ZoneDefinition): Clearance[] {
+function clearances(zone: ZoneDefinition, set: PropSetId): Clearance[] {
   return [
     ...zone.buildings.map((building) => ({
       x: building.position[0],
@@ -47,16 +48,23 @@ function clearances(zone: ZoneDefinition): Clearance[] {
     ...zone.props.map((prop) => ({
       x: prop.position[0],
       z: prop.position[1],
-      radius: propRadius(prop) + PROP_MARGIN,
+      radius: propRadius(prop, set) + PROP_MARGIN,
     })),
     { x: zone.spawn.position[0], z: zone.spawn.position[1], radius: START_CLEARANCE },
   ];
 }
 
-/** Positions, sizes and rotations for one scatter entry of a zone. */
-export function scatterItems(zone: ZoneDefinition, scatter: ScatterDefinition): ScatterItem[] {
+/**
+ * Positions, sizes and rotations for one scatter entry of a zone. Props differ in size from
+ * one set of models to another, so what is kept clear depends on `set`.
+ */
+export function scatterItems(
+  zone: ZoneDefinition,
+  scatter: ScatterDefinition,
+  set: PropSetId = DEFAULT_PROP_SET,
+): ScatterItem[] {
   const random = createRandom(scatter.seed);
-  const keepClear = clearances(zone);
+  const keepClear = clearances(zone, set);
   const items: ScatterItem[] = [];
 
   for (let index = 0; index < scatter.count; index += 1) {

@@ -71,7 +71,17 @@ export interface GameDebug {
     animation: "none" | "idle" | "run" | "jump";
   };
   /** The zone the player is in: its id, the text key of its name, and how many buildings, props and rocks it has. */
-  zone: { id: string; nameKey: string; buildings: number; props: number; propModels: number; rocks: number };
+  zone: {
+    id: string;
+    nameKey: string;
+    buildings: number;
+    props: number;
+    /** How many props are drawn with a model, whether the rocks are, and which set of models is in use. */
+    propModels: number;
+    rockModels: boolean;
+    propSet: string;
+    rocks: number;
+  };
   /** The local player's view in radians, and whether a mouse button is held so that mouse movement turns it. */
   view: { yaw: number; pitch: number; looking: boolean };
   /**
@@ -117,7 +127,7 @@ export function installDebugApi(language: Language): GameDebug {
     entityCount: 0,
     bodyCount: 0,
     player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, model: "capsule", character: "", animation: "none" },
-    zone: { id: "", nameKey: "", buildings: 0, props: 0, propModels: 0, rocks: 0 },
+    zone: { id: "", nameKey: "", buildings: 0, props: 0, propModels: 0, rockModels: false, propSet: "", rocks: 0 },
     view: { yaw: 0, pitch: 0, looking: false },
     bench: { state: "off", progress: 0, summary: null, withinBudget: null },
     ui: { scale: 1, tooSmall: false, window: null, selectedButton: -1 },

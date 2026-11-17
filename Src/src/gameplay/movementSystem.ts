@@ -30,17 +30,18 @@ export function facingOf(x: number, z: number): number {
  * Moves every character by its own input, plus jumping and gravity. The physics world
  * shortens the movement where something is in the way; the new position takes effect in the
  * physics step that follows, so this system must run before the physics system.
- * `speed` overrides the walking speed, for trying out values (`?speed`).
+ * `speed` overrides the walking speed, for trying out values (`?speed`); a function is asked
+ * again every step, so the value can change while the game runs.
  */
 export function createMovementSystem(
   world: GameWorld,
   physics: PhysicsWorld,
-  speed: number = MOVE_SPEED,
+  speed: number | (() => number) = MOVE_SPEED,
 ): (dt: number) => void {
   const characters = world.with("character", "input", "body");
   return (dt) => {
     for (const { character, input, body, view } of characters) {
-      const desired = desiredMovement(input, dt, view?.yaw, speed);
+      const desired = desiredMovement(input, dt, view?.yaw, typeof speed === "function" ? speed() : speed);
       if (desired.x !== 0 || desired.z !== 0) {
         character.facing = turnTowards(character.facing, facingOf(desired.x, desired.z), CHARACTER_TURN_RATE * dt);
       }

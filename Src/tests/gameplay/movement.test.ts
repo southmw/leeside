@@ -103,6 +103,51 @@ describe("character movement", () => {
     physics.dispose();
   });
 
+  it("follows a speed that changes while the game runs", () => {
+    const world = createWorld();
+    const physics = new PhysicsWorld();
+    physics.addStaticBox({ x: 0, y: -0.5, z: 0 }, { x: 50, y: 0.5, z: 50 });
+    const start = { x: 0, y: CHARACTER_HEIGHT / 2 + CHARACTER_SKIN, z: 0 };
+    const player = world.add({
+      transform: createTransform(start.x, start.y, start.z),
+      input: createEmptyActions(),
+      character: createCharacter(),
+      body: { handle: physics.addCharacter(start) },
+    });
+    let speed = 4;
+    const movement = createMovementSystem(world, physics, () => speed);
+    const physicsSystem = createPhysicsSystem(world, physics);
+    physicsSystem.update();
+    player.input.moveY = 1;
+    const runSecond = (): void => {
+      for (let tick = 0; tick < TICK_RATE; tick += 1) {
+        movement(TICK_SECONDS);
+        physicsSystem.update();
+      }
+    };
+    runSecond();
+    speed = 8;
+    runSecond();
+    expect(-player.transform.z).toBeCloseTo(12, 1);
+    physics.dispose();
+  });
+
+  it("carries on from where a teleport puts the character", () => {
+    const { physics, player, run, groundY } = setup();
+    const handle = (player as unknown as { body: { handle: number } }).body.handle;
+    physics.teleportCharacter(handle, { x: 20, y: groundY, z: -15 });
+    run(2);
+    expect(player.transform.x).toBeCloseTo(20, 2);
+    expect(player.transform.z).toBeCloseTo(-15, 2);
+
+    player.input.moveY = 1;
+    run(TICK_RATE);
+    expect(player.transform.x).toBeCloseTo(20, 1);
+    expect(-player.transform.z).toBeGreaterThan(15 + MOVE_SPEED * 0.9);
+    expect(player.character.grounded).toBe(true);
+    physics.dispose();
+  });
+
   it("is not faster diagonally", () => {
     const { physics, player, run } = setup();
     player.input.moveX = Math.SQRT1_2;

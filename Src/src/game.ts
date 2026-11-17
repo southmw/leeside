@@ -39,15 +39,15 @@ import { createRenderSync } from "./render/renderSync";
 import { createBenchPanel } from "./ui/benchPanel";
 import { createLookHint } from "./ui/lookHint";
 import type { Ui } from "./ui/uiRoot";
-import { characterById } from "./render/characterCatalog";
+import { characterById, CHARACTERS } from "./render/characterCatalog";
 import { loadCharacterModel, type CharacterModel } from "./render/characterModel";
-import { loadPropModels } from "./render/propModel";
+import { loadPropModels, type PropModelLibrary } from "./render/propModel";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
 import { buildingAt, yawFromDegrees } from "./world/building";
-import { numberParam, resolveStart } from "./world/startPoint";
+import { numberParam, resolveStart, zonePlaces } from "./world/startPoint";
 import { heightAt } from "./world/terrain";
-import { propModelFor, propModelUrls } from "./world/propModels";
-import { loadZone } from "./world/zoneLoader";
+import { PROP_SET_IDS, PROP_SETS, type PropSet, type PropSetId, propModelFor, propModelUrls, propSetId } from "./world/propModels";
+import { type LoadedZone, loadZone } from "./world/zoneLoader";
 import { loadDryRiverbed } from "./world/zones/dryRiverbed";
 
 /** Performance measurement: how long it lasts by default, and how the camera flies. */
@@ -56,6 +56,10 @@ const BENCH_CAMERA_HEIGHT = 6;
 const BENCH_LOOK_AHEAD = 40;
 /** The budget results are judged against, until the quality setting exists (step 2.22). */
 const BENCH_QUALITY = "high";
+
+/** Limits of the walking speed that `?speed` and the development panel accept, in m/s. */
+const MIN_MOVE_SPEED = 1;
+const MAX_MOVE_SPEED = 30;
 
 /** The view starts tilted slightly down, so the ground ahead is in sight. Radians. */
 const START_PITCH = -0.2;
@@ -145,27 +149,39 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   const physics = new PhysicsWorld();
   const physicsSystem = createPhysicsSystem(world, physics);
 
-  // Prop models are fetched before the zone is built. `?props=boxes` draws every prop as its
-  // box instead, for comparing looks and performance with and without the models.
+  // Prop models are fetched before the zone is built. `?props=boxes` draws props and
+  // rocks as plain shapes instead, for comparing looks and performance.
   const riverbed = loadDryRiverbed();
-  const propModels = await loadPropModels(
-    `${import.meta.env.BASE_URL}models/`,
-    startParams.get("props") === "boxes" ? [] : propModelUrls(riverbed.props),
-  );
-  const zone = loadZone(riverbed, physics, scene, {
-    propModel: (prop, box) => {
-      const model = propModelFor(prop);
-      return model ? propModels.create(model, box) : undefined;
-    },
-  });
+  const zoneDefinition = riverbed;
+  const propLibraries = new Map<PropSetId, PropModelLibrary>();
+  const buildZone = async (set: PropSetId): Promise<LoadedZone> => {
+    let library = propLibraries.get(set);
+    if (!library) {
+      library = await loadPropModels(`${import.meta.env.BASE_URL}models/`, propModelUrls(riverbed.props, set));
+      propLibraries.set(set, library);
+    }
+    const models = library;
+    const built = loadZone(riverbed, physics, scene, {
+      propSet: set,
+      propModel: (prop, box) => {
+        const model = propModelFor(prop, set);
+        return model ? models.create(model, box) : undefined;
+      },
+      rockModels: (rocks) => models.createRocks(PROP_SETS[set].rocks, rocks),
+      pebbleColor: (PROP_SETS[set] as PropSet).pebbleColor,
+    });
+    debug.zone.id = zoneDefinition.id;
+    debug.zone.nameKey = zoneDefinition.nameKey;
+    debug.zone.buildings = zoneDefinition.buildings.length;
+    debug.zone.props = zoneDefinition.props.length;
+    debug.zone.rocks = built.rockCount;
+    debug.zone.propModels = built.propModelCount;
+    debug.zone.rockModels = built.rocksModelled;
+    debug.zone.propSet = set;
+    return built;
+  };
+  let zone = await buildZone(propSetId(startParams.get("props")));
   onProgress("zone");
-  const zoneDefinition = zone.definition;
-  debug.zone.id = zoneDefinition.id;
-  debug.zone.nameKey = zoneDefinition.nameKey;
-  debug.zone.buildings = zoneDefinition.buildings.length;
-  debug.zone.props = zoneDefinition.props.length;
-  debug.zone.rocks = zone.rockCount;
-  debug.zone.propModels = zone.propModelCount;
 
   // Where the player starts: the zone's start point, or `?at=east,south` and `?face=degrees`
   // (clockwise from north) to start anywhere, for checking a place without walking to it.
@@ -199,6 +215,22 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.player.character = id;
   };
   let latestCharacterWish = firstCharacter;
+  const setCharacter = async (id: string): Promise<void> => {
+    const wanted = characterById(id).id;
+    latestCharacterWish = wanted;
+    if (wanted === debug.player.character) {
+      return;
+    }
+    try {
+      const model = await loadCharacter(wanted);
+      // A later choice may have been made while this one was loading.
+      if (latestCharacterWish === wanted) {
+        showCharacter(model, wanted);
+      }
+    } catch (error) {
+      console.warn(`Character "${wanted}" could not be loaded; keeping the current one.`, error);
+    }
+  };
   showCharacter(await characterModelLoading, firstCharacter);
   onProgress("character");
 
@@ -235,9 +267,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   const inputSystem = createInputSystem(world, localInput);
   const lookSystem = createLookSystem(world);
   // `?speed=8` tries a different walking speed (m/s) without changing the tuning file.
-  const moveSpeed = numberParam(startParams.get("speed"), 1, 30, MOVE_SPEED);
+  let moveSpeed = numberParam(startParams.get("speed"), MIN_MOVE_SPEED, MAX_MOVE_SPEED, MOVE_SPEED);
   debug.moveSpeed = moveSpeed;
-  const movementSystem = createMovementSystem(world, physics, moveSpeed);
+  const movementSystem = createMovementSystem(world, physics, () => moveSpeed);
 
   // The camera's current reach. It shrinks at once when something is in the way and grows back
   // gradually, so it is kept between frames.
@@ -253,6 +285,47 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
 
   // Everything is drawn once now, so nothing stutters when it first comes into view in play.
   warmUpScene(renderer, scene, camera);
+
+  // Puts the player somewhere else in the zone, facing `facing` degrees clockwise from north.
+  const teleport = (east: number, south: number, facing: number): void => {
+    const yaw = yawFromDegrees(facing);
+    const y = heightAt(zone.terrain, east, south) + CHARACTER_HEIGHT / 2 + CHARACTER_SKIN;
+    physics.teleportCharacter(player.body.handle, { x: east, y, z: south });
+    player.transform.x = east;
+    player.transform.y = y;
+    player.transform.z = south;
+    player.character.facing = yaw;
+    player.character.velocityY = 0;
+    player.view.yaw = yaw;
+    renderSync.snap(player);
+  };
+
+  // Development panel (F2): everything the start conditions do, changed on screen instead.
+  if (import.meta.env.DEV && !bench) {
+    void import("./debug/devPanel").then(({ createDevPanel }) => {
+      createDevPanel(ui, i18n, {
+        characters: CHARACTERS.map((character) => character.id),
+        character: () => debug.player.character,
+        setCharacter: (id) => setCharacter(id),
+        propSets: PROP_SET_IDS,
+        propSet: () => debug.zone.propSet,
+        setPropSet: async (set) => {
+          // The old zone goes first, so its colliders are not in the way of the new ones.
+          zone.unload();
+          zone = await buildZone(propSetId(set));
+          warmUpScene(renderer, scene, camera);
+        },
+        moveSpeed: () => moveSpeed,
+        setMoveSpeed: (speed) => {
+          moveSpeed = Math.min(Math.max(speed, MIN_MOVE_SPEED), MAX_MOVE_SPEED);
+          debug.moveSpeed = moveSpeed;
+        },
+        defaultMoveSpeed: MOVE_SPEED,
+        places: zonePlaces(zoneDefinition),
+        goTo: (place) => teleport(place.east, place.south, place.facing),
+      });
+    });
+  }
 
   let firstFrameDrawn: () => void = () => {};
   const firstFrame = new Promise<void>((resolve) => {
@@ -407,21 +480,6 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       }
       createLookHint(mouse, i18n);
     },
-    async setCharacter(id: string): Promise<void> {
-      const wanted = characterById(id).id;
-      latestCharacterWish = wanted;
-      if (wanted === debug.player.character) {
-        return;
-      }
-      try {
-        const model = await loadCharacter(wanted);
-        // A later choice may have been made while this one was loading.
-        if (latestCharacterWish === wanted) {
-          showCharacter(model, wanted);
-        }
-      } catch (error) {
-        console.warn(`Character "${wanted}" could not be loaded; keeping the current one.`, error);
-      }
-    },
+    setCharacter,
   };
 }

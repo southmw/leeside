@@ -9,7 +9,7 @@ import {
   WALL_THICKNESS,
   yawFromDegrees,
 } from "../../src/world/building";
-import { numberParam, resolveStart } from "../../src/world/startPoint";
+import { numberParam, resolveStart, zonePlaces } from "../../src/world/startPoint";
 import { heightAt } from "../../src/world/terrain";
 import type { ZoneBuilding } from "../../src/world/zoneDefinition";
 import { loadZone } from "../../src/world/zoneLoader";
@@ -236,5 +236,31 @@ describe("loadZone", () => {
       expect(pose.x).toBeGreaterThan(eastFace + 0.3);
       expect(pose.x).toBeLessThan(eastFace + 0.5);
     });
+  });
+});
+
+describe("zonePlaces", () => {
+  const zone = loadDryRiverbed();
+  const places = zonePlaces(zone);
+
+  it("starts with the zone's start point", () => {
+    expect(places[0]).toEqual({ id: "start", east: 360, south: 619, facing: 0 });
+  });
+
+  it("has a place for every building and prop, south of it and looking north", () => {
+    expect(places).toHaveLength(1 + zone.buildings.length + zone.props.length);
+    for (const target of [...zone.buildings, ...zone.props]) {
+      const place = places.find((candidate) => candidate.id === target.id);
+      expect(place?.east).toBe(target.position[0]);
+      expect(place?.south).toBeGreaterThan(target.position[1]);
+      expect(place?.facing).toBe(0);
+    }
+  });
+
+  it("keeps every place inside the zone", () => {
+    for (const place of places) {
+      expect(place.south).toBeLessThan(zone.size);
+      expect(place.east).toBeGreaterThanOrEqual(0);
+    }
   });
 });

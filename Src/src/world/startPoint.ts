@@ -47,3 +47,36 @@ export function resolveStart(zone: ZoneDefinition, at?: string | null, face?: st
   }
   return start;
 }
+
+/** A place worth jumping to while developing: where to stand and which way to look. */
+export interface ZonePlace extends StartPoint {
+  /** The id of the building or prop the place looks at, or "start". */
+  id: string;
+}
+
+/** How far south of a prop or a building's centre the player is put, in metres. */
+const PROP_VIEW_DISTANCE = 10;
+const BUILDING_VIEW_DISTANCE = 16;
+
+/**
+ * The zone's start point and a spot a little south of every building and prop, looking north
+ * at it. Spots are kept inside the zone.
+ */
+export function zonePlaces(zone: ZoneDefinition): ZonePlace[] {
+  const south = (value: number): number => Math.min(value, zone.size - 1);
+  return [
+    { id: "start", east: zone.spawn.position[0], south: zone.spawn.position[1], facing: zone.spawn.facing },
+    ...zone.buildings.map((building) => ({
+      id: building.id,
+      east: building.position[0],
+      south: south(building.position[1] + BUILDING_VIEW_DISTANCE),
+      facing: 0,
+    })),
+    ...zone.props.map((prop) => ({
+      id: prop.id,
+      east: prop.position[0],
+      south: south(prop.position[1] + PROP_VIEW_DISTANCE),
+      facing: 0,
+    })),
+  ];
+}

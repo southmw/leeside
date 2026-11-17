@@ -1,5 +1,5 @@
 import { yawFromDegrees } from "./building";
-import { propModelFor } from "./propModels";
+import { DEFAULT_PROP_SET, propModelFor, type PropSetId } from "./propModels";
 import type { ZoneProp } from "./zoneDefinition";
 
 /**
@@ -39,15 +39,18 @@ export interface PropBox {
 /** How far a prop's box reaches below the ground, so it does not hover on uneven ground. */
 export const PROP_SUNK = 0.3;
 
-/** Size of a prop in metres (width, height, length): its model's, or else its kind's box. */
-export function propSize(prop: Pick<ZoneProp, "id" | "kind">): readonly [number, number, number] {
-  return propModelFor(prop)?.size ?? PROP_SHAPES[prop.kind].size;
+/** Size of a prop in metres (width, height, length): its model's in `set`, or else its kind's box. */
+export function propSize(
+  prop: Pick<ZoneProp, "id" | "kind">,
+  set: PropSetId = DEFAULT_PROP_SET,
+): readonly [number, number, number] {
+  return propModelFor(prop, set)?.size ?? PROP_SHAPES[prop.kind].size;
 }
 
 /** The box of a prop standing on ground of height `groundHeight`. */
-export function propBox(prop: ZoneProp, groundHeight: number): PropBox {
+export function propBox(prop: ZoneProp, groundHeight: number, set: PropSetId = DEFAULT_PROP_SET): PropBox {
   const { color } = PROP_SHAPES[prop.kind];
-  const [width, height, length] = propSize(prop);
+  const [width, height, length] = propSize(prop, set);
   return {
     center: { x: prop.position[0], y: groundHeight + (height - PROP_SUNK) / 2, z: prop.position[1] },
     halfExtents: { x: width / 2, y: (height + PROP_SUNK) / 2, z: length / 2 },
@@ -57,7 +60,7 @@ export function propBox(prop: ZoneProp, groundHeight: number): PropBox {
 }
 
 /** Radius of the circle a prop fits in, for keeping other things clear of it. */
-export function propRadius(prop: ZoneProp): number {
-  const [width, , length] = propSize(prop);
+export function propRadius(prop: ZoneProp, set: PropSetId = DEFAULT_PROP_SET): number {
+  const [width, , length] = propSize(prop, set);
   return Math.hypot(width, length) / 2;
 }

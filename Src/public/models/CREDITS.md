@@ -12,12 +12,15 @@ removed, only the "Idle", "Run" and "Jump_Idle" animations are kept, and the fil
 as binary glTF. To rebuild, unpack the kit into `assets-src/` and run
 `node scripts/build-characters.mjs`.
 
-## props/car_sports.glb, props/car_pickup.glb
+## props/quaternius/
 
-The abandoned cars, from the same "Zombie Apocalypse Kit" (March 2024) by Quaternius
-("Vehicle_Sports" and "Vehicle_Pickup").
-License: CC0 1.0 (public domain dedication).
+Prop and rock models by Quaternius. License: CC0 1.0 (public domain dedication).
+`scripts/build-props.mjs` puts them here from the packs unpacked in `assets-src/`.
 
-Source: https://quaternius.com/packs/zombieapocalypsekit.html
-
-Unchanged apart from being written as binary glTF by `scripts/build-props.mjs`.
+- `car_sports.glb`, `car_pickup.glb`, `container_red.glb`, `container_green.glb`: from the
+  "Zombie Apocalypse Kit" (March 2024), https://quaternius.com/packs/zombieapocalypsekit.html
+  Unchanged apart from being written as binary glTF.
+- `rock_medium_1..3.gltf` with their `.bin` files and `Rocks_Desert_Diffuse.png`: from the
+  "Stylized Nature MegaKit" (free version), https://quaternius.itch.io/stylized-nature-megakit
+  The rocks use the pack's desert texture instead of the grey one their files name, and the
+  texture is reduced from 2048 to 512 pixels.

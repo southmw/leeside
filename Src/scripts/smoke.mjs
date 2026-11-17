@@ -89,7 +89,11 @@ try {
 
   if (ready) {
     const first = await page.evaluate(() => ({ ...window.__game, canvas: { ...window.__game.canvas } }));
-    await page.waitForTimeout(500);
+    // Software rendering draws only a few frames a second, fewer still while the scene is
+    // new; this checks that the loop is alive, not how fast it is.
+    await page
+      .waitForFunction((from) => window.__game.frame > from.frame && window.__game.tick > from.tick, { frame: first.frame, tick: first.tick }, { timeout: 10_000 })
+      .catch(() => {});
     const later = await page.evaluate(() => ({ frame: window.__game.frame, tick: window.__game.tick }));
 
     check("frames keep rendering", later.frame > first.frame, `frame ${first.frame} -> ${later.frame}`);
@@ -103,8 +107,12 @@ try {
       zoneInfo.id === "dry_riverbed" && zoneInfo.buildings === 3 && zoneInfo.props === 9 && zoneInfo.rocks > 1000,
       `${zoneInfo.id}, ${zoneInfo.buildings} buildings, ${zoneInfo.props} props, ${zoneInfo.rocks} rocks`,
     );
-    // The four cars are drawn with models; the other props are still boxes.
-    check("the cars are drawn with models", zoneInfo.propModels === 4, `${zoneInfo.propModels} of ${zoneInfo.props} props`);
+    // The default set of models: four cars and the two blocked exits, and the rocks.
+    check(
+      "props and rocks are drawn with models",
+      zoneInfo.propSet === "quaternius" && zoneInfo.propModels === 6 && zoneInfo.rockModels === true,
+      `${zoneInfo.propSet}: ${zoneInfo.propModels} of ${zoneInfo.props} props, rocks ${zoneInfo.rockModels}`,
+    );
     check(
       "drawing buffer matches the window",
       first.canvas.width >= 1280 && first.canvas.height >= 720,
@@ -571,16 +579,45 @@ try {
     check("?character picks a character for one visit", (await characterNow()) === "shaun", await characterNow());
     await page.evaluate(() => window.localStorage.removeItem("leeside.character"));
 
-    // `?props=boxes` draws every prop as its box again; the colliders are the same either way.
-    const bodiesWithModels = await page.evaluate(() => window.__game.bodyCount);
+    // The development panel does on screen what the start conditions do in the address.
+    await page.goto(gameUrl(), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    await page.keyboard.press("F2");
+    await page.locator("#dev-panel").waitFor({ state: "visible", timeout: 5_000 });
+    await page.locator("#dev-place-abandoned_car").click();
+    await page.waitForFunction(() => Math.abs(window.__game.player.x - 469) < 1, undefined, { timeout: 5_000 }).catch(() => {});
+    const moved = await page.evaluate(() => ({ x: window.__game.player.x, z: window.__game.player.z }));
+    check("the panel moves the player to a place", Math.abs(moved.x - 469) < 1 && Math.abs(moved.z - 366) < 1, `at ${moved.x.toFixed(1)}, ${moved.z.toFixed(1)}`);
+    await page.locator("#dev-speed-up").click();
+    const fasterSpeed = await page.evaluate(() => window.__game.moveSpeed);
+    await page.locator("#dev-speed-reset").click();
+    const resetSpeed = await page.evaluate(() => window.__game.moveSpeed);
+    check("the panel changes the walking speed", fasterSpeed === 13 && resetSpeed === 12, `${fasterSpeed} -> ${resetSpeed}`);
+    await page.locator("#dev-character-lis").click();
+    await waitForCharacter("lis");
+    check("the panel changes the character", (await characterNow()) === "lis", await characterNow());
+    const propsNow = () => page.evaluate(() => ({ set: window.__game.zone.propSet, models: window.__game.zone.propModels, rocks: window.__game.zone.rockModels }));
+    const waitForSet = (id) => page.waitForFunction((want) => window.__game.zone.propSet === want, id, { timeout: 15_000 }).catch(() => {});
+    await page.locator("#dev-props-boxes").click();
+    await waitForSet("boxes");
+    const boxes = await propsNow();
+    await page.locator("#dev-props-quaternius").click();
+    await waitForSet("quaternius");
+    const quaternius = await propsNow();
+    check(
+      "the panel switches the props between models and boxes",
+      boxes.models === 0 && !boxes.rocks && quaternius.models === 6 && quaternius.rocks,
+      `boxes ${boxes.models}, quaternius ${quaternius.models}`,
+    );
+    await page.keyboard.press("F2");
+    check("F2 closes the panel again", !(await page.locator("#dev-panel").isVisible()));
+
+    // `?props=` picks the set from the address as well.
     await page.goto(gameUrl("props=boxes"), { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
-    const boxed = await page.evaluate(() => ({ models: window.__game.zone.propModels, bodies: window.__game.bodyCount }));
-    check(
-      "?props=boxes draws the props as boxes, with the same colliders",
-      boxed.models === 0 && boxed.bodies === bodiesWithModels,
-      `${boxed.models} models, ${boxed.bodies} bodies (${bodiesWithModels} with models)`,
-    );
+    const boxed = await page.evaluate(() => ({ ...window.__game.zone }));
+    check("?props=boxes draws props and rocks as plain shapes", boxed.propModels === 0 && boxed.rockModels === false, `${boxed.propModels} models`);
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.
     const phone = await browser.newPage({

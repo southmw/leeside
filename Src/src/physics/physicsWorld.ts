@@ -129,6 +129,21 @@ export class PhysicsWorld {
   }
 
   /**
+   * Puts a character somewhere else in one go (a teleport, a zone change), whatever lies in
+   * between. `center` is the middle of the capsule. Movement resumes after the next step.
+   * Unknown handles are ignored.
+   */
+  teleportCharacter(handle: number, center: Vec3): void {
+    const body = this.world.getRigidBody(handle);
+    if (!body) {
+      return;
+    }
+    body.setTranslation(center, true);
+    body.setNextKinematicTranslation(center);
+    this.queriesStale = true;
+  }
+
+  /**
    * Moves a character by `desired`, shortened and bent along surfaces where something is in
    * the way, and reports the movement that fitted. The new position takes effect on the next
    * `step`. Returns undefined, without moving, if the character does not exist or if bodies

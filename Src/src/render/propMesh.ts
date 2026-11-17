@@ -14,7 +14,10 @@ export function createPropMesh(box: PropBox): Mesh {
 
 export interface RockInstance {
   x: number;
+  /** Height of the rock's centre when drawn as a plain shape. */
   y: number;
+  /** Height of the ground under it. */
+  groundY: number;
   z: number;
   /** Rough radius in metres. */
   size: number;
@@ -24,11 +27,14 @@ export interface RockInstance {
 /** Rocks are flatter than they are wide. */
 export const ROCK_HEIGHT_RATIO = 0.7;
 
-/** All rocks of a zone as one instanced mesh: one draw call however many there are. */
-export function createRockMesh(rocks: readonly RockInstance[]): InstancedMesh {
+/** The colour of rocks drawn as plain shapes, unless a set of models asks for another. */
+export const ROCK_COLOR = 0x8a7f6d;
+
+/** Rocks as plain shapes in one instanced mesh: one draw call however many there are. */
+export function createRockMesh(rocks: readonly RockInstance[], color: number = ROCK_COLOR): InstancedMesh {
   const mesh = new InstancedMesh(
     new DodecahedronGeometry(1, 0),
-    new MeshStandardMaterial({ color: 0x8a7f6d, roughness: 1, flatShading: true }),
+    new MeshStandardMaterial({ color, roughness: 1, flatShading: true }),
     rocks.length,
   );
   const matrix = new Matrix4();
