@@ -39,6 +39,7 @@ import { createRenderSync } from "./render/renderSync";
 import { createBenchPanel } from "./ui/benchPanel";
 import { createLookHint } from "./ui/lookHint";
 import type { Ui } from "./ui/uiRoot";
+import { characterById } from "./render/characterCatalog";
 import { loadCharacterModel, type CharacterModel } from "./render/characterModel";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
 import { buildingAt, yawFromDegrees } from "./world/building";
@@ -67,6 +68,8 @@ export interface GameContext {
   ui: Ui;
   /** Start conditions from the URL, e.g. `?lang=ko`. */
   startParams: URLSearchParams;
+  /** Id of the character to start with (render/characterCatalog.ts). */
+  character: string;
   /** Called as each part of loading finishes. */
   onProgress(step: LoadingStep): void;
 }
@@ -77,6 +80,11 @@ export interface RunningGame {
    * a slowly swaying camera and input is ignored.
    */
   start(): void;
+  /**
+   * Changes what the player looks like. The model is fetched first, so the change shows a
+   * moment later; if it cannot be fetched the character stays as it is.
+   */
+  setCharacter(id: string): Promise<void>;
 }
 
 /**
@@ -85,6 +93,7 @@ export interface RunningGame {
  */
 export async function bootGame(context: GameContext): Promise<RunningGame> {
   const { i18n, ui, startParams, onProgress } = context;
+  const firstCharacter = characterById(context.character).id;
   const canvas = document.querySelector<HTMLCanvasElement>("#game");
   if (!canvas) {
     throw new Error("Missing #game canvas");
@@ -121,10 +130,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   const renderSync = createRenderSync(world, scene);
 
   // The character model downloads while the physics engine starts up.
-  const characterModelLoading: Promise<CharacterModel | undefined> = loadCharacterModel(
-    `${import.meta.env.BASE_URL}models/character.glb`,
-    CHARACTER_HEIGHT,
-  ).catch((error: unknown) => {
+  const loadCharacter = (id: string): Promise<CharacterModel> =>
+    loadCharacterModel(characterById(id), `${import.meta.env.BASE_URL}models/`, CHARACTER_HEIGHT);
+  const characterModelLoading = loadCharacter(firstCharacter).catch((error: unknown) => {
     console.warn("Character model could not be loaded; using the capsule instead.", error);
     return undefined;
   });
@@ -157,16 +165,27 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   // loaded (the game is fully playable with it). The game starts only once this is settled, so
   // the capsule never shows for a moment before the model.
   const playerVisual = new Group();
-  const characterModel = await characterModelLoading;
+  let characterModel: CharacterModel | undefined;
+  // False while the title screen is up: the world is drawn but nobody controls the character.
+  let playing = false;
+  const showCharacter = (model: CharacterModel | undefined, id: string): void => {
+    playerVisual.clear();
+    if (model) {
+      // The entity's position is the capsule's centre; the model's origin is at its feet.
+      model.object.position.y = -(CHARACTER_HEIGHT / 2 + CHARACTER_SKIN);
+      // Behind the title the character faces the camera, so the player sees whom they pick.
+      model.object.rotation.y = playing || startParams.has("bench") ? 0 : Math.PI;
+      playerVisual.add(model.object);
+    } else {
+      playerVisual.add(createCharacterMesh(CHARACTER_HEIGHT, CHARACTER_RADIUS));
+    }
+    characterModel = model;
+    debug.player.model = model ? "model" : "capsule";
+    debug.player.character = id;
+  };
+  let latestCharacterWish = firstCharacter;
+  showCharacter(await characterModelLoading, firstCharacter);
   onProgress("character");
-  if (characterModel) {
-    // The entity's position is the capsule's centre; the model's origin is at its feet.
-    characterModel.object.position.y = -(CHARACTER_HEIGHT / 2 + CHARACTER_SKIN);
-    playerVisual.add(characterModel.object);
-  } else {
-    playerVisual.add(createCharacterMesh(CHARACTER_HEIGHT, CHARACTER_RADIUS));
-  }
-  debug.player.model = characterModel ? "model" : "capsule";
 
   const startYaw = yawFromDegrees(start.facing);
   const player = world.add({
@@ -196,8 +215,6 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.bench.state = "running";
   }
 
-  // False while the title screen is up: the world is drawn but nobody controls the character.
-  let playing = false;
   let titleSeconds = 0;
   const localInput = createLocalInput({ mouse });
   const inputSystem = createInputSystem(world, localInput);
@@ -366,7 +383,27 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         return;
       }
       playing = true;
+      // The character turns its back to the camera again, the way it faces in play.
+      if (characterModel) {
+        characterModel.object.rotation.y = 0;
+      }
       createLookHint(mouse, i18n);
+    },
+    async setCharacter(id: string): Promise<void> {
+      const wanted = characterById(id).id;
+      latestCharacterWish = wanted;
+      if (wanted === debug.player.character) {
+        return;
+      }
+      try {
+        const model = await loadCharacter(wanted);
+        // A later choice may have been made while this one was loading.
+        if (latestCharacterWish === wanted) {
+          showCharacter(model, wanted);
+        }
+      } catch (error) {
+        console.warn(`Character "${wanted}" could not be loaded; keeping the current one.`, error);
+      }
     },
   };
 }

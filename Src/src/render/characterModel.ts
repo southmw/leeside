@@ -4,12 +4,10 @@ import {
   type AnimationInput,
   type CharacterAnimation,
   chooseAnimation,
-  jumpClipTime,
   runPlaybackRate,
 } from "./characterAnimation";
+import type { CharacterDefinition } from "./characterCatalog";
 
-/** Names of the clips in the model file for each animation the game uses. */
-const CLIP_NAMES: Readonly<Record<CharacterAnimation, string>> = { idle: "Idle", run: "Running", jump: "Jump" };
 /** Seconds to blend from one animation to the next. Leaving the ground is quicker than landing. */
 const BLEND_SECONDS = 0.15;
 const JUMP_BLEND_SECONDS = 0.06;
@@ -27,14 +25,20 @@ export interface CharacterModel {
 }
 
 /**
- * Loads a character model with "Idle", "Running" and "Jump" clips and scales it to `height`
- * metres. The model is turned so that it faces -Z, the direction a facing of 0 means in the
- * game (the file's character faces +Z).
+ * Loads the character described by `definition` and scales it to `height` metres. `baseUrl`
+ * is the folder the definition's path is relative to. The model is turned so that it faces
+ * -Z, the direction a facing of 0 means in the game (the files' characters face +Z).
  */
-export async function loadCharacterModel(url: string, height: number): Promise<CharacterModel> {
-  const gltf = await new GLTFLoader().loadAsync(url);
+export async function loadCharacterModel(
+  definition: CharacterDefinition,
+  baseUrl: string,
+  height: number,
+): Promise<CharacterModel> {
+  const gltf = await new GLTFLoader().loadAsync(`${baseUrl}${definition.url}`);
   const model = gltf.scene;
 
+  // Skinned meshes are measured in their posed shape, which needs the bones' matrices.
+  model.updateMatrixWorld(true);
   const bounds = new Box3().setFromObject(model);
   const modelHeight = bounds.max.y - bounds.min.y;
   const scale = modelHeight > 0 ? height / modelHeight : 1;
@@ -48,15 +52,13 @@ export async function loadCharacterModel(url: string, height: number): Promise<C
 
   const mixer = new AnimationMixer(model);
   const actions = {} as Record<CharacterAnimation, AnimationAction>;
-  for (const [animation, clipName] of Object.entries(CLIP_NAMES) as Array<[CharacterAnimation, string]>) {
+  for (const [animation, clipName] of Object.entries(definition.clips) as Array<[CharacterAnimation, string]>) {
     const clip = gltf.animations.find((candidate) => candidate.name === clipName);
     if (!clip) {
-      throw new Error(`Character model ${url} has no "${clipName}" animation`);
+      throw new Error(`Character "${definition.id}" has no "${clipName}" animation`);
     }
     actions[animation] = mixer.clipAction(clip).setLoop(LoopRepeat, Number.POSITIVE_INFINITY);
   }
-  // The jump clip does not play by itself: its position is set from the time spent in the air.
-  actions.jump.timeScale = 0;
 
   let current: CharacterAnimation = "idle";
   let airborneSeconds = 0;
@@ -74,16 +76,10 @@ export async function loadCharacterModel(url: string, height: number): Promise<C
       const next = chooseAnimation({ ...input, airborneSeconds });
       if (next !== current) {
         actions[next].reset().play();
-        if (next === "jump") {
-          actions.jump.timeScale = 0;
-        }
         actions[current].crossFadeTo(actions[next], next === "jump" ? JUMP_BLEND_SECONDS : BLEND_SECONDS, false);
         current = next;
       }
-      actions.run.timeScale = runPlaybackRate(input.speed);
-      if (current === "jump") {
-        actions.jump.time = jumpClipTime(airborneSeconds);
-      }
+      actions.run.timeScale = runPlaybackRate(input.speed, definition.runClipSpeed);
       mixer.update(dt);
     },
   };

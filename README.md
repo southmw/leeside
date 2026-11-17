@@ -102,13 +102,13 @@ npm install
 npm run dev
 ```
 
-표시되는 주소를 브라우저로 열면 타이틀 화면이 나오고, START를 누르면 시작한다. 지금은 지형, 폐가, 차량, 바위가 놓인 구역을 돌아다닐 수 있다. WASD로 이동하고 Space로 점프하며, 마우스 버튼을 누른 채 움직이면 시점이 돌고 휠로 카메라 거리를 바꾼다. F3을 누르면 성능 수치가 보이고, 주소 뒤에 `?skipTitle`을 붙이면 타이틀 없이 바로 시작한다.
+표시되는 주소를 브라우저로 열면 타이틀 화면이 나오고, 캐릭터 4명 중 하나를 골라 START를 누르면 시작한다. 지금은 지형, 폐가, 차량, 바위가 놓인 구역을 돌아다닐 수 있다. WASD로 이동하고 Space로 점프하며, 마우스 버튼을 누른 채 움직이면 시점이 돌고 휠로 카메라 거리를 바꾼다. F3을 누르면 성능 수치가 보이고, 주소 뒤에 `?skipTitle`을 붙이면 타이틀 없이 바로 시작한다.
 
 ## 사용한 에셋
 
 | 에셋 | 제작자 | 라이선스 |
 |---|---|---|
-| 임시 캐릭터 모델 "RobotExpressive" | Tomás Laulhé (Quaternius), 수정 Don McCurdy | CC0 1.0 |
+| 플레이어 캐릭터 4종 (Zombie Apocalypse Kit) | Quaternius | CC0 1.0 |
 
 자세한 출처는 [Src/public/models/CREDITS.md](Src/public/models/CREDITS.md)에 있다.
 

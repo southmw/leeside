@@ -1,5 +1,6 @@
 import { canStart, loadingFraction, type StartFlowState } from "../app/startFlow";
 import type { I18n, Language } from "../locales/i18n";
+import { CHARACTERS, neighbourCharacter } from "../render/characterCatalog";
 import { createBar, type Ui } from "./uiRoot";
 
 const css = `
@@ -17,6 +18,10 @@ const css = `
 .title-tagline { font-size: 1.1em; margin: 0.8em 0 2.2em; opacity: 0.9; text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.7); }
 .title-action { width: 16em; min-height: 3.4em; }
 .title-action .ui-button { margin: 0; padding: 0.8em 1em; font-size: 1.15em; letter-spacing: 0.25em; }
+.title-characters { margin-top: 1.4em; }
+.title-characters-label { font-size: 0.875em; opacity: 0.8; margin-bottom: 0.4em; text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.7); }
+.title-characters-row { display: flex; justify-content: center; border: 1px solid rgba(232, 220, 192, 0.3); border-radius: 0.3em; overflow: hidden; }
+.title-characters-row .ui-button { width: auto; min-width: 5em; margin: 0; padding: 0.4em 0.9em; border: 0; border-radius: 0; }
 .title-controls { margin-top: 2em; font-size: 0.95em; opacity: 0.85; text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.7); }
 .title-corner { position: absolute; display: flex; gap: 0.6em; align-items: center; }
 .title-corner.top-right { top: 1.5em; right: 1.5em; }
@@ -33,8 +38,12 @@ const LANGUAGES: readonly Language[] = ["en", "ko"];
 export interface TitleScreenOptions {
   /** Shown in the corner, such as "0.1". */
   version: string;
+  /** Id of the character chosen at first. */
+  character: string;
   /** Called when START is pressed while the game is ready. */
   onStart(): void;
+  /** Called when the player picks another character. */
+  onCharacter(id: string): void;
 }
 
 export interface TitleScreen {
@@ -61,6 +70,14 @@ export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOption
 
   let state: StartFlowState = { phase: "loading", done: 0, total: 1 };
   let removed = false;
+  let character = options.character;
+  const pickCharacter = (id: string): void => {
+    if (id !== character) {
+      character = id;
+      options.onCharacter(id);
+      render();
+    }
+  };
 
   const element = (tag: string, className: string, text = ""): HTMLElement => {
     const node = document.createElement(tag);
@@ -112,7 +129,17 @@ export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOption
         bar.id = "title-loading";
         action.append(bar);
       }
-      middle.push(action, element("p", "title-controls", t("title.controls")));
+      middle.push(action);
+      // Choosing is optional: one of the characters is always chosen already.
+      const characters = element("div", "title-characters");
+      const row = element("div", "title-characters-row");
+      for (const candidate of CHARACTERS) {
+        row.append(
+          button(`title-character-${candidate.id}`, i18n.tData(candidate.nameKey), () => pickCharacter(candidate.id), candidate.id === character),
+        );
+      }
+      characters.append(element("div", "title-characters-label", t("title.character")), row);
+      middle.push(characters, element("p", "title-controls", t("title.controls")));
     }
 
     const languages = element("div", "title-languages");
@@ -132,7 +159,8 @@ export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOption
     screen.replaceChildren(topRight, ...middle, bottomLeft, bottomRight);
   };
 
-  // Enter or Space starts the game, as long as no window is open on top of the title.
+  // Enter or Space starts the game and the arrow keys change the character, as long as no
+  // window is open on top of the title.
   const onKeyDown = (event: KeyboardEvent): void => {
     if (removed || ui.openWindowId !== null || event.repeat) {
       return;
@@ -142,6 +170,12 @@ export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOption
       event.stopImmediatePropagation();
       if (canStart(state)) {
         options.onStart();
+      }
+    } else if (event.code === "ArrowLeft" || event.code === "ArrowRight") {
+      if (state.phase === "loading" || state.phase === "ready") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        pickCharacter(neighbourCharacter(character, event.code === "ArrowRight" ? 1 : -1));
       }
     }
   };

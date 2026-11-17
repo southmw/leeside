@@ -2,6 +2,7 @@ import { version } from "../package.json";
 import { advanceStartFlow, initialStartFlow, type StartFlowEvent } from "./app/startFlow";
 import { checkSupport } from "./app/support";
 import { createI18n, detectLanguage } from "./locales/i18n";
+import { chooseCharacter } from "./render/characterCatalog";
 import { createTitleScreen } from "./ui/titleScreen";
 import { createUi } from "./ui/uiRoot";
 
@@ -26,18 +27,45 @@ i18n.onChange((language) => {
   document.documentElement.lang = language;
 });
 
+// The character chosen last time is kept in the browser. Storage can be unavailable (private
+// windows, blocked site data); the game then simply starts with the default each time.
+const CHARACTER_STORAGE_KEY = "leeside.character";
+function storedCharacter(): string | null {
+  try {
+    return window.localStorage.getItem(CHARACTER_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+function storeCharacter(id: string): void {
+  try {
+    window.localStorage.setItem(CHARACTER_STORAGE_KEY, id);
+  } catch {
+    // Not being able to remember the choice is not worth interrupting the player for.
+  }
+}
+// `?character=lis` picks a character for this visit only.
+let character = chooseCharacter(startParams.get("character"), storedCharacter());
+
 const ui = createUi(i18n);
 const withoutTitle = startParams.has("skipTitle") || startParams.has("bench");
 
 let flow = initialStartFlow(LOADING_STEPS);
 let startGame: (() => void) | undefined;
+let setGameCharacter: ((id: string) => Promise<void>) | undefined;
 
 const title = withoutTitle
   ? undefined
   : createTitleScreen(ui, i18n, {
       // "0.1.0" is shown as "0.1".
       version: version.split(".").slice(0, 2).join("."),
+      character,
       onStart: () => dispatch({ type: "start" }),
+      onCharacter: (id) => {
+        character = id;
+        storeCharacter(id);
+        void setGameCharacter?.(id);
+      },
     });
 
 function dispatch(event: StartFlowEvent): void {
@@ -63,8 +91,11 @@ if (unsupported && !withoutTitle) {
   try {
     const { bootGame } = await import("./game");
     dispatch({ type: "step_done" });
-    const game = await bootGame({ i18n, ui, startParams, onProgress: () => dispatch({ type: "step_done" }) });
+    const game = await bootGame({ i18n, ui, startParams, character, onProgress: () => dispatch({ type: "step_done" }) });
     startGame = () => game.start();
+    setGameCharacter = (id) => game.setCharacter(id);
+    // The player may have picked another character while the game was still loading.
+    void game.setCharacter(character);
     dispatch({ type: "loaded" });
     if (withoutTitle) {
       dispatch({ type: "start" });

@@ -33,3 +33,6 @@ desktop.ini
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# Original assets before conversion (large; see DOC/08)
+Src/assets-src/

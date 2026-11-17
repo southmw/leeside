@@ -65,6 +65,8 @@ export interface GameDebug {
     inside: string | null;
     /** What is drawn for the character: the model, or the capsule if the model could not be loaded. */
     model: "capsule" | "model";
+    /** Id of the character model in the catalog (render/characterCatalog.ts). */
+    character: string;
     /** Animation the model is playing; "none" while there is no model. */
     animation: "none" | "idle" | "run" | "jump";
   };
@@ -114,7 +116,7 @@ export function installDebugApi(language: Language): GameDebug {
     simSeconds: 0,
     entityCount: 0,
     bodyCount: 0,
-    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, model: "capsule", animation: "none" },
+    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, model: "capsule", character: "", animation: "none" },
     zone: { id: "", nameKey: "", buildings: 0, props: 0, rocks: 0 },
     view: { yaw: 0, pitch: 0, looking: false },
     bench: { state: "off", progress: 0, summary: null, withinBudget: null },

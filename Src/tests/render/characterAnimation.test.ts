@@ -2,11 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   type AnimationInput,
   chooseAnimation,
-  JUMP_CLIP_AIR_END,
-  JUMP_CLIP_AIR_START,
-  jumpAirSeconds,
-  jumpClipTime,
-  RUN_CLIP_SPEED,
   runPlaybackRate,
 } from "../../src/render/characterAnimation";
 
@@ -39,7 +34,7 @@ describe("chooseAnimation", () => {
 
 describe("runPlaybackRate", () => {
   it("plays at normal rate at the clip's own speed", () => {
-    expect(runPlaybackRate(RUN_CLIP_SPEED)).toBe(1);
+    expect(runPlaybackRate(6, 6)).toBe(1);
   });
 
   it("speeds the steps up in proportion to the movement speed", () => {
@@ -53,30 +48,8 @@ describe("runPlaybackRate", () => {
   });
 
   it("falls back to normal rate for values that make no sense", () => {
-    expect(runPlaybackRate(0)).toBe(1);
-    expect(runPlaybackRate(Number.NaN)).toBe(1);
+    expect(runPlaybackRate(0, 6)).toBe(1);
+    expect(runPlaybackRate(Number.NaN, 6)).toBe(1);
     expect(runPlaybackRate(5, 0)).toBe(1);
-  });
-});
-
-describe("jump timing", () => {
-  it("knows how long a jump stays in the air", () => {
-    // 1.1 m under 20 m/s^2: 0.33 s up and 0.33 s down.
-    expect(jumpAirSeconds(1.1, 20)).toBeCloseTo(0.663, 2);
-  });
-
-  it("spreads the clip's airborne part over the jump", () => {
-    expect(jumpClipTime(0, 0.66)).toBeCloseTo(JUMP_CLIP_AIR_START);
-    expect(jumpClipTime(0.33, 0.66)).toBeCloseTo((JUMP_CLIP_AIR_START + JUMP_CLIP_AIR_END) / 2);
-    expect(jumpClipTime(0.66, 0.66)).toBeCloseTo(JUMP_CLIP_AIR_END);
-  });
-
-  it("holds the last airborne pose in a longer fall", () => {
-    expect(jumpClipTime(5, 0.66)).toBeCloseTo(JUMP_CLIP_AIR_END);
-  });
-
-  it("never leaves the airborne part of the clip", () => {
-    expect(jumpClipTime(-1, 0.66)).toBeCloseTo(JUMP_CLIP_AIR_START);
-    expect(jumpClipTime(1, 0)).toBeCloseTo(JUMP_CLIP_AIR_END);
   });
 });

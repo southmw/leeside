@@ -507,6 +507,24 @@ try {
     const stillAtTitle = await page.evaluate(() => ({ x: window.__game.player.x, z: window.__game.player.z }));
     check("the character does not move behind the title", stillAtTitle.x === atTitle.x && stillAtTitle.z === atTitle.z);
 
+    // Choosing a character: a click or the arrow keys swap the model behind the title.
+    const characterNow = () => page.evaluate(() => window.__game.player.character);
+    const waitForCharacter = (id) =>
+      page.waitForFunction((want) => window.__game.player.character === want, id, { timeout: 15_000 }).catch(() => {});
+    const firstCharacter = await characterNow();
+    await page.locator("#title-character-lis").click();
+    await waitForCharacter("lis");
+    const clickedCharacter = await characterNow();
+    await page.keyboard.press("ArrowRight");
+    await waitForCharacter("sam");
+    const arrowCharacter = await characterNow();
+    check(
+      "the title lets the player choose a character, by click and by arrow key",
+      firstCharacter === "matt" && clickedCharacter === "lis" && arrowCharacter === "sam",
+      `${firstCharacter} -> ${clickedCharacter} -> ${arrowCharacter}`,
+    );
+    check("choosing a character does not start the game", (await page.evaluate(() => window.__game.phase)) === "title");
+
     await page.locator("#title-language-ko").click();
     const korean = await titleScreen.innerText();
     await page.locator("#title-language-en").click();
@@ -545,6 +563,11 @@ try {
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__game.phase === "playing", undefined, { timeout: 5_000 }).catch(() => {});
     check("Enter starts the game from the title", (await page.evaluate(() => window.__game.phase)) === "playing");
+    check("the chosen character is remembered on the next visit", (await characterNow()) === "sam", await characterNow());
+    await page.goto(gameUrl("character=shaun"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    check("?character picks a character for one visit", (await characterNow()) === "shaun", await characterNow());
+    await page.evaluate(() => window.localStorage.removeItem("leeside.character"));
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.
     const phone = await browser.newPage({
