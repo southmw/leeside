@@ -5,6 +5,11 @@
   "common.yes": "예",
   "common.no": "아니요",
 
+  "hud.day": "{day}일째",
+  "hud.time": "{hours}:{minutes}",
+  "hud.phase.dusk": "해 질 무렵",
+  "hud.phase.night": "밤",
+
   "hint.drag_to_look": "마우스 버튼을 누른 채 움직이면 시점이 돕니다",
 
   "zone.dry_riverbed.name": "마른 강바닥",
@@ -52,6 +57,9 @@
   "dev.speed": "이동 속도",
   "dev.speed.value": "{speed} m/s",
   "dev.speed.reset": "기본값",
+  "dev.time": "시각",
+  "dev.timescale": "시간 배속",
+  "dev.timescale.value": "{scale}배",
   "dev.places": "위치 이동",
   "dev.language": "언어",
   "dev.tools": "도구",

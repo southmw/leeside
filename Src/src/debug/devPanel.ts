@@ -1,10 +1,11 @@
 import type { I18n, Language } from "../locales/i18n";
 import type { Ui } from "../ui/uiRoot";
+import { type ClockTime, displayTime } from "../gameplay/clock";
 import type { ZonePlace } from "../world/startPoint";
 
 /**
  * The development panel: everything the start conditions in the address do (`?character`,
- * `?props`, `?speed`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
+ * `?props`, `?speed`, `?time`, `?timescale`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
  * Development builds only. F2 or the button in the corner opens and closes it.
  *
  * A new start condition gets a control here as well, so that nothing has to be tested by
@@ -13,8 +14,14 @@ import type { ZonePlace } from "../world/startPoint";
 
 const TOGGLE_KEY = "F2";
 const LANGUAGES: readonly Language[] = ["en", "ko"];
+/** How often the panel's view of the clock is brought up to date while it is open, in milliseconds. */
+const CLOCK_REFRESH_MS = 200;
 /** How much one press of - or + changes the walking speed, in m/s. */
 const SPEED_STEP = 1;
+/** Hours the clock can be set to: setting out, noon, dusk, nightfall, midnight, the end of night. */
+const HOURS = [6, 12, 18, 19, 0, 5];
+/** Speeds the clock can be set to; 1 is normal and 0 stops it. A day takes 8 minutes at 1 and 8 seconds at 60. */
+const TIME_SCALES = [0, 1, 10, 60];
 
 const css = `
 #dev-open { position: absolute; right: 0.75em; bottom: 3em; width: auto; margin: 0; padding: 0.3em 0.8em; font-size: 0.85em; opacity: 0.75; }
@@ -28,6 +35,9 @@ const css = `
 #dev-panel .dev-row { display: flex; flex-wrap: wrap; gap: 0.3em; align-items: center; }
 #dev-panel .ui-button { width: auto; margin: 0; padding: 0.3em 0.7em; }
 #dev-panel .dev-value { min-width: 5.5em; text-align: center; }
+/* A press is answered at once, also by buttons that have no lasting selected state. */
+#dev-panel .ui-button:active { background: #d9c79a; border-color: #d9c79a; color: #1b1a17; }
+#dev-panel .dev-now { margin-left: 0.5em; opacity: 1; font-weight: 700; color: #e8dcc0; }
 `;
 
 /** What the panel can read and change in the running game. */
@@ -42,6 +52,10 @@ export interface DevControls {
   moveSpeed(): number;
   setMoveSpeed(speed: number): void;
   defaultMoveSpeed: number;
+  clock(): ClockTime;
+  setHour(hour: number): void;
+  timeScale(): number;
+  setTimeScale(scale: number): void;
   places: readonly ZonePlace[];
   goTo(place: ZonePlace): void;
 }
@@ -105,6 +119,47 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
     window.dispatchEvent(new KeyboardEvent("keydown", { code, key: code }));
   };
 
+  // The clock runs on while the panel is open, so this section is kept up to date in place
+  // (rebuilding the panel under the mouse would swallow clicks): the time now is written next
+  // to the heading, and the button of the hour last passed is marked.
+  let timeNow: HTMLElement | undefined;
+  let timeButtons: Array<{ hour: number; node: HTMLButtonElement }> = [];
+  const timeSection = (): HTMLElement[] => {
+    timeButtons = HOURS.map((hour) => ({
+      hour,
+      node: button(`dev-time-${hour}`, t("hud.time", displayTime(hour)), () => controls.setHour(hour)),
+    }));
+    const [heading, row] = section(t("dev.time"), ...timeButtons.map((entry) => entry.node));
+    timeNow = element("span", "", "dev-now");
+    timeNow.id = "dev-time-now";
+    heading?.append(timeNow);
+    refreshClock();
+    return heading && row ? [heading, row] : [];
+  };
+  function refreshClock(): void {
+    if (!timeNow) {
+      return;
+    }
+    const time = controls.clock();
+    timeNow.textContent = `${t("hud.day", { day: time.day })} ${t("hud.time", displayTime(time.hour))}`;
+    // The hour last passed, counting from the start of the day (06:00) round to 05:59.
+    const sinceDawn = (hour: number): number => (hour - 6 + 24) % 24;
+    let current = timeButtons[0];
+    for (const entry of timeButtons) {
+      if (sinceDawn(entry.hour) <= sinceDawn(time.hour) && (!current || sinceDawn(entry.hour) >= sinceDawn(current.hour))) {
+        current = entry;
+      }
+    }
+    for (const entry of timeButtons) {
+      entry.node.classList.toggle("selected", entry === current);
+    }
+  }
+  window.setInterval(() => {
+    if (!panel.hidden) {
+      refreshClock();
+    }
+  }, CLOCK_REFRESH_MS);
+
   function render(): void {
     opener.textContent = t("dev.open");
     if (panel.hidden) {
@@ -130,6 +185,13 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
         element("span", t("dev.speed.value", { speed }), "dev-value"),
         button("dev-speed-up", "+", () => controls.setMoveSpeed(speed + SPEED_STEP)),
         button("dev-speed-reset", t("dev.speed.reset"), () => controls.setMoveSpeed(controls.defaultMoveSpeed)),
+      ),
+      ...timeSection(),
+      ...section(
+        t("dev.timescale"),
+        ...TIME_SCALES.map((scale) =>
+          button(`dev-timescale-${scale}`, t("dev.timescale.value", { scale }), () => controls.setTimeScale(scale), scale === controls.timeScale()),
+        ),
       ),
       // Places are named by their ids in the zone data, which are not text for players.
       ...section(t("dev.places"), ...controls.places.map((place) => button(`dev-place-${place.id}`, place.id, () => controls.goTo(place)))),

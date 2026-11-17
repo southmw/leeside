@@ -5,6 +5,11 @@
   "common.yes": "yes",
   "common.no": "no",
 
+  "hud.day": "Day {day}",
+  "hud.time": "{hours}:{minutes}",
+  "hud.phase.dusk": "Dusk",
+  "hud.phase.night": "Night",
+
   "hint.drag_to_look": "Hold a mouse button and move the mouse to look around",
 
   "zone.dry_riverbed.name": "Dry Riverbed",
@@ -52,6 +57,9 @@
   "dev.speed": "Move speed",
   "dev.speed.value": "{speed} m/s",
   "dev.speed.reset": "Reset",
+  "dev.time": "Time of day",
+  "dev.timescale": "Clock speed",
+  "dev.timescale.value": "x{scale}",
   "dev.places": "Go to",
   "dev.language": "Language",
   "dev.tools": "Tools",

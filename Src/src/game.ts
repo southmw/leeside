@@ -20,6 +20,7 @@ import {
   CHARACTER_RADIUS,
   MOVE_SPEED,
 } from "./data/tuning";
+import { advanceClock, createClock, parseTimeOfDay, readClock, setHour } from "./gameplay/clock";
 import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
 import { createView, previewLook } from "./gameplay/view";
@@ -37,6 +38,7 @@ import { applyZoom } from "./render/cameraZoom";
 import { createCamera, createRenderer, fitToWindow, warmUpScene } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
 import { createBenchPanel } from "./ui/benchPanel";
+import { createHud } from "./ui/hud";
 import { createLookHint } from "./ui/lookHint";
 import type { Ui } from "./ui/uiRoot";
 import { characterById, CHARACTERS } from "./render/characterCatalog";
@@ -56,6 +58,9 @@ const BENCH_CAMERA_HEIGHT = 6;
 const BENCH_LOOK_AHEAD = 40;
 /** The budget results are judged against, until the quality setting exists (step 2.22). */
 const BENCH_QUALITY = "high";
+
+/** The fastest the clock can be made to run with `?timescale` and the development panel. */
+const MAX_TIME_SCALE = 600;
 
 /** Limits of the walking speed that `?speed` and the development panel accept, in m/s. */
 const MIN_MOVE_SPEED = 1;
@@ -262,6 +267,23 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.bench.state = "running";
   }
 
+  // The game's clock: day 1, 06:00. `?time=18:00` starts at another hour and `?timescale=30`
+  // makes it run faster, for seeing a whole day without waiting eight minutes.
+  const clock = createClock(
+    parseTimeOfDay(startParams.get("time")),
+    numberParam(startParams.get("timescale"), 0, MAX_TIME_SCALE, 1),
+  );
+  const hud = createHud(ui, i18n);
+  const showClock = (): void => {
+    const time = readClock(clock);
+    debug.clock.day = time.day;
+    debug.clock.hour = time.hour;
+    debug.clock.phase = time.phase;
+    debug.clock.scale = clock.scale;
+    hud.update(time);
+  };
+  showClock();
+
   let titleSeconds = 0;
   const localInput = createLocalInput({ mouse });
   const inputSystem = createInputSystem(world, localInput);
@@ -321,6 +343,16 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           debug.moveSpeed = moveSpeed;
         },
         defaultMoveSpeed: MOVE_SPEED,
+        clock: () => readClock(clock),
+        setHour: (hour) => {
+          setHour(clock, hour);
+          showClock();
+        },
+        timeScale: () => clock.scale,
+        setTimeScale: (scale) => {
+          clock.scale = Math.min(Math.max(scale, 0), MAX_TIME_SCALE);
+          showClock();
+        },
         places: zonePlaces(zoneDefinition),
         goTo: (place) => teleport(place.east, place.south, place.facing),
       });
@@ -349,7 +381,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       lookSystem();
       movementSystem(dt);
       physicsSystem.update();
+      // Time stands still behind the title and during a measurement.
+      if (playing && !bench) {
+        advanceClock(clock, dt);
+      }
       sectionTimer.end("sim");
+      showClock();
 
       Object.assign(debug.input, player.input);
       debug.player.x = player.transform.x;
@@ -478,6 +515,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       if (characterModel) {
         characterModel.object.rotation.y = 0;
       }
+      hud.setVisible(true);
       createLookHint(mouse, i18n);
     },
     setCharacter,

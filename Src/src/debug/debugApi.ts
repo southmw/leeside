@@ -99,6 +99,8 @@ export interface GameDebug {
    * small to play in, the id of the open window (null if none) and its selected button (-1 if none).
    */
   ui: { scale: number; tooSmall: boolean; window: string | null; selectedButton: number };
+  /** The game's clock: day (from 1), hour of the day with fractions, part of the day, and how fast it runs (1 is normal). */
+  clock: { day: number; hour: number; phase: "day" | "dusk" | "night"; scale: number };
   /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
   moveSpeed: number;
   /** The local player's actions as of the latest simulation step. */
@@ -131,6 +133,7 @@ export function installDebugApi(language: Language): GameDebug {
     view: { yaw: 0, pitch: 0, looking: false },
     bench: { state: "off", progress: 0, summary: null, withinBudget: null },
     ui: { scale: 1, tooSmall: false, window: null, selectedButton: -1 },
+    clock: { day: 1, hour: 0, phase: "day", scale: 1 },
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },
     input: createEmptyActions(),

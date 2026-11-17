@@ -184,14 +184,17 @@ try {
     check("the character model is loaded before the game starts", modelLoaded, modelAtStart);
     const animationNow = () => page.evaluate(() => window.__game.player.animation);
     if (modelLoaded) {
-      // The keys of the previous check were only just released; give the animation a moment.
-      await page.waitForTimeout(400);
+      // The animation follows the movement one drawn frame later, and software rendering
+      // draws only a few frames a second: wait for the change instead of a fixed time.
+      const waitForAnimation = (name) =>
+        page.waitForFunction((want) => window.__game.player.animation === want, name, { timeout: 5_000 }).catch(() => {});
+      await waitForAnimation("idle");
       const standing = await animationNow();
       await page.keyboard.down("KeyA");
-      await page.waitForTimeout(300);
+      await waitForAnimation("run");
       const running = await animationNow();
       await page.keyboard.up("KeyA");
-      await page.waitForTimeout(300);
+      await waitForAnimation("idle");
       const stopped = await animationNow();
       check(
         "the model idles when standing and runs when moving",
@@ -207,29 +210,33 @@ try {
     const groundY = await page.evaluate(() => window.__game.player.y);
     await page.evaluate(() => {
       window.__smokePeak = 0;
+      window.__smokeJumpSeen = false;
       window.__smokeTimer = setInterval(() => {
         window.__smokePeak = Math.max(window.__smokePeak, window.__game.player.y);
+        window.__smokeJumpSeen ||= window.__game.player.animation === "jump";
       }, 4);
     });
     await page.keyboard.down("Space");
     await settle();
     check("Space jumps", (await readInput()).jump === true);
     const airborne = await page.evaluate(() => !window.__game.player.grounded);
-    const jumpAnimation = await animationNow();
     await page.keyboard.up("Space");
     await page.waitForTimeout(300);
     await grounded();
     const jump = await page.evaluate((ground) => {
       clearInterval(window.__smokeTimer);
-      return { peak: window.__smokePeak - ground, landedAt: window.__game.player.y - ground };
+      return { peak: window.__smokePeak - ground, landedAt: window.__game.player.y - ground, jumpSeen: window.__smokeJumpSeen };
     }, groundY);
     check("the character leaves the ground when jumping", airborne);
     if (modelLoaded) {
+      // The animation is sampled throughout the jump: with only a few frames drawn per
+      // second, any single moment may miss it.
+      await page.waitForFunction(() => window.__game.player.animation === "idle", undefined, { timeout: 5_000 }).catch(() => {});
       const landedAnimation = await animationNow();
       check(
         "the model plays the jump animation in the air and stops on landing",
-        jumpAnimation === "jump" && landedAnimation === "idle",
-        `${jumpAnimation} -> ${landedAnimation}`,
+        jump.jumpSeen && landedAnimation === "idle",
+        `jump seen: ${jump.jumpSeen} -> ${landedAnimation}`,
       );
     }
     check("the jump rises about 1.1 m", jump.peak > 0.8 && jump.peak < 1.15, `peak ${jump.peak.toFixed(2)} m`);
@@ -509,6 +516,7 @@ try {
     await titleScreen.waitFor({ state: "visible", timeout: 15_000 });
     await page.locator("#title-start").waitFor({ state: "visible", timeout: 30_000 });
     const atTitle = await page.evaluate(() => ({ phase: window.__game.phase, x: window.__game.player.x, z: window.__game.player.z }));
+    check("the HUD is hidden behind the title", !(await page.locator("#hud").isVisible()));
     check("the title screen comes up with a START button", atTitle.phase === "title" && (await titleScreen.innerText()).includes("LEESIDE"));
 
     await page.keyboard.down("KeyW");
@@ -610,8 +618,51 @@ try {
       boxes.models === 0 && !boxes.rocks && quaternius.models === 6 && quaternius.rocks,
       `boxes ${boxes.models}, quaternius ${quaternius.models}`,
     );
+    await page.locator("#dev-time-19").click();
+    const nightfall = await page.evaluate(() => ({ ...window.__game.clock }));
+    await page.waitForFunction(() => document.querySelector("#dev-time-19")?.classList.contains("selected"), undefined, { timeout: 3_000 }).catch(() => {});
+    const panelClock = await page.evaluate(() => ({
+      now: document.querySelector("#dev-time-now")?.textContent ?? "",
+      marked: document.querySelector("#dev-time-19")?.classList.contains("selected") === true,
+    }));
+    check("the panel shows the time now and marks the hour last passed", panelClock.now.includes("19:00") && panelClock.marked, `"${panelClock.now}", marked ${panelClock.marked}`);
+    await page.locator("#dev-timescale-0").click();
+    const stoppedScale = await page.evaluate(() => window.__game.clock.scale);
+    check(
+      "the panel sets the time of day and the clock's speed",
+      Math.abs(nightfall.hour - 19) < 0.2 && nightfall.phase === "night" && stoppedScale === 0,
+      `${nightfall.hour.toFixed(2)} ${nightfall.phase}, scale ${stoppedScale}`,
+    );
     await page.keyboard.press("F2");
     check("F2 closes the panel again", !(await page.locator("#dev-panel").isVisible()));
+
+    // The clock: day 1 from 06:00, shown top right. `?time` and `?timescale` change where it
+    // starts and how fast it runs.
+    await page.goto(gameUrl("lang=en"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    const morning = await page.evaluate(() => ({ ...window.__game.clock }));
+    const hudClock = await page.locator("#hud-clock").innerText();
+    check(
+      "the day starts at 06:00 and the HUD shows it",
+      morning.day === 1 && morning.hour >= 6 && morning.hour < 6.5 && morning.phase === "day" && hudClock.includes("Day 1") && hudClock.includes("06:00"),
+      `day ${morning.day}, ${morning.hour.toFixed(2)}, "${hudClock.replace(/\s+/g, " ")}"`,
+    );
+    await page.goto(gameUrl("lang=en&time=18:00&timescale=60"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    const dusk = await page.evaluate(() => ({ ...window.__game.clock }));
+    await page.waitForFunction(() => window.__game.clock.phase === "night", undefined, { timeout: 15_000 }).catch(() => {});
+    const night = await page.evaluate(() => ({ ...window.__game.clock }));
+    check(
+      "?time starts at that hour and ?timescale runs the clock faster",
+      dusk.hour >= 18 && dusk.hour < 19 && dusk.phase === "dusk" && dusk.scale === 60 && night.phase === "night",
+      `${dusk.hour.toFixed(2)} ${dusk.phase} -> ${night.hour.toFixed(2)} ${night.phase}`,
+    );
+    const nightHud = await page.locator("#hud-clock").innerText();
+    check(
+      "the HUD clock says that it is night, in colour and in a word",
+      (await page.locator("#hud-clock").getAttribute("class")) === "night" && nightHud.includes("Night"),
+      `"${nightHud.replace(/\s+/g, " ")}"`,
+    );
 
     // `?props=` picks the set from the address as well.
     await page.goto(gameUrl("props=boxes"), { waitUntil: "load" });

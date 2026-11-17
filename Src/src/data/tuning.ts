@@ -63,3 +63,16 @@ export const CAMERA_ZOOM_FACTOR = 1.15;
  * that is faster than the fixed speeds above. Keeps a long zoom from taking seconds.
  */
 export const CAMERA_FOLLOW_RATE = 6;
+
+/** Length of one game day in real seconds (8 minutes: one game hour is 20 seconds). */
+export const DAY_SECONDS = 480;
+/**
+ * The hour at which the player sets out and at which the day number goes up. A day is one
+ * expedition, so it turns at dawn rather than at midnight.
+ */
+export const DAY_START_HOUR = 6;
+/** Dusk, when the sky reddens, runs from this hour until night. */
+export const DUSK_START_HOUR = 18;
+/** Night runs from this hour through midnight to `NIGHT_END_HOUR`. */
+export const NIGHT_START_HOUR = 19;
+export const NIGHT_END_HOUR = 5;
