@@ -98,3 +98,26 @@ export const INTRO_STORM_SECONDS = 40;
 
 /** How far one can see in a storm at full strength, in metres. */
 export const STORM_VISIBILITY = 25;
+
+/**
+ * The wind's sound (prototype design 3.3). A volume of 1 plays the recording as it is; the
+ * storm plays it louder than that, and a limiter keeps it from distorting. In clear weather a
+ * light wind is heard; a storm on its way counts as a wind of up to `WIND_APPROACH_STRENGTH` (of 1),
+ * growing evenly through the warning so that it is heard before it is seen.
+ * The calm volume was 0.15 at first, which could hardly be heard, and the storm 1, which was
+ * not loud enough for a storm.
+ */
+export const WIND_CALM_VOLUME = 0.55;
+export const WIND_STORM_VOLUME = 2;
+export const WIND_APPROACH_STRENGTH = 0.3;
+/** Indoors the wind is this much as loud as outside, and everything above this pitch (Hz) is muffled. */
+export const WIND_INDOOR_VOLUME = 0.35;
+export const WIND_INDOOR_CUTOFF_HZ = 500;
+/** How much faster the recording plays in a full storm, which makes the wind sharper and more hurried. */
+export const WIND_STORM_RATE = 1.15;
+/** Volume of the character's footsteps, 0 to 1. Halved from 0.5, which was far too loud. */
+export const FOOTSTEP_VOLUME = 0.25;
+/** Distance between two footsteps in metres, for a character whose model does not say (the capsule). */
+export const FOOTSTEP_STRIDE = 2.5;
+/** Overall volume until the settings screen exists (step 2.22); its default there. */
+export const DEFAULT_VOLUME = 0.8;

@@ -109,8 +109,9 @@ npm run dev
 | 에셋 | 제작자 | 라이선스 |
 |---|---|---|
 | 플레이어 캐릭터 4종 (Zombie Apocalypse Kit) | Quaternius | CC0 1.0 |
+| 바람 소리 (Mild Wind Background Noise) | Bashar3A | CC0 1.0 |
 
-자세한 출처는 [Src/public/models/CREDITS.md](Src/public/models/CREDITS.md)에 있다.
+자세한 출처는 [Src/public/models/CREDITS.md](Src/public/models/CREDITS.md)(모델)와 [Src/public/sounds/CREDITS.md](Src/public/sounds/CREDITS.md)(소리)에 있다.
 
 ## 라이선스
 

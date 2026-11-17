@@ -1,12 +1,13 @@
 import type { I18n, Language } from "../locales/i18n";
 import type { Ui } from "../ui/uiRoot";
 import { type ClockTime, displayTime } from "../gameplay/clock";
+import type { AudioState } from "../audio/audio";
 import type { WeatherReading } from "../gameplay/weather";
 import type { ZonePlace } from "../world/startPoint";
 
 /**
  * The development panel: everything the start conditions in the address do (`?character`,
- * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
+ * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?mute`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
  * Development builds only. F2 or the button in the corner opens and closes it.
  *
  * A new start condition gets a control here as well, so that nothing has to be tested by
@@ -62,6 +63,8 @@ export interface DevControls {
   callStorm(warning: boolean): void;
   /** Ends the storm and keeps the rest of the day clear. */
   calmWeather(): void;
+  audio(): { state: AudioState; muted: boolean };
+  setMuted(muted: boolean): void;
   places: readonly ZonePlace[];
   goTo(place: ZonePlace): void;
 }
@@ -155,7 +158,24 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
     heading?.append(weatherNow);
     return heading && row ? [heading, row] : [];
   };
+  // The sound's state changes by itself too (loading, then waiting for the first click).
+  let audioNow: HTMLElement | undefined;
+  const audioSection = (): HTMLElement[] => {
+    const { muted } = controls.audio();
+    const [heading, row] = section(
+      t("dev.audio"),
+      button("dev-audio-on", t("dev.audio.on"), () => controls.setMuted(false), !muted),
+      button("dev-audio-off", t("dev.audio.off"), () => controls.setMuted(true), muted),
+    );
+    audioNow = element("span", "", "dev-now");
+    audioNow.id = "dev-audio-now";
+    heading?.append(audioNow);
+    return heading && row ? [heading, row] : [];
+  };
   function refreshClock(): void {
+    if (audioNow) {
+      audioNow.textContent = t(`audio.${controls.audio().state}`);
+    }
     if (weatherNow) {
       const weather = controls.weather();
       const phase = t(`weather.${weather.phase}`);
@@ -220,6 +240,7 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
         ),
       ),
       ...weatherSection(),
+      ...audioSection(),
       // Places are named by their ids in the zone data, which are not text for players.
       ...section(t("dev.places"), ...controls.places.map((place) => button(`dev-place-${place.id}`, place.id, () => controls.goTo(place)))),
       ...section(

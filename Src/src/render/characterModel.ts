@@ -20,6 +20,8 @@ export interface CharacterModel {
   readonly object: Object3D;
   /** The animation playing now. */
   readonly animation: CharacterAnimation;
+  /** Distance between two footsteps of the run animation, in metres: two steps to a cycle. */
+  readonly stride: number;
   /** Advances the animation. Call once per rendered frame. */
   update(dtSeconds: number, input: CharacterModelInput): void;
 }
@@ -63,9 +65,11 @@ export async function loadCharacterModel(
   let current: CharacterAnimation = "idle";
   let airborneSeconds = 0;
   actions.idle.play();
+  const stride = (definition.runClipSpeed * actions.run.getClip().duration) / 2;
 
   return {
     object,
+    stride,
     get animation(): CharacterAnimation {
       return current;
     },

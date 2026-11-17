@@ -195,6 +195,14 @@ export function createDebugOverlay(
             approach: fixed(debug.weather.approach, 2),
           }),
         },
+        {
+          label: t("debug.audio"),
+          value: t(debug.audio.muted ? "debug.audio_value_muted" : "debug.audio_value", {
+            state: t(`audio.${debug.audio.state}`),
+            volume: fixed(debug.audio.windVolume, 2),
+            cutoff: integer(debug.audio.windCutoffHz),
+          }),
+        },
         { label: t("debug.inside"), value: player.inside ?? "-" },
         { label: t("debug.entities"), value: integer(debug.entityCount) },
         { label: t("debug.bodies"), value: integer(debug.bodyCount) },

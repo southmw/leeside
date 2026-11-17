@@ -1,6 +1,10 @@
 import { Group } from "three";
 import { createCharacter, createTransform, createWorld } from "./core/ecs";
 import { startGameLoop } from "./core/gameLoop";
+import { createRandom } from "./core/random";
+import { createGameAudio } from "./audio/audio";
+import { advanceFootsteps, createFootsteps } from "./audio/footsteps";
+import { windMix } from "./audio/windMix";
 import { benchCameraAt } from "./bench/benchPath";
 import { benchRows, BenchRecorder, judge } from "./bench/benchRecorder";
 import { benchRoute, DRY_RIVERBED_STOPS } from "./bench/benchRoute";
@@ -19,6 +23,9 @@ import {
   CAMERA_SHOULDER_OFFSET,
   CHARACTER_HEIGHT,
   CHARACTER_RADIUS,
+  DEFAULT_VOLUME,
+  FOOTSTEP_STRIDE,
+  FOOTSTEP_VOLUME,
   MOVE_SPEED,
 } from "./data/tuning";
 import { advanceClock, createClock, parseTimeOfDay, readClock, setHour } from "./gameplay/clock";
@@ -301,6 +308,36 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   };
   showWeather();
 
+  // The wind is heard from START on (browsers allow no sound before a click). `?mute` starts
+  // without sound, for working on the game with something else playing.
+  const audio = createGameAudio(import.meta.env.BASE_URL, DEFAULT_VOLUME, startParams.has("mute"));
+  const showAudio = (): void => {
+    const indoors = buildingAt(zoneDefinition.buildings, player.transform.x, player.transform.z) !== undefined;
+    const mix = windMix(latestWeather.intensity, latestWeather.approach, indoors);
+    audio.setWind(mix);
+    debug.audio.state = audio.state;
+    debug.audio.muted = audio.muted;
+    debug.audio.windVolume = mix.volume;
+    debug.audio.windCutoffHz = mix.cutoffHz;
+    debug.audio.indoors = indoors;
+  };
+  // Footsteps: one for every stride of the run animation, and one on landing. Which recording
+  // plays is not part of the game's state, so any seed will do.
+  const footsteps = createFootsteps();
+  const footstepRandom = createRandom(1);
+  const lastStepAt = { x: player.transform.x, z: player.transform.z };
+  const soundFootsteps = (dt: number): void => {
+    const moved = Math.hypot(player.transform.x - lastStepAt.x, player.transform.z - lastStepAt.z);
+    lastStepAt.x = player.transform.x;
+    lastStepAt.z = player.transform.z;
+    const stride = characterModel?.stride ?? FOOTSTEP_STRIDE;
+    const step = advanceFootsteps(footsteps, dt, moved, player.character.grounded, stride, footstepRandom);
+    if (step) {
+      audio.playFootstep(step, FOOTSTEP_VOLUME);
+      debug.audio.footsteps += 1;
+    }
+  };
+
   // The sky and lights follow the clock.
   const sky = createSky(scene);
   const hud = createHud(ui, i18n);
@@ -415,6 +452,11 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           calmWeather(weather, clock.elapsed);
           showWeather();
         },
+        audio: () => ({ state: audio.state, muted: audio.muted }),
+        setMuted: (muted) => {
+          audio.setMuted(muted);
+          showAudio();
+        },
         places: zonePlaces(zoneDefinition),
         goTo: (place) => teleport(place.east, place.south, place.facing),
       });
@@ -453,6 +495,10 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         benchReading = benchWeather(bench.recorder.progress, benchSeconds);
       }
       showWeather();
+      showAudio();
+      if (playing && !bench) {
+        soundFootsteps(dt);
+      }
 
       Object.assign(debug.input, player.input);
       debug.player.x = player.transform.x;
@@ -589,6 +635,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       }
       hud.setVisible(true);
       createLookHint(mouse, i18n);
+      audio.start();
     },
     setCharacter,
   };

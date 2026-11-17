@@ -16,7 +16,8 @@ const outDir = join(root, "test-results");
 const screenshotPath = join(outDir, "smoke.png");
 
 // Software WebGL, so the test also works on machines and CI runners without a GPU.
-const browserArgs = ["--enable-unsafe-swiftshader", "--use-angle=swiftshader", "--ignore-gpu-blocklist"];
+// The last one lets sound start without a click, so the test can tell that it really plays.
+const browserArgs = ["--enable-unsafe-swiftshader", "--use-angle=swiftshader", "--ignore-gpu-blocklist", "--autoplay-policy=no-user-gesture-required"];
 
 async function launchBrowser() {
   const channels = process.env.SMOKE_BROWSER_CHANNEL
@@ -746,6 +747,57 @@ try {
       Math.abs(stormView - 25) < 0.5 && clearView > 1000,
       `${clearView.toFixed(0)} m in clear weather, ${stormView.toFixed(1)} m in the storm`,
     );
+
+    // Sound: the wind plays from the start, louder in a storm, quieter and muffled indoors.
+    // (280,282 is inside house A.)
+    const audioAt = async (query) => {
+      await page.goto(gameUrl(query), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.waitForFunction(() => window.__game.audio.state === "playing" && window.__game.weather.intensity % 1 === 0, undefined, { timeout: 20_000 }).catch(() => {});
+      return page.evaluate(() => ({ ...window.__game.audio, inside: window.__game.player.inside }));
+    };
+    const calmSound = await audioAt("seed=1&timescale=0");
+    const stormSound = await audioAt("storm=now");
+    const shelteredSound = await audioAt("storm=now&at=280,282");
+    check("the wind plays once the game has started", calmSound.state === "playing" && !calmSound.muted, calmSound.state);
+    check(
+      "the wind is light in clear weather and loud in a storm",
+      Math.abs(calmSound.windVolume - 0.55) < 0.001 && stormSound.windVolume === 2 && !stormSound.indoors,
+      `${calmSound.windVolume.toFixed(2)} clear, ${stormSound.windVolume.toFixed(2)} in the storm`,
+    );
+    check(
+      "indoors the storm is quieter and muffled",
+      shelteredSound.indoors && Math.abs(shelteredSound.windVolume - 0.7) < 0.001 && shelteredSound.windCutoffHz === 500 && stormSound.windCutoffHz === 20000,
+      `inside ${shelteredSound.inside}: volume ${shelteredSound.windVolume.toFixed(2)}, below ${shelteredSound.windCutoffHz} Hz`,
+    );
+    // Footsteps: about one every 2.6 m while walking (12 m/s), none while standing.
+    await page.goto(gameUrl("at=360,600&face=0"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+    await page.waitForTimeout(500);
+    const stepsStanding = await page.evaluate(() => ({ steps: window.__game.audio.footsteps, sim: window.__game.simSeconds }));
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction((sim) => window.__game.simSeconds > sim + 2, stepsStanding.sim, { timeout: 60_000 });
+    await page.keyboard.up("KeyW");
+    const stepsWalked = await page.evaluate(() => window.__game.audio.footsteps);
+    await page.waitForTimeout(500);
+    const stepsAfter = await page.evaluate(() => window.__game.audio.footsteps);
+    check(
+      "footsteps sound while walking and not while standing",
+      stepsStanding.steps === 0 && stepsWalked >= 6 && stepsWalked <= 14 && stepsAfter - stepsWalked <= 1,
+      `${stepsStanding.steps} standing, ${stepsWalked} in 2 s of walking, ${stepsAfter - stepsWalked} after stopping`,
+    );
+
+    // `?mute` starts without sound, and the development panel switches it back on.
+    const mutedSound = await audioAt("mute");
+    await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    await page.keyboard.press("F2");
+    await page.locator("#dev-audio-on").click();
+    const unmuted = await page.evaluate(() => window.__game.audio.muted);
+    const panelAudio = await page.locator("#dev-audio-now").innerText();
+    await page.locator("#dev-audio-off").click();
+    const mutedAgain = await page.evaluate(() => window.__game.audio.muted);
+    await page.keyboard.press("F2");
+    check("?mute starts without sound and the panel switches it on and off", mutedSound.muted && !unmuted && mutedAgain, `panel "${panelAudio}"`);
 
     // `?props=` picks the set from the address as well.
     await page.goto(gameUrl("props=boxes"), { waitUntil: "load" });

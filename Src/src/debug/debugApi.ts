@@ -1,3 +1,4 @@
+import type { AudioState } from "../audio/audio";
 import { createEmptyActions, type PlayerActions } from "../input/actions";
 import type { BenchSummary } from "../bench/benchRecorder";
 import type { Language } from "../locales/i18n";
@@ -121,6 +122,13 @@ export interface GameDebug {
    * are, and how far one can see in metres before the haze hides everything.
    */
   sky: { sunElevation: number; sunIntensity: number; ambientIntensity: number; visibility: number };
+  /**
+   * Sound: whether it is playing ("blocked" until the browser allows it, after the first click
+   * or key press), whether it is muted, and the wind's volume (0 to 1) and muffling (everything
+   * above this pitch in Hz is cut) as last set, which depend on the weather and on being indoors.
+   * `footsteps` counts the footsteps sounded so far.
+   */
+  audio: { state: AudioState; muted: boolean; windVolume: number; windCutoffHz: number; indoors: boolean; footsteps: number };
   /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
   moveSpeed: number;
   /** The local player's actions as of the latest simulation step. */
@@ -156,6 +164,7 @@ export function installDebugApi(language: Language): GameDebug {
     clock: { day: 1, hour: 0, phase: "day", scale: 1 },
     weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0, wallDistance: 0, wallOpacity: 0 },
     sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0, visibility: 0 },
+    audio: { state: "off", muted: false, windVolume: 0, windCutoffHz: 0, indoors: false, footsteps: 0 },
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },
     input: createEmptyActions(),
