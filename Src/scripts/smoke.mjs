@@ -636,6 +636,21 @@ try {
       Math.abs(nightfall.hour - 19) < 0.2 && nightfall.phase === "night" && stoppedScale === 0,
       `${nightfall.hour.toFixed(2)} ${nightfall.phase}, scale ${stoppedScale}`,
     );
+    const weatherNow = () => page.evaluate(() => ({ ...window.__game.weather }));
+    await page.locator("#dev-timescale-1").click();
+    await page.locator("#dev-storm-now").click();
+    const calledStorm = await weatherNow();
+    await page.locator("#dev-storm-calm").click();
+    const calmed = await weatherNow();
+    await page.locator("#dev-storm-warning").click();
+    const announced = await weatherNow();
+    const panelWeather = await page.locator("#dev-weather-now").innerText();
+    await page.locator("#dev-storm-calm").click();
+    check(
+      "the panel calls a storm, with or without warning, and calms it",
+      calledStorm.phase === "storm" && calmed.phase === "clear" && announced.phase === "warning" && announced.secondsLeft > 25,
+      `${calledStorm.phase} -> ${calmed.phase} -> ${announced.phase} (${announced.secondsLeft.toFixed(0)} s), panel "${panelWeather}"`,
+    );
     await page.keyboard.press("F2");
     check("F2 closes the panel again", !(await page.locator("#dev-panel").isVisible()));
 
@@ -678,6 +693,31 @@ try {
       (await page.locator("#hud-clock").getAttribute("class")) === "night" && nightHud.includes("Night"),
       `"${nightHud.replace(/\s+/g, " ")}"`,
     );
+
+    // The weather: one storm a day, at a time the seed decides. `?storm` starts in one.
+    await page.goto(gameUrl("seed=1"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+    const calm = await page.evaluate(() => ({ ...window.__game.weather }));
+    check(
+      "the day starts clear, with the storm 90 to 180 seconds off",
+      calm.seed === 1 && calm.phase === "clear" && calm.intensity === 0 && calm.secondsLeft > 80 && calm.secondsLeft <= 180,
+      `seed ${calm.seed}, ${calm.phase}, storm in ${calm.secondsLeft.toFixed(0)} s`,
+    );
+    await page.goto(gameUrl("seed=1&storm=warning&timescale=10"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+    const warned = await page.evaluate(() => ({ ...window.__game.weather }));
+    await page.waitForFunction(() => window.__game.weather.intensity === 1, undefined, { timeout: 20_000 }).catch(() => {});
+    const raging = await page.evaluate(() => ({ ...window.__game.weather }));
+    await page.waitForFunction(() => window.__game.weather.phase === "clear", undefined, { timeout: 30_000 }).catch(() => {});
+    const passed = await page.evaluate(() => ({ ...window.__game.weather }));
+    check(
+      "a storm is announced, arrives at full strength and passes",
+      warned.phase === "warning" && warned.intensity === 0 && raging.phase === "storm" && raging.approach === 1 && passed.phase === "clear" && passed.intensity === 0,
+      `${warned.phase} -> ${raging.phase} ${raging.intensity} -> ${passed.phase}`,
+    );
+    await page.goto(gameUrl("storm=now"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+    check("?storm=now starts in the storm", (await page.evaluate(() => window.__game.weather.phase)) === "storm");
 
     // `?props=` picks the set from the address as well.
     await page.goto(gameUrl("props=boxes"), { waitUntil: "load" });

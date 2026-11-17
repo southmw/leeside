@@ -24,6 +24,7 @@ import { advanceClock, createClock, parseTimeOfDay, readClock, setHour } from ".
 import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
 import { createView, previewLook } from "./gameplay/view";
+import { callStorm, calmWeather, createWeather, readWeather, stormOfDay } from "./gameplay/weather";
 import { createEmptyActions } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
 import { createLocalInput } from "./input/localInput";
@@ -275,6 +276,23 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     parseTimeOfDay(startParams.get("time")),
     numberParam(startParams.get("timescale"), 0, MAX_TIME_SCALE, 1),
   );
+  // The weather follows the clock too. Each visit has weather of its own unless `?seed=1`
+  // fixes it; `?storm=now` starts in a storm and `?storm=warning` with one announced.
+  const weather = createWeather(numberParam(startParams.get("seed"), 0, 0xffffffff, Date.now() % 0xffffffff));
+  const stormWish = startParams.get("storm");
+  if (stormWish === "now" || stormWish === "warning") {
+    callStorm(weather, clock.elapsed, stormOfDay(weather.seed, readClock(clock).day), stormWish === "warning");
+  }
+  debug.weather.seed = weather.seed;
+  const showWeather = (): void => {
+    const reading = readWeather(weather, clock.elapsed);
+    debug.weather.phase = reading.phase;
+    debug.weather.intensity = reading.intensity;
+    debug.weather.approach = reading.approach;
+    debug.weather.secondsLeft = reading.secondsLeft;
+  };
+  showWeather();
+
   // The sky and lights follow the clock.
   const sky = createSky(scene);
   const hud = createHud(ui, i18n);
@@ -366,6 +384,15 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           clock.scale = Math.min(Math.max(scale, 0), MAX_TIME_SCALE);
           showClock();
         },
+        weather: () => readWeather(weather, clock.elapsed),
+        callStorm: (warning) => {
+          callStorm(weather, clock.elapsed, stormOfDay(weather.seed, readClock(clock).day), warning);
+          showWeather();
+        },
+        calmWeather: () => {
+          calmWeather(weather, clock.elapsed);
+          showWeather();
+        },
         places: zonePlaces(zoneDefinition),
         goTo: (place) => teleport(place.east, place.south, place.facing),
       });
@@ -400,6 +427,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       }
       sectionTimer.end("sim");
       showClock();
+      showWeather();
 
       Object.assign(debug.input, player.input);
       debug.player.x = player.transform.x;

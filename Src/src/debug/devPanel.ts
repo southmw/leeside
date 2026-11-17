@@ -1,11 +1,12 @@
 import type { I18n, Language } from "../locales/i18n";
 import type { Ui } from "../ui/uiRoot";
 import { type ClockTime, displayTime } from "../gameplay/clock";
+import type { WeatherReading } from "../gameplay/weather";
 import type { ZonePlace } from "../world/startPoint";
 
 /**
  * The development panel: everything the start conditions in the address do (`?character`,
- * `?props`, `?speed`, `?time`, `?timescale`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
+ * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
  * Development builds only. F2 or the button in the corner opens and closes it.
  *
  * A new start condition gets a control here as well, so that nothing has to be tested by
@@ -56,6 +57,11 @@ export interface DevControls {
   setHour(hour: number): void;
   timeScale(): number;
   setTimeScale(scale: number): void;
+  weather(): WeatherReading;
+  /** Calls a storm now: announced first (`warning`), or arriving at once. */
+  callStorm(warning: boolean): void;
+  /** Ends the storm and keeps the rest of the day clear. */
+  calmWeather(): void;
   places: readonly ZonePlace[];
   goTo(place: ZonePlace): void;
 }
@@ -136,7 +142,27 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
     refreshClock();
     return heading && row ? [heading, row] : [];
   };
+  let weatherNow: HTMLElement | undefined;
+  const weatherSection = (): HTMLElement[] => {
+    const [heading, row] = section(
+      t("dev.weather"),
+      button("dev-storm-warning", t("dev.weather.warning"), () => controls.callStorm(true)),
+      button("dev-storm-now", t("dev.weather.storm"), () => controls.callStorm(false)),
+      button("dev-storm-calm", t("dev.weather.calm"), () => controls.calmWeather()),
+    );
+    weatherNow = element("span", "", "dev-now");
+    weatherNow.id = "dev-weather-now";
+    heading?.append(weatherNow);
+    return heading && row ? [heading, row] : [];
+  };
   function refreshClock(): void {
+    if (weatherNow) {
+      const weather = controls.weather();
+      const phase = t(`weather.${weather.phase}`);
+      weatherNow.textContent = Number.isFinite(weather.secondsLeft)
+        ? t("dev.weather.now", { phase, seconds: Math.ceil(weather.secondsLeft) })
+        : phase;
+    }
     if (!timeNow) {
       return;
     }
@@ -193,6 +219,7 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
           button(`dev-timescale-${scale}`, t("dev.timescale.value", { scale }), () => controls.setTimeScale(scale), scale === controls.timeScale()),
         ),
       ),
+      ...weatherSection(),
       // Places are named by their ids in the zone data, which are not text for players.
       ...section(t("dev.places"), ...controls.places.map((place) => button(`dev-place-${place.id}`, place.id, () => controls.goTo(place)))),
       ...section(
@@ -211,6 +238,8 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
         }),
       ),
     );
+    // The parts that follow the clock are filled in at once, not at the next tick.
+    refreshClock();
   }
 
   window.addEventListener("keydown", (event) => {

@@ -101,6 +101,12 @@ export interface GameDebug {
   ui: { scale: number; tooSmall: boolean; window: string | null; selectedButton: number };
   /** The game's clock: day (from 1), hour of the day with fractions, part of the day, and how fast it runs (1 is normal). */
   clock: { day: number; hour: number; phase: "day" | "dusk" | "night"; scale: number };
+  /**
+   * The weather: its phase, how strong the storm is and how near it has come (both 0 to 1),
+   * seconds of game time until the next phase (infinite when no storm is ahead today), and the
+   * seed that decides each day's storm.
+   */
+  weather: { phase: "clear" | "warning" | "storm" | "fading"; intensity: number; approach: number; secondsLeft: number; seed: number };
   /** The sky: how high the sun stands in degrees, and how strong the sunlight and the ambient light are. */
   sky: { sunElevation: number; sunIntensity: number; ambientIntensity: number };
   /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
@@ -136,6 +142,7 @@ export function installDebugApi(language: Language): GameDebug {
     bench: { state: "off", progress: 0, summary: null, withinBudget: null },
     ui: { scale: 1, tooSmall: false, window: null, selectedButton: -1 },
     clock: { day: 1, hour: 0, phase: "day", scale: 1 },
+    weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0 },
     sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0 },
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },

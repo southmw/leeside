@@ -186,6 +186,15 @@ export function createDebugOverlay(
             rocks: debug.zone.rocks,
           }),
         },
+        {
+          label: t("debug.weather"),
+          value: t(Number.isFinite(debug.weather.secondsLeft) ? "debug.weather_value" : "debug.weather_value_open", {
+            phase: t(`weather.${debug.weather.phase}`),
+            seconds: fixed(Number.isFinite(debug.weather.secondsLeft) ? debug.weather.secondsLeft : 0, 0),
+            intensity: fixed(debug.weather.intensity, 2),
+            approach: fixed(debug.weather.approach, 2),
+          }),
+        },
         { label: t("debug.inside"), value: player.inside ?? "-" },
         { label: t("debug.entities"), value: integer(debug.entityCount) },
         { label: t("debug.bodies"), value: integer(debug.bodyCount) },

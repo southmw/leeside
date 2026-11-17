@@ -76,3 +76,22 @@ export const DUSK_START_HOUR = 18;
 /** Night runs from this hour through midnight to `NIGHT_END_HOUR`. */
 export const NIGHT_START_HOUR = 19;
 export const NIGHT_END_HOUR = 5;
+
+/**
+ * The storm that comes once a day (prototype design 3.3). Times are seconds of game time at
+ * normal clock speed. The warning starts this long after setting out, at a moment that
+ * differs from day to day.
+ */
+export const STORM_WARNING_START_MIN = 90;
+export const STORM_WARNING_START_MAX = 180;
+/** From the warning to the storm's arrival. Lengthen if it proves too tight. */
+export const STORM_WARNING_SECONDS = 30;
+export const STORM_SECONDS_MIN = 45;
+export const STORM_SECONDS_MAX = 75;
+/** How long the storm takes to die down. */
+export const STORM_FADE_SECONDS = 15;
+/** How long the storm takes to reach full strength once it arrives. */
+export const STORM_RISE_SECONDS = 4;
+/** The introduction's storm: it is announced at once, with a long warning for learning the controls. */
+export const INTRO_STORM_WARNING_SECONDS = 75;
+export const INTRO_STORM_SECONDS = 40;
