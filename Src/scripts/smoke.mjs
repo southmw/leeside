@@ -719,6 +719,23 @@ try {
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     check("?storm=now starts in the storm", (await page.evaluate(() => window.__game.weather.phase)) === "storm");
 
+    // The storm closes the view in to 25 m; pictures of clear weather and of the storm are
+    // kept for looking at (test-results/weather-clear.png and weather-storm.png).
+    await page.waitForFunction(() => window.__game.weather.intensity === 1, undefined, { timeout: 20_000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    const stormView = await page.evaluate(() => window.__game.sky.visibility);
+    await page.screenshot({ path: join(outDir, "weather-storm.png") });
+    await page.goto(gameUrl("seed=1&timescale=0"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+    await page.waitForTimeout(600);
+    const clearView = await page.evaluate(() => window.__game.sky.visibility);
+    await page.screenshot({ path: join(outDir, "weather-clear.png") });
+    check(
+      "the storm closes the view in to 25 m",
+      Math.abs(stormView - 25) < 0.5 && clearView > 1000,
+      `${clearView.toFixed(0)} m in clear weather, ${stormView.toFixed(1)} m in the storm`,
+    );
+
     // `?props=` picks the set from the address as well.
     await page.goto(gameUrl("props=boxes"), { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });

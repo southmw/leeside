@@ -3,17 +3,21 @@ import {
   BackSide,
   Color,
   DirectionalLight,
+  Fog,
   Mesh,
   type Scene,
+  ShaderChunk,
   ShaderMaterial,
   SphereGeometry,
   SRGBColorSpace,
   Vector3,
 } from "three";
-import { type Daylight, MOON_COLOR, MOON_DIRECTION, type Rgb } from "./daylight";
+import { MOON_COLOR, MOON_DIRECTION, type Rgb } from "./daylight";
+import type { SceneLook } from "./stormLook";
 
 /**
- * The sky and the light of the scene, following the hour of the day (render/daylight.ts).
+ * The sky, the light and the haze of the scene, following the hour of the day
+ * (render/daylight.ts) and the weather (render/stormLook.ts).
  *
  * The sky is a dome shaded from the horizon colour to the colour overhead, with a glow where
  * the sun is. It was chosen over Three.js' atmosphere sky and over a photograph (HDRI) after
@@ -56,13 +60,49 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
+/**
+ * Three.js counts haze by depth from the camera. Here it has to be counted from the player's
+ * character, in every direction: the camera may stand 20 m behind or above it, and haze
+ * counted from the camera either swallows the character (counted from behind) or leaves the
+ * ground around it clear (seen from above). So the built-in haze is replaced for all
+ * materials: the distance is taken from the point the camera looks at, which lies straight
+ * ahead of it at `fogNear` metres (the scene's fog object carries that distance in its `near`
+ * and the visibility in its `far`). The haze begins at a tenth of the visibility.
+ */
+function countHazeFromFocus(): void {
+  ShaderChunk.fog_pars_vertex = /* glsl */ `
+#ifdef USE_FOG
+  varying vec3 vFogPosition;
+#endif`;
+  ShaderChunk.fog_vertex = /* glsl */ `
+#ifdef USE_FOG
+  vFogPosition = mvPosition.xyz;
+#endif`;
+  ShaderChunk.fog_pars_fragment = /* glsl */ `
+#ifdef USE_FOG
+  uniform vec3 fogColor;
+  uniform float fogNear;
+  uniform float fogFar;
+  varying vec3 vFogPosition;
+#endif`;
+  ShaderChunk.fog_fragment = /* glsl */ `
+#ifdef USE_FOG
+  float fogDistance = distance( vFogPosition, vec3( 0.0, 0.0, - fogNear ) );
+  float fogFactor = smoothstep( fogFar * 0.1, fogFar, fogDistance );
+  gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );
+#endif`;
+}
+
 function setColor(target: Color, rgb: Rgb): void {
   target.setRGB(rgb[0], rgb[1], rgb[2], SRGBColorSpace);
 }
 
 export interface Sky {
-  /** Brings lights and sky up to date. Call every frame with the camera's position. */
-  update(daylight: Daylight, cameraPosition: { x: number; y: number; z: number }): void;
+  /**
+   * Brings lights, sky and haze up to date. Call every frame with the camera's position and
+   * its distance from what it is looking at (the player's character; 0 if there is none).
+   */
+  update(look: SceneLook, cameraPosition: { x: number; y: number; z: number }, focusDistance: number): void;
 }
 
 export function createSky(scene: Scene): Sky {
@@ -100,10 +140,19 @@ export function createSky(scene: Scene): Sky {
   // Behind the dome, in case it ever leaves a gap: the horizon's colour.
   const background = new Color();
   scene.background = background;
+  // Haze: slight and far off in clear weather, close and thick in a storm. The dome itself is
+  // not hazed; its colours are set to match. This must happen before anything is drawn.
+  countHazeFromFocus();
+  const fog = new Fog(0xffffff, 0, 1000);
+  scene.fog = fog;
   scene.add(ambient, sun, moon, dome);
 
   return {
-    update(daylight, cameraPosition): void {
+    update(daylight, cameraPosition, focusDistance): void {
+      setColor(fog.color, daylight.fogColor);
+      // See countHazeFromFocus: `near` carries the distance to the character, `far` the visibility.
+      fog.near = Math.max(focusDistance, 0);
+      fog.far = daylight.fogFar;
       setColor(ambient.color, daylight.ambientColor);
       ambient.intensity = daylight.ambientIntensity;
       setColor(sun.color, daylight.sunColor);

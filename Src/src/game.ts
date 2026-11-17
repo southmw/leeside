@@ -47,6 +47,7 @@ import { loadCharacterModel, type CharacterModel } from "./render/characterModel
 import { daylightAt } from "./render/daylight";
 import { loadPropModels, type PropModelLibrary } from "./render/propModel";
 import { createSky } from "./render/sky";
+import { sceneLook } from "./render/stormLook";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
 import { buildingAt, yawFromDegrees } from "./world/building";
 import { numberParam, resolveStart, zonePlaces } from "./world/startPoint";
@@ -306,9 +307,13 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   };
   showClock();
   // Called once the camera is placed, every frame: the sky is centred on the camera.
+  // How far the camera is from the character it looks at; 0 when it is not following one.
+  let cameraFocusDistance = 0;
   const showSky = (): void => {
-    const light = daylightAt(readClock(clock).hour);
-    sky.update(light, camera.position);
+    // The storm's strength as of the latest step: dust in the air, a dimmer sun, a shorter view.
+    const light = sceneLook(daylightAt(readClock(clock).hour), debug.weather.intensity);
+    sky.update(light, camera.position, cameraFocusDistance);
+    debug.sky.visibility = light.fogFar;
     debug.sky.sunElevation = light.sunElevation;
     debug.sky.sunIntensity = light.sunIntensity;
     debug.sky.ambientIntensity = light.ambientIntensity;
@@ -492,6 +497,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         );
         camera.lookAt(flight.target.x, heightAt(zone.terrain, flight.target.x, flight.target.z) + 1.5, flight.target.z);
       }
+      cameraFocusDistance = bench ? 0 : camera.position.distanceTo(drawnAt);
       showSky();
       renderer.render(scene, camera);
       sectionTimer.end("render");

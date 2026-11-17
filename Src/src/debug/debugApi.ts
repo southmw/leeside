@@ -107,8 +107,11 @@ export interface GameDebug {
    * seed that decides each day's storm.
    */
   weather: { phase: "clear" | "warning" | "storm" | "fading"; intensity: number; approach: number; secondsLeft: number; seed: number };
-  /** The sky: how high the sun stands in degrees, and how strong the sunlight and the ambient light are. */
-  sky: { sunElevation: number; sunIntensity: number; ambientIntensity: number };
+  /**
+   * The sky: how high the sun stands in degrees, how strong the sunlight and the ambient light
+   * are, and how far one can see in metres before the haze hides everything.
+   */
+  sky: { sunElevation: number; sunIntensity: number; ambientIntensity: number; visibility: number };
   /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
   moveSpeed: number;
   /** The local player's actions as of the latest simulation step. */
@@ -143,7 +146,7 @@ export function installDebugApi(language: Language): GameDebug {
     ui: { scale: 1, tooSmall: false, window: null, selectedButton: -1 },
     clock: { day: 1, hour: 0, phase: "day", scale: 1 },
     weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0 },
-    sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0 },
+    sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0, visibility: 0 },
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },
     input: createEmptyActions(),

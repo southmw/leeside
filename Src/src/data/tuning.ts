@@ -95,3 +95,6 @@ export const STORM_RISE_SECONDS = 4;
 /** The introduction's storm: it is announced at once, with a long warning for learning the controls. */
 export const INTRO_STORM_WARNING_SECONDS = 75;
 export const INTRO_STORM_SECONDS = 40;
+
+/** How far one can see in a storm at full strength, in metres. */
+export const STORM_VISIBILITY = 25;
