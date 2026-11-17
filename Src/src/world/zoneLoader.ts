@@ -1,4 +1,4 @@
-import type { Mesh } from "three";
+import type { Mesh, Object3D } from "three";
 import type { PhysicsWorld } from "../physics/physicsWorld";
 import { createBuildingBoxMesh } from "../render/buildingMesh";
 import { createPropMesh, createRockMesh, ROCK_HEIGHT_RATIO, type RockInstance } from "../render/propMesh";
@@ -6,10 +6,10 @@ import type { SceneLike } from "../render/renderSync";
 import { createTerrainMesh } from "../render/terrainMesh";
 import { boundaryWalls } from "./boundary";
 import { buildingBoxes } from "./building";
-import { propBox } from "./props";
+import { type PropBox, propBox } from "./props";
 import { scatterItems } from "./scatter";
 import { buildTerrainGeometry, createHeightfield, heightAt, type Heightfield } from "./terrain";
-import type { ZoneDefinition } from "./zoneDefinition";
+import type { ZoneDefinition, ZoneProp } from "./zoneDefinition";
 
 /** Rocks at least this large (rough radius in metres) block movement; smaller ones do not. */
 export const ROCK_COLLIDER_MIN_SIZE = 0.7;
@@ -21,6 +21,8 @@ export interface LoadedZone {
   readonly terrain: Heightfield;
   /** How many rocks were scattered. */
   readonly rockCount: number;
+  /** How many props are drawn with a model instead of their box. */
+  readonly propModelCount: number;
   /**
    * Takes everything the zone added out of the physics world and the scene again and frees
    * the GPU resources. Zone changes rely on this to not leak.
@@ -28,13 +30,28 @@ export interface LoadedZone {
   unload(): void;
 }
 
+export interface ZoneLoadOptions {
+  /**
+   * Gives the model a prop is drawn with, fitted to its box, or undefined to draw the box.
+   * Without this every prop is a box.
+   */
+  propModel?(prop: ZoneProp, box: PropBox): Object3D | undefined;
+}
+
 /**
  * Builds a zone from its definition: terrain, buildings, props, scattered rocks and the
  * invisible walls along its edges. Pictures and colliders are made from the same shapes.
  */
-export function loadZone(definition: ZoneDefinition, physics: PhysicsWorld, scene: SceneLike): LoadedZone {
+export function loadZone(
+  definition: ZoneDefinition,
+  physics: PhysicsWorld,
+  scene: SceneLike,
+  options: ZoneLoadOptions = {},
+): LoadedZone {
   const bodies: number[] = [];
   const meshes: Mesh[] = [];
+  // Models are shared with other zones and stay loaded; they are only taken out of the scene.
+  const models: Object3D[] = [];
   const show = (mesh: Mesh): void => {
     meshes.push(mesh);
     scene.add(mesh);
@@ -57,7 +74,13 @@ export function loadZone(definition: ZoneDefinition, physics: PhysicsWorld, scen
   for (const prop of definition.props) {
     const box = propBox(prop, heightAt(terrain, prop.position[0], prop.position[1]));
     bodies.push(physics.addStaticBox(box.center, box.halfExtents, 0, box.yaw));
-    show(createPropMesh(box));
+    const model = options.propModel?.(prop, box);
+    if (model) {
+      models.push(model);
+      scene.add(model);
+    } else {
+      show(createPropMesh(box));
+    }
   }
 
   // Rocks: drawn as one instanced mesh. Only those big enough to be obstacles get a collider;
@@ -89,6 +112,7 @@ export function loadZone(definition: ZoneDefinition, physics: PhysicsWorld, scen
     definition,
     terrain,
     rockCount: rocks.length,
+    propModelCount: models.length,
     unload(): void {
       for (const handle of bodies) {
         physics.removeBody(handle);
@@ -100,8 +124,12 @@ export function loadZone(definition: ZoneDefinition, physics: PhysicsWorld, scen
           material.dispose();
         }
       }
+      for (const model of models) {
+        scene.remove(model);
+      }
       bodies.length = 0;
       meshes.length = 0;
+      models.length = 0;
     },
   };
 }

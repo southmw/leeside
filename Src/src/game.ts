@@ -34,17 +34,19 @@ import { easeCameraLength, fitCamera, type Sweep, updateCameraDistance } from ".
 import { computeCameraPose } from "./render/cameraRig";
 import { titleCameraYaw, TITLE_CAMERA_PITCH, TITLE_CAMERA_RIG } from "./app/titleCamera";
 import { applyZoom } from "./render/cameraZoom";
-import { createCamera, createRenderer, fitToWindow } from "./render/renderer";
+import { createCamera, createRenderer, fitToWindow, warmUpScene } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
 import { createBenchPanel } from "./ui/benchPanel";
 import { createLookHint } from "./ui/lookHint";
 import type { Ui } from "./ui/uiRoot";
 import { characterById } from "./render/characterCatalog";
 import { loadCharacterModel, type CharacterModel } from "./render/characterModel";
+import { loadPropModels } from "./render/propModel";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
 import { buildingAt, yawFromDegrees } from "./world/building";
 import { numberParam, resolveStart } from "./world/startPoint";
 import { heightAt } from "./world/terrain";
+import { propModelFor, propModelUrls } from "./world/propModels";
 import { loadZone } from "./world/zoneLoader";
 import { loadDryRiverbed } from "./world/zones/dryRiverbed";
 
@@ -143,7 +145,19 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   const physics = new PhysicsWorld();
   const physicsSystem = createPhysicsSystem(world, physics);
 
-  const zone = loadZone(loadDryRiverbed(), physics, scene);
+  // Prop models are fetched before the zone is built. `?props=boxes` draws every prop as its
+  // box instead, for comparing looks and performance with and without the models.
+  const riverbed = loadDryRiverbed();
+  const propModels = await loadPropModels(
+    `${import.meta.env.BASE_URL}models/`,
+    startParams.get("props") === "boxes" ? [] : propModelUrls(riverbed.props),
+  );
+  const zone = loadZone(riverbed, physics, scene, {
+    propModel: (prop, box) => {
+      const model = propModelFor(prop);
+      return model ? propModels.create(model, box) : undefined;
+    },
+  });
   onProgress("zone");
   const zoneDefinition = zone.definition;
   debug.zone.id = zoneDefinition.id;
@@ -151,6 +165,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   debug.zone.buildings = zoneDefinition.buildings.length;
   debug.zone.props = zoneDefinition.props.length;
   debug.zone.rocks = zone.rockCount;
+  debug.zone.propModels = zone.propModelCount;
 
   // Where the player starts: the zone's start point, or `?at=east,south` and `?face=degrees`
   // (clockwise from north) to start anywhere, for checking a place without walking to it.
@@ -235,6 +250,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
 
   fitToWindow(renderer, camera);
   window.addEventListener("resize", () => fitToWindow(renderer, camera));
+
+  // Everything is drawn once now, so nothing stutters when it first comes into view in play.
+  warmUpScene(renderer, scene, camera);
 
   let firstFrameDrawn: () => void = () => {};
   const firstFrame = new Promise<void>((resolve) => {

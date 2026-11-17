@@ -2,7 +2,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { CHARACTER_HEIGHT, MOVE_SPEED } from "../../src/data/tuning";
 import { CHARACTER_SKIN, initPhysics, PhysicsWorld } from "../../src/physics/physicsWorld";
 import { boundaryWalls } from "../../src/world/boundary";
-import { PROP_SHAPES, propBox, propRadius } from "../../src/world/props";
+import { propModelFor } from "../../src/world/propModels";
+import { PROP_SHAPES, propBox, propRadius, propSize } from "../../src/world/props";
 import { ROCK_MAX_SIZE, ROCK_MIN_SIZE, scatterItems } from "../../src/world/scatter";
 import { heightAt } from "../../src/world/terrain";
 import type { ZoneDefinition } from "../../src/world/zoneDefinition";
@@ -102,8 +103,8 @@ describe("dry riverbed layout (prototype design 5)", () => {
 
 describe("props", () => {
   it("stands a prop on the ground, sunk in a little", () => {
-    const box = propBox({ id: "car", kind: "car", position: [10, 20], rotation: 0 }, 2);
-    const [, height] = PROP_SHAPES.car.size;
+    const box = propBox({ id: "tent", kind: "tent", position: [10, 20], rotation: 0 }, 2);
+    const [, height] = PROP_SHAPES.tent.size;
     expect(box.center.x).toBe(10);
     expect(box.center.z).toBe(20);
     expect(box.center.y + box.halfExtents.y).toBeCloseTo(2 + height);
@@ -120,8 +121,24 @@ describe("props", () => {
   });
 
   it("knows the radius a prop fits in", () => {
-    const [width, , length] = PROP_SHAPES.car.size;
-    expect(propRadius({ id: "car", kind: "car", position: [0, 0], rotation: 0 })).toBeCloseTo(Math.hypot(width, length) / 2);
+    const [width, , length] = PROP_SHAPES.tent.size;
+    expect(propRadius({ id: "tent", kind: "tent", position: [0, 0], rotation: 0 })).toBeCloseTo(Math.hypot(width, length) / 2);
+  });
+
+  it("gives a prop drawn with a model the size of that model", () => {
+    const car: ZoneDefinition["props"][number] = { id: "car_line", kind: "car", position: [0, 0], rotation: 0 };
+    const size = propModelFor(car)?.size;
+    expect(size).toBeDefined();
+    expect(propSize(car)).toEqual(size);
+    const box = propBox(car, 0);
+    expect(box.halfExtents.x * 2).toBeCloseTo(size?.[0] ?? 0);
+    expect(box.halfExtents.z * 2).toBeCloseTo(size?.[2] ?? 0);
+  });
+
+  it("makes cars large next to a 1.8 m person, as in the pack they come from", () => {
+    const [width, , length] = propSize({ id: "car_line", kind: "car" });
+    expect(length).toBeGreaterThan(5.5);
+    expect(width).toBeGreaterThan(2.2);
   });
 });
 

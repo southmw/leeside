@@ -1,13 +1,18 @@
 import { yawFromDegrees } from "./building";
+import { propModelFor } from "./propModels";
 import type { ZoneProp } from "./zoneDefinition";
 
 /**
- * Props of the prototype: cars, a tent, a well, barriers. Each is a single box for now,
- * used as both picture and collider, until models replace them.
+ * Props of the prototype: cars, a tent, a well, barriers. Each is a single box, which is
+ * its collider. Kinds with a model (world/propModels.ts) are drawn with it; the rest are
+ * drawn as the box.
  */
 
 export interface PropShape {
-  /** Size in metres: width, height, length (length runs north-south before rotation). */
+  /**
+   * Size in metres: width, height, length (length runs north-south before rotation). A prop
+   * drawn with a model uses the model's size instead (world/propModels.ts).
+   */
   size: readonly [number, number, number];
   /** Placeholder colour. */
   color: number;
@@ -32,15 +37,20 @@ export interface PropBox {
 }
 
 /** How far a prop's box reaches below the ground, so it does not hover on uneven ground. */
-const SUNK = 0.3;
+export const PROP_SUNK = 0.3;
+
+/** Size of a prop in metres (width, height, length): its model's, or else its kind's box. */
+export function propSize(prop: Pick<ZoneProp, "id" | "kind">): readonly [number, number, number] {
+  return propModelFor(prop)?.size ?? PROP_SHAPES[prop.kind].size;
+}
 
 /** The box of a prop standing on ground of height `groundHeight`. */
 export function propBox(prop: ZoneProp, groundHeight: number): PropBox {
-  const { size, color } = PROP_SHAPES[prop.kind];
-  const [width, height, length] = size;
+  const { color } = PROP_SHAPES[prop.kind];
+  const [width, height, length] = propSize(prop);
   return {
-    center: { x: prop.position[0], y: groundHeight + (height - SUNK) / 2, z: prop.position[1] },
-    halfExtents: { x: width / 2, y: (height + SUNK) / 2, z: length / 2 },
+    center: { x: prop.position[0], y: groundHeight + (height - PROP_SUNK) / 2, z: prop.position[1] },
+    halfExtents: { x: width / 2, y: (height + PROP_SUNK) / 2, z: length / 2 },
     yaw: yawFromDegrees(prop.rotation),
     color,
   };
@@ -48,6 +58,6 @@ export function propBox(prop: ZoneProp, groundHeight: number): PropBox {
 
 /** Radius of the circle a prop fits in, for keeping other things clear of it. */
 export function propRadius(prop: ZoneProp): number {
-  const [width, , length] = PROP_SHAPES[prop.kind].size;
+  const [width, , length] = propSize(prop);
   return Math.hypot(width, length) / 2;
 }

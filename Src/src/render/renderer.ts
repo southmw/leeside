@@ -1,4 +1,4 @@
-import { PerspectiveCamera, SRGBColorSpace, WebGLRenderer } from "three";
+import { type Camera, type Object3D, PerspectiveCamera, SRGBColorSpace, WebGLRenderer } from "three";
 import { computeViewport } from "./viewport";
 
 /** Vertical field of view in degrees (prototype design 3.1). */
@@ -22,4 +22,24 @@ export function fitToWindow(renderer: WebGLRenderer, camera: PerspectiveCamera):
   renderer.setSize(viewport.width, viewport.height, false);
   camera.aspect = viewport.aspect;
   camera.updateProjectionMatrix();
+}
+
+/**
+ * Draws everything in the scene once, whether or not the camera can see it. The first time
+ * an object is drawn its shaders are compiled and its geometry and textures are sent to the
+ * graphics card, which takes long enough to be felt as a stutter (measured: up to 200 ms
+ * when a car model first came into view). Doing it while loading keeps it out of play.
+ */
+export function warmUpScene(renderer: WebGLRenderer, scene: Object3D, camera: Camera): void {
+  const culled: Object3D[] = [];
+  scene.traverse((object) => {
+    if (object.frustumCulled) {
+      object.frustumCulled = false;
+      culled.push(object);
+    }
+  });
+  renderer.render(scene, camera);
+  for (const object of culled) {
+    object.frustumCulled = true;
+  }
 }

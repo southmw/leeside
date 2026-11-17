@@ -103,6 +103,8 @@ try {
       zoneInfo.id === "dry_riverbed" && zoneInfo.buildings === 3 && zoneInfo.props === 9 && zoneInfo.rocks > 1000,
       `${zoneInfo.id}, ${zoneInfo.buildings} buildings, ${zoneInfo.props} props, ${zoneInfo.rocks} rocks`,
     );
+    // The four cars are drawn with models; the other props are still boxes.
+    check("the cars are drawn with models", zoneInfo.propModels === 4, `${zoneInfo.propModels} of ${zoneInfo.props} props`);
     check(
       "drawing buffer matches the window",
       first.canvas.width >= 1280 && first.canvas.height >= 720,
@@ -568,6 +570,17 @@ try {
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
     check("?character picks a character for one visit", (await characterNow()) === "shaun", await characterNow());
     await page.evaluate(() => window.localStorage.removeItem("leeside.character"));
+
+    // `?props=boxes` draws every prop as its box again; the colliders are the same either way.
+    const bodiesWithModels = await page.evaluate(() => window.__game.bodyCount);
+    await page.goto(gameUrl("props=boxes"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: 15_000 });
+    const boxed = await page.evaluate(() => ({ models: window.__game.zone.propModels, bodies: window.__game.bodyCount }));
+    check(
+      "?props=boxes draws the props as boxes, with the same colliders",
+      boxed.models === 0 && boxed.bodies === bodiesWithModels,
+      `${boxed.models} models, ${boxed.bodies} bodies (${bodiesWithModels} with models)`,
+    );
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.
     const phone = await browser.newPage({

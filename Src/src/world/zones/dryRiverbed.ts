@@ -21,7 +21,7 @@ const buildings = [
 const props = [
   // 1: a line of cars in the riverbed, the first place the player searches.
   { id: "car_line", kind: "car", position: [375, 491], rotation: 8 },
-  { id: "car_line_second", kind: "car", position: [374, 498], rotation: 352 },
+  { id: "car_line_second", kind: "car", position: [374, 500], rotation: 352 },
   // 2: an abandoned car east of the river.
   { id: "abandoned_car", kind: "car", position: [469, 356], rotation: 70 },
   // 3: an overturned car in the south-west, the place furthest from any shelter.
