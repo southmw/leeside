@@ -11,6 +11,10 @@
   "hud.phase.night": "Night",
   "hud.sheltered": "Sheltered",
   "hud.health": "Health",
+  "hud.temperature": "Body temp.",
+  "hud.temperature.comfortable": "Comfortable",
+  "hud.temperature.cold": "Cold",
+  "hud.temperature.hypothermia": "Hypothermia",
 
   "weather.clear": "Clear",
   "weather.warning": "Storm approaching",
@@ -55,6 +59,7 @@
 
   "death.title": "You died",
   "death.text.storm": "Caught in the storm. Continue to start again at the shelter the next morning.",
+  "death.text.cold": "The cold took you. Continue to start again at the shelter the next morning.",
   "death.continue": "Continue",
   "death.quit": "Quit to title",
 
@@ -86,6 +91,8 @@
   "dev.audio.off": "Muted",
   "dev.health": "Health",
   "dev.health.value": "{health}",
+  "dev.temperature": "Body temperature",
+  "dev.temperature.value": "{value}",
   "dev.shelter": "Shelter zones",
   "dev.shelter.show": "Show",
   "dev.shelter.hide": "Hide",
@@ -153,6 +160,8 @@
   "debug.shelter": "Sheltered in",
   "debug.health": "Health",
   "debug.health_value": "{health} (died {deaths} times)",
+  "debug.temperature": "Body temperature",
+  "debug.temperature_value": "{value} ({stage})",
   "debug.entities": "Entities",
   "debug.bodies": "Physics bodies",
   "debug.position": "Player position",

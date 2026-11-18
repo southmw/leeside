@@ -206,6 +206,10 @@ export function createDebugOverlay(
         { label: t("debug.inside"), value: player.inside ?? "-" },
         { label: t("debug.shelter"), value: player.shelter ?? "-" },
         { label: t("debug.health"), value: t("debug.health_value", { health: fixed(player.health, 1), deaths: integer(player.deaths) }) },
+        {
+          label: t("debug.temperature"),
+          value: t("debug.temperature_value", { value: fixed(player.temperature, 1), stage: t(`hud.temperature.${player.temperatureStage}`) }),
+        },
         { label: t("debug.entities"), value: integer(debug.entityCount) },
         { label: t("debug.bodies"), value: integer(debug.bodyCount) },
         { label: t("debug.position"), value: `${fixed(player.x, 2)}, ${fixed(player.y, 2)}, ${fixed(player.z, 2)}` },

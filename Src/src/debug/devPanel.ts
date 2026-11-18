@@ -7,7 +7,7 @@ import type { ZonePlace } from "../world/startPoint";
 
 /**
  * The development panel: everything the start conditions in the address do (`?character`,
- * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?health`, `?mute`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
+ * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?health`, `?temperature`, `?mute`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
  * Development builds only. F2 or the button in the corner opens and closes it.
  *
  * A new start condition gets a control here as well, so that nothing has to be tested by
@@ -22,6 +22,8 @@ const CLOCK_REFRESH_MS = 200;
 const SPEED_STEP = 1;
 /** A health low enough that a storm finishes it off within seconds. */
 const LOW_HEALTH = 10;
+/** Body temperatures to jump to: comfortable, just cold, and seconds short of hypothermia. */
+const TEMPERATURES = [0, -50, -95] as const;
 /** Hours the clock can be set to: setting out, noon, dusk, nightfall, midnight, the end of night. */
 const HOURS = [6, 12, 18, 19, 0, 5];
 /** Speeds the clock can be set to; 1 is normal and 0 stops it. A day takes 8 minutes at 1 and 8 seconds at 60. */
@@ -70,6 +72,8 @@ export interface DevControls {
   health(): number;
   setHealth(health: number): void;
   maxHealth: number;
+  temperature(): number;
+  setTemperature(value: number): void;
   shelterZonesShown(): boolean;
   /** Draws the shelter zones as boxes, or stops drawing them. */
   showShelterZones(shown: boolean): void;
@@ -195,9 +199,24 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
     heading?.append(healthNow);
     return heading && row ? [heading, row] : [];
   };
+  // Body temperature falls by itself at night, out of doors.
+  let temperatureNow: HTMLElement | undefined;
+  const temperatureSection = (): HTMLElement[] => {
+    const [heading, row] = section(
+      t("dev.temperature"),
+      ...TEMPERATURES.map((value) => button(`dev-temperature-${-value}`, t("dev.temperature.value", { value }), () => controls.setTemperature(value))),
+    );
+    temperatureNow = element("span", "", "dev-now");
+    temperatureNow.id = "dev-temperature-now";
+    heading?.append(temperatureNow);
+    return heading && row ? [heading, row] : [];
+  };
   function refreshClock(): void {
     if (healthNow) {
       healthNow.textContent = String(Math.ceil(controls.health()));
+    }
+    if (temperatureNow) {
+      temperatureNow.textContent = String(Math.round(controls.temperature()));
     }
     if (audioNow) {
       audioNow.textContent = t(`audio.${controls.audio().state}`);
@@ -267,6 +286,7 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
       ),
       ...weatherSection(),
       ...healthSection(),
+      ...temperatureSection(),
       ...audioSection(),
       ...section(
         t("dev.shelter"),

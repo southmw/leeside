@@ -1,4 +1,4 @@
-import type { GameWorld, Health } from "../core/ecs";
+import type { DamageCause, GameWorld, Health } from "../core/ecs";
 import { MAX_HEALTH, STORM_DAMAGE_PER_SECOND } from "../data/tuning";
 
 /**
@@ -22,9 +22,15 @@ export function stormDamage(intensity: number, sheltered: boolean, seconds: numb
   return STORM_DAMAGE_PER_SECOND * Math.min(Math.max(intensity, 0), 1) * Math.max(seconds, 0);
 }
 
-/** Takes `amount` from health, which stops at zero. */
-export function hurt(health: Health, amount: number): void {
-  health.current = Math.max(health.current - Math.max(amount, 0), 0);
+/** Takes `amount` from health, which stops at zero, and notes what did it. */
+export function hurt(health: Health, amount: number, cause?: DamageCause): void {
+  if (!(amount > 0)) {
+    return;
+  }
+  health.current = Math.max(health.current - amount, 0);
+  if (cause) {
+    health.lastHurtBy = cause;
+  }
 }
 
 export function isDead(health: Health): boolean {
@@ -44,7 +50,7 @@ export function createExposureSystem(world: GameWorld, intensity: () => number):
       return;
     }
     for (const { health, shelter } of exposed) {
-      hurt(health, stormDamage(strength, shelter.zone !== null, gameSeconds));
+      hurt(health, stormDamage(strength, shelter.zone !== null, gameSeconds), "storm");
     }
   };
 }

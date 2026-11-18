@@ -11,6 +11,10 @@
   "hud.phase.night": "밤",
   "hud.sheltered": "대피 중",
   "hud.health": "체력",
+  "hud.temperature": "체온",
+  "hud.temperature.comfortable": "쾌적",
+  "hud.temperature.cold": "추움",
+  "hud.temperature.hypothermia": "저체온",
 
   "weather.clear": "평상시",
   "weather.warning": "폭풍 예고",
@@ -55,6 +59,7 @@
 
   "death.title": "쓰러졌습니다",
   "death.text.storm": "폭풍에 휩쓸렸습니다. 계속하면 다음 날 아침 대피소에서 다시 시작합니다.",
+  "death.text.cold": "추위에 쓰러졌습니다. 계속하면 다음 날 아침 대피소에서 다시 시작합니다.",
   "death.continue": "계속하기",
   "death.quit": "그만하기 (타이틀로)",
 
@@ -86,6 +91,8 @@
   "dev.audio.off": "끄기",
   "dev.health": "체력",
   "dev.health.value": "{health}",
+  "dev.temperature": "체온",
+  "dev.temperature.value": "{value}",
   "dev.shelter": "대피 영역",
   "dev.shelter.show": "표시",
   "dev.shelter.hide": "숨김",
@@ -153,6 +160,8 @@
   "debug.shelter": "대피 중인 영역",
   "debug.health": "체력",
   "debug.health_value": "{health} (사망 {deaths}회)",
+  "debug.temperature": "체온",
+  "debug.temperature_value": "{value} ({stage})",
   "debug.entities": "엔티티",
   "debug.bodies": "물리 객체",
   "debug.position": "플레이어 위치",

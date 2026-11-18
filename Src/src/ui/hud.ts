@@ -1,11 +1,13 @@
 import { type ClockTime, displayTime } from "../gameplay/clock";
+import type { TemperatureStage } from "../gameplay/temperature";
 import type { I18n } from "../locales/i18n";
 import type { Ui } from "./uiRoot";
 
 /**
  * What is on screen during play (UI design 5). So far the day and time, top right, with a
  * word under it from dusk on (colour alone is not to be relied on: UI design 1, rule 4), the
- * "sheltered" sign, bottom right, and health, bottom left; the storm warning and the rest
+ * "sheltered" sign, bottom right, and health and body temperature, bottom left; the storm
+ * warning and the rest
  * join as the systems behind them are built.
  */
 
@@ -22,13 +24,20 @@ const css = `
 /* From dusk on the clock says that the light is going: in colour, and in a word under it. */
 #hud-clock.dusk .hud-time, #hud-clock.dusk .hud-phase { color: #ff8a2a; }
 #hud-clock.night .hud-time, #hud-clock.night .hud-phase { color: #6fa0ff; }
-#hud-health {
-  position: absolute; left: 1.25em; bottom: 1em; width: 14em; margin: 0;
+#hud-vitals {
+  position: absolute; left: 1.25em; bottom: 1em; width: 14em;
   text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.75);
 }
-#hud-health .ui-bar-label { font-weight: 700; opacity: 1; }
-#hud-health .ui-bar-track { height: 0.7em; background: rgba(20, 19, 16, 0.6); border: 0.06em solid rgba(232, 220, 192, 0.5); }
+#hud-vitals .ui-bar { margin: 0.45em 0 0; }
+#hud-vitals .ui-bar-label { font-weight: 700; opacity: 1; }
+#hud-vitals .ui-bar-track { position: relative; height: 0.7em; background: rgba(20, 19, 16, 0.6); border: 0.06em solid rgba(232, 220, 192, 0.5); }
 #hud-health .ui-bar-fill { background: #c9584a; }
+/* Body temperature is comfortable in the middle; the colder, the further the bar grows to the left. */
+#hud-temperature .ui-bar-fill { position: absolute; right: 50%; top: 0; background: #6fa0ff; }
+#hud-temperature .ui-bar-track::after {
+  content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 0.12em; margin-left: -0.06em; background: #e8dcc0;
+}
+#hud-temperature.cold .hud-stage, #hud-temperature.hypothermia .hud-stage { color: #6fa0ff; }
 #hud-shelter {
   position: absolute; right: 1.25em; bottom: 1em; padding: 0.35em 0.9em;
   font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
@@ -48,6 +57,8 @@ export interface Hud {
   update(time: ClockTime): void;
   /** Sets the health bar. */
   setHealth(current: number, max: number): void;
+  /** Sets the body temperature bar: `value` from -100 (coldest) to 0 (comfortable), and the stage it makes. */
+  setTemperature(value: number, stage: TemperatureStage): void;
   /** Shows the "sheltered" sign while the player is in a shelter zone, marked out during a storm. */
   setShelter(sheltered: boolean, storm: boolean): void;
 }
@@ -88,7 +99,27 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   healthFill.className = "ui-bar-fill";
   healthTrack.append(healthFill);
   health.append(healthLabel, healthTrack);
-  root.append(clock, health, shelter);
+  // The same again for body temperature, with the stage in words where health has its number.
+  const temperature = document.createElement("div");
+  temperature.id = "hud-temperature";
+  temperature.className = "ui-bar";
+  const temperatureLabel = document.createElement("div");
+  temperatureLabel.className = "ui-bar-label";
+  const temperatureName = document.createElement("span");
+  const temperatureStageText = document.createElement("span");
+  temperatureStageText.id = "hud-temperature-stage";
+  temperatureStageText.className = "hud-stage";
+  temperatureLabel.append(temperatureName, temperatureStageText);
+  const temperatureTrack = document.createElement("div");
+  temperatureTrack.className = "ui-bar-track";
+  const temperatureFill = document.createElement("div");
+  temperatureFill.className = "ui-bar-fill";
+  temperatureTrack.append(temperatureFill);
+  temperature.append(temperatureLabel, temperatureTrack);
+  const vitals = document.createElement("div");
+  vitals.id = "hud-vitals";
+  vitals.append(health, temperature);
+  root.append(clock, vitals, shelter);
   // Under the title and windows, which are added to the root later or sit above by their own rules.
   ui.root.prepend(root);
 
@@ -110,9 +141,12 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
     phase.textContent = latest.phase === "day" ? "" : i18n.t(`hud.phase.${latest.phase}`);
     clock.className = latest.phase;
   };
+  let stage: TemperatureStage = "comfortable";
   const renderShelter = (): void => {
     shelter.textContent = i18n.t("hud.sheltered");
     healthName.textContent = i18n.t("hud.health");
+    temperatureName.textContent = i18n.t("hud.temperature");
+    temperatureStageText.textContent = i18n.t(`hud.temperature.${stage}`);
   };
   renderShelter();
   i18n.onChange(render);
@@ -135,6 +169,19 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
       const width = `${(Math.min(Math.max(current / max, 0), 1) * 100).toFixed(1)}%`;
       if (width !== healthFill.style.width) {
         healthFill.style.width = width;
+      }
+    },
+    setTemperature(value, next): void {
+      if (next !== stage) {
+        stage = next;
+        temperatureStageText.textContent = i18n.t(`hud.temperature.${stage}`);
+        temperature.classList.toggle("cold", stage === "cold");
+        temperature.classList.toggle("hypothermia", stage === "hypothermia");
+      }
+      // Half the track is the cold side: full at -100.
+      const width = `${(Math.min(Math.max(-value / 100, 0), 1) * 50).toFixed(1)}%`;
+      if (width !== temperatureFill.style.width) {
+        temperatureFill.style.width = width;
       }
     },
     setShelter(sheltered, storm): void {

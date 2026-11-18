@@ -28,11 +28,13 @@ import {
   FOOTSTEP_STRIDE,
   FOOTSTEP_VOLUME,
   MAX_HEALTH,
+  MIN_TEMPERATURE,
   MOVE_SPEED,
 } from "./data/tuning";
 import { advanceClock, createClock, parseTimeOfDay, readClock, setHour, startNextDay } from "./gameplay/clock";
 import { createDeathScreen } from "./ui/deathScreen";
 import { createExposureSystem, createHealth, isDead } from "./gameplay/health";
+import { createTemperature, createTemperatureSystem, temperatureStage } from "./gameplay/temperature";
 import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
 import { createShelterSystem } from "./gameplay/shelter";
@@ -288,6 +290,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     shelter: { zone: null },
     // `?health=10` starts hurt, for seeing what happens at zero without waiting.
     health: createHealth(numberParam(startParams.get("health"), 1, MAX_HEALTH, MAX_HEALTH)),
+    // `?temperature=-90` starts chilled, for seeing the cold without standing out a night.
+    temperature: createTemperature(numberParam(startParams.get("temperature"), MIN_TEMPERATURE, 0, 0)),
     transform: createTransform(PLAYER_START.x, PLAYER_START.y, PLAYER_START.z, startYaw),
     renderable: { object: playerVisual },
     body: { handle: physics.addCharacter(PLAYER_START) },
@@ -429,6 +433,15 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.player.health = player.health.current;
   };
   showHealth();
+  // At night, out of doors, the body cools; anywhere else it warms up again.
+  const temperatureSystem = createTemperatureSystem(world, () => readClock(clock).phase === "night");
+  const showTemperature = (): void => {
+    const stage = temperatureStage(player.temperature.value);
+    hud.setTemperature(player.temperature.value, stage);
+    debug.player.temperature = player.temperature.value;
+    debug.player.temperatureStage = stage;
+  };
+  showTemperature();
 
   // The camera's current reach. It shrinks at once when something is in the way and grows back
   // gradually, so it is kept between frames.
@@ -478,12 +491,18 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     deathScreen.clear();
     debug.player.dead = false;
   };
+  // Whoever starts again is whole and warm.
+  const restore = (): void => {
+    player.health.current = player.health.max;
+    delete player.health.lastHurtBy;
+    player.temperature.value = 0;
+  };
   // Going on. A stand-in until the dropped bag (step 2.20) and the shelter zone (2.16) exist:
   // the next morning, at the shelter's entrance, in full health.
   const respawn = (): void => {
     endDeath();
     teleport(respawnEast, respawnSouth, RESPAWN_FACING);
-    player.health.current = player.health.max;
+    restore();
     startNextDay(clock);
     shelterSystem();
     showClock();
@@ -496,7 +515,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     playing = false;
     teleport(start.east, start.south, start.facing);
     player.view.pitch = START_PITCH;
-    player.health.current = player.health.max;
+    restore();
     Object.assign(player.input, createEmptyActions());
     Object.assign(clock, newClock());
     delete weather.called;
@@ -526,7 +545,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     dying.seconds += dt;
     if (!dying.asked && dying.seconds >= DEATH_NOTICE_SECONDS) {
       dying.asked = true;
-      deathScreen.ask("storm", {
+      deathScreen.ask(player.health.lastHurtBy ?? "storm", {
         onContinue: () => {
           dying.choice = "continue";
         },
@@ -595,6 +614,11 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           showHealth();
         },
         maxHealth: MAX_HEALTH,
+        temperature: () => player.temperature.value,
+        setTemperature: (value) => {
+          player.temperature.value = Math.min(Math.max(value, MIN_TEMPERATURE), 0);
+          showTemperature();
+        },
         shelterZonesShown: () => shelterZones.visible,
         showShelterZones: (shown) => {
           shelterZones.setVisible(shown);
@@ -642,6 +666,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       // The storm hurts in game time: not behind the title, nor while the clock is stopped.
       if (playing && !bench) {
         exposureSystem(dt * clock.scale);
+        temperatureSystem(dt * clock.scale);
         if (isDead(player.health)) {
           advanceDeath(dt);
         } else if (death) {
@@ -652,6 +677,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       showAudio();
       showShelter();
       showHealth();
+      showTemperature();
       if (playing && !bench) {
         soundFootsteps(dt);
       }

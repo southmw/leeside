@@ -104,6 +104,19 @@ export const MAX_HEALTH = 100;
  */
 export const STORM_DAMAGE_PER_SECOND = 4;
 
+/**
+ * Body temperature (prototype design 3.4): 0 is comfortable and the scale runs down to the
+ * coldest, where hypothermia sets in. From `COLD_TEMPERATURE` down the player is warned.
+ */
+export const MIN_TEMPERATURE = -100;
+export const COLD_TEMPERATURE = -50;
+/** Cooling per second of game time at night out of shelter: cold after 60 s, hypothermia after 120. */
+export const COOLING_PER_SECOND = 100 / 120;
+/** Warming per second of game time anywhere else: from the coldest to comfortable in 20 s. */
+export const WARMING_PER_SECOND = 5;
+/** Health lost per second of game time in hypothermia. */
+export const HYPOTHERMIA_DAMAGE_PER_SECOND = 2;
+
 /** How far one can see in a storm at full strength, in metres. */
 export const STORM_VISIBILITY = 25;
 

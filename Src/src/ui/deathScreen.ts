@@ -1,3 +1,4 @@
+import type { DamageCause } from "../core/ecs";
 import type { I18n } from "../locales/i18n";
 import type { Ui, UiWindow } from "./uiRoot";
 
@@ -16,9 +17,6 @@ const css = `
 #death-veil.shown { opacity: 1; transition: opacity var(--death-fade, 1.5s); }
 `;
 
-/** What took the last of the player's health. The storm is the only one so far. */
-export type DeathCause = "storm";
-
 export interface DeathChoices {
   /** Start again the next morning. Also what closing the window with Escape means. */
   onContinue(): void;
@@ -29,8 +27,8 @@ export interface DeathChoices {
 export interface DeathScreen {
   /** Starts darkening the picture, over `seconds`. */
   darken(seconds: number): void;
-  /** Opens the window. Exactly one of the choices is called, once. */
-  ask(cause: DeathCause, choices: DeathChoices): void;
+  /** Opens the window; `cause` is what took the last of the player's health. Exactly one of the choices is called, once. */
+  ask(cause: DamageCause, choices: DeathChoices): void;
   /** Takes everything away again, without calling a choice. */
   clear(): void;
 }

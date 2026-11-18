@@ -621,6 +621,11 @@ try {
     await page.locator("#dev-health-full").click();
     const fullHealth = await page.evaluate(() => window.__game.player.health);
     check("the panel sets the health", lowHealth === 10 && fullHealth === 100, `${lowHealth} -> ${fullHealth}`);
+    await page.locator("#dev-temperature-50").click();
+    const setCold = await page.evaluate(() => window.__game.player.temperature);
+    await page.locator("#dev-temperature-0").click();
+    const setWarm = await page.evaluate(() => window.__game.player.temperature);
+    check("the panel sets the body temperature", setCold <= -49 && setCold >= -50 && setWarm === 0, `${setCold.toFixed(1)} -> ${setWarm}`);
     await page.locator("#dev-speed-up").click();
     const fasterSpeed = await page.evaluate(() => window.__game.moveSpeed);
     await page.locator("#dev-speed-reset").click();
@@ -887,6 +892,38 @@ try {
       again.phase === "playing" && again.z < quit.z - 0.5 && (await page.locator("#hud").isVisible()) && (await page.locator("#title-screen").count()) <= 1,
       `${again.phase}, z ${quit.z.toFixed(1)} -> ${again.z.toFixed(1)}`,
     );
+    // Body temperature: out at night it falls and the HUD says "Cold"; in a house it stays
+    // comfortable; by day it comes back; and hypothermia takes health until the player dies of it.
+    const coldAt = async (query, until) => {
+      await page.goto(gameUrl(query), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.waitForFunction(until, undefined, { timeout: 90_000 }).catch(() => {});
+      const shown = await page.locator("#hud-temperature-stage").innerText();
+      const fill = await page.locator("#hud-temperature .ui-bar-fill").evaluate((element) => element.style.width);
+      return page.evaluate(([text, width]) => ({ ...window.__game.player, sim: window.__game.simSeconds, phase: window.__game.clock.phase, shown: text, fill: width }), [shown, fill]);
+    };
+    const chilled = await coldAt("time=22:00&timescale=20&at=360,600", () => window.__game.player.temperatureStage === "cold");
+    await page.screenshot({ path: join(outDir, "cold.png") });
+    const warmInside = await coldAt("time=22:00&timescale=20&at=280,282", () => window.__game.simSeconds > 4);
+    check(
+      "at night the body cools in the open and not in a house",
+      chilled.phase === "night" && chilled.temperature <= -50 && chilled.temperatureStage === "cold" && chilled.shown === "Cold" && parseFloat(chilled.fill) >= 25 &&
+        chilled.health === 100 && warmInside.temperature === 0 && warmInside.shown === "Comfortable" && warmInside.sim > 4,
+      `${chilled.temperature.toFixed(0)} in the open ("${chilled.shown}", bar ${chilled.fill}), ${warmInside.temperature} in ${warmInside.shelter} after ${warmInside.sim.toFixed(0)} s`,
+    );
+    const thawed = await coldAt("time=12:00&temperature=-80&at=360,600", () => window.__game.player.temperature > -40);
+    check("?temperature starts chilled, and by day the body warms up again", thawed.temperature > -40 && thawed.temperature <= 0, thawed.temperature.toFixed(0));
+    const frozen = await coldAt("time=22:00&temperature=-100&health=5&at=360,600", () => window.__game.ui.window === "death");
+    const frozenText = await page.locator('[data-window="death"]').innerText().catch(() => "");
+    check(
+      "hypothermia takes health, and the death window names the cold",
+      frozen.dead && frozen.health === 0 && frozen.temperatureStage === "hypothermia" && frozen.shown === "Hypothermia" && frozenText.includes("cold"),
+      frozenText.replace(/\s+/g, " "),
+    );
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !window.__game.player.dead, undefined, { timeout: 10_000 }).catch(() => {});
+    const rewarmed = await page.evaluate(() => window.__game.player);
+    check("starting again is warm as well as whole", rewarmed.temperature === 0 && rewarmed.health === 100, `${rewarmed.temperature}, health ${rewarmed.health}`);
     // Footsteps: about one every 2.6 m while walking (12 m/s), none while standing.
     await page.goto(gameUrl("at=360,600&face=0"), { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });

@@ -56,10 +56,20 @@ export interface ShelterZone {
   height: number;
 }
 
+/** What can take health away. */
+export type DamageCause = "storm" | "cold";
+
 /** What an entity can take before it dies (gameplay/health.ts). */
 export interface Health {
   current: number;
   max: number;
+  /** What took health last, for telling the player what they died of. Unset until hurt. */
+  lastHurtBy?: DamageCause;
+}
+
+/** How warm an entity's body is (gameplay/temperature.ts): 0 is comfortable, -100 the coldest. */
+export interface Temperature {
+  value: number;
 }
 
 /** Whether an entity is out of the weather, as of the latest step. */
@@ -82,6 +92,7 @@ export interface Entity {
   /** Where a player looks. Movement is relative to it, and the camera follows the local player's. */
   view?: View;
   health?: Health;
+  temperature?: Temperature;
   /** Kept up to date for entities the weather can hurt (players). */
   shelter?: Shelter;
   /** Makes the entity a place of shelter; needs a `transform`. */
