@@ -140,6 +140,20 @@ export interface GameDebug {
    * `footsteps` counts the footsteps sounded so far.
    */
   audio: { state: AudioState; muted: boolean; windVolume: number; windCutoffHz: number; indoors: boolean; footsteps: number };
+  /**
+   * What the HUD shows: the storm warning and how much of its bar is left (1 to 0), which edge
+   * colours and blinking bars are on, the cause of damage shown, and the compass: the player's
+   * heading in degrees and where the shelter's mark sits (-1 left end to 1 right end; `beyond`
+   * is -1 or 1 when the shelter is behind and the mark is held at that end).
+   */
+  hud: {
+    storm: "none" | "warning" | "storm";
+    stormRemaining: number;
+    edges: string[];
+    blinking: string[];
+    damage: string | null;
+    compass: { heading: number; shelterOffset: number; shelterBeyond: number };
+  };
   /** Whether the shelter zones are drawn as boxes (development panel). */
   shelterZonesShown: boolean;
   /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
@@ -178,6 +192,7 @@ export function installDebugApi(language: Language): GameDebug {
     weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0, wallDistance: 0, wallOpacity: 0 },
     sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0, visibility: 0 },
     audio: { state: "off", muted: false, windVolume: 0, windCutoffHz: 0, indoors: false, footsteps: 0 },
+    hud: { storm: "none", stormRemaining: 0, edges: [], blinking: [], damage: null, compass: { heading: 0, shelterOffset: 0, shelterBeyond: 0 } },
     shelterZonesShown: false,
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },

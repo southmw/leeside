@@ -1,0 +1,182 @@
+import { describe, expect, it } from "vitest";
+import { DANGER_HEALTH, LOW_THIRST } from "../../src/data/tuning";
+import {
+  bearingTo,
+  compassPosition,
+  createDamageCue,
+  DAMAGE_CUE_SECONDS,
+  headingOf,
+  hudAlerts,
+  type HudSituation,
+  relativeBearing,
+  stepDamageCue,
+} from "../../src/ui/hudState";
+import { yawFromDegrees } from "../../src/world/building";
+
+describe("headingOf", () => {
+  it("turns a yaw into degrees clockwise from north", () => {
+    expect(headingOf(0)).toBeCloseTo(0);
+    expect(headingOf(yawFromDegrees(90))).toBeCloseTo(90);
+    expect(headingOf(yawFromDegrees(270))).toBeCloseTo(270);
+    expect(headingOf(Math.PI / 2)).toBeCloseTo(270);
+  });
+
+  it("stays between 0 and 360 however far the view has turned", () => {
+    expect(headingOf(yawFromDegrees(450))).toBeCloseTo(90);
+    expect(headingOf(yawFromDegrees(-90))).toBeCloseTo(270);
+  });
+});
+
+describe("bearingTo", () => {
+  it("is 0 to the north (-Z), 90 to the east (+X), 180 to the south, 270 to the west", () => {
+    expect(bearingTo(100, 100, 100, 50)).toBeCloseTo(0);
+    expect(bearingTo(100, 100, 150, 100)).toBeCloseTo(90);
+    expect(bearingTo(100, 100, 100, 150)).toBeCloseTo(180);
+    expect(bearingTo(100, 100, 50, 100)).toBeCloseTo(270);
+    expect(bearingTo(100, 100, 150, 50)).toBeCloseTo(45);
+  });
+});
+
+describe("relativeBearing", () => {
+  it("is positive to the right and negative to the left, the short way round", () => {
+    expect(relativeBearing(0, 30)).toBeCloseTo(30);
+    expect(relativeBearing(0, 330)).toBeCloseTo(-30);
+    expect(relativeBearing(350, 10)).toBeCloseTo(20);
+    expect(relativeBearing(10, 350)).toBeCloseTo(-20);
+    expect(relativeBearing(90, 270)).toBeCloseTo(-180);
+  });
+});
+
+describe("compassPosition", () => {
+  it("puts what is straight ahead in the middle", () => {
+    expect(compassPosition(40, 40)).toEqual({ offset: 0, beyond: 0 });
+  });
+
+  it("spreads 90 degrees to either side over the strip", () => {
+    expect(compassPosition(0, 45).offset).toBeCloseTo(0.5);
+    expect(compassPosition(0, 315).offset).toBeCloseTo(-0.5);
+    expect(compassPosition(0, 90)).toEqual({ offset: 1, beyond: 0 });
+    expect(compassPosition(0, 270)).toEqual({ offset: -1, beyond: 0 });
+  });
+
+  it("holds what is behind at the nearer end, marked as beyond it", () => {
+    expect(compassPosition(0, 135)).toEqual({ offset: 1, beyond: 1 });
+    expect(compassPosition(0, 225)).toEqual({ offset: -1, beyond: -1 });
+    expect(compassPosition(0, 180)).toEqual({ offset: 1, beyond: 1 });
+  });
+
+  it("follows the player: the shelter to the north-west of a player looking east is off to the left", () => {
+    const heading = headingOf(yawFromDegrees(90));
+    const bearing = bearingTo(360, 600, 281, 281);
+    expect(bearing).toBeGreaterThan(340);
+    expect(compassPosition(heading, bearing)).toEqual({ offset: -1, beyond: -1 });
+    // Turned to face it, it is in the middle.
+    expect(compassPosition(bearing, bearing).offset).toBeCloseTo(0);
+  });
+});
+
+const calm: HudSituation = {
+  weather: { phase: "clear", intensity: 0, secondsLeft: 120, phaseSeconds: Number.POSITIVE_INFINITY },
+  sheltered: false,
+  health: 100,
+  temperatureStage: "comfortable",
+  thirst: 100,
+  hurtBy: null,
+};
+
+describe("hudAlerts", () => {
+  it("shows nothing out of the ordinary on a calm day in good shape", () => {
+    expect(hudAlerts(calm)).toEqual({
+      storm: null,
+      edges: { storm: false, cold: false, danger: false },
+      blink: { health: false, temperature: false, thirst: false },
+      shelterMarked: false,
+      damage: null,
+    });
+  });
+
+  it("warns of a coming storm with a bar that runs down, and marks the shelter", () => {
+    const warned = (secondsLeft: number) => hudAlerts({ ...calm, weather: { phase: "warning", intensity: 0, secondsLeft, phaseSeconds: 30 } });
+    expect(warned(30).storm).toEqual({ kind: "warning", remaining: 1 });
+    expect(warned(15).storm).toEqual({ kind: "warning", remaining: 0.5 });
+    expect(warned(0).storm).toEqual({ kind: "warning", remaining: 0 });
+    expect(warned(15).shelterMarked).toBe(true);
+    // The warning alone is no reason for the edges to change.
+    expect(warned(15).edges.storm).toBe(false);
+  });
+
+  it("says the storm is here, and clouds the edges out of doors only", () => {
+    const storm = { phase: "storm" as const, intensity: 1, secondsLeft: 40, phaseSeconds: 60 };
+    const outside = hudAlerts({ ...calm, weather: storm });
+    const inside = hudAlerts({ ...calm, weather: storm, sheltered: true });
+    expect(outside.storm).toEqual({ kind: "storm" });
+    expect(outside.edges.storm).toBe(true);
+    expect(inside.storm).toEqual({ kind: "storm" });
+    expect(inside.edges.storm).toBe(false);
+    expect(inside.shelterMarked).toBe(true);
+  });
+
+  it("drops the warning as the storm dies down, though the edges stay while it still hurts", () => {
+    const fading = hudAlerts({ ...calm, weather: { phase: "fading", intensity: 0.4, secondsLeft: 6, phaseSeconds: 15 } });
+    expect(fading.storm).toBeNull();
+    expect(fading.edges.storm).toBe(true);
+    expect(fading.shelterMarked).toBe(false);
+  });
+
+  it("turns the edges blue and blinks the temperature bar from cold on", () => {
+    expect(hudAlerts({ ...calm, temperatureStage: "cold" }).edges.cold).toBe(true);
+    expect(hudAlerts({ ...calm, temperatureStage: "cold" }).blink.temperature).toBe(true);
+    expect(hudAlerts({ ...calm, temperatureStage: "hypothermia" }).edges.cold).toBe(true);
+  });
+
+  it("turns the edges red at 30 health or less", () => {
+    expect(DANGER_HEALTH).toBe(30);
+    expect(hudAlerts({ ...calm, health: 31 }).edges.danger).toBe(false);
+    expect(hudAlerts({ ...calm, health: 30 }).edges.danger).toBe(true);
+  });
+
+  it("blinks the thirst bar at 20 or less", () => {
+    expect(LOW_THIRST).toBe(20);
+    expect(hudAlerts({ ...calm, thirst: 20.5 }).blink.thirst).toBe(false);
+    expect(hudAlerts({ ...calm, thirst: 20 }).blink.thirst).toBe(true);
+  });
+
+  it("names what is hurting the player and blinks the health bar", () => {
+    for (const cause of ["storm", "cold", "thirst"] as const) {
+      const hurt = hudAlerts({ ...calm, hurtBy: cause });
+      expect(hurt.damage).toBe(cause);
+      expect(hurt.blink.health).toBe(true);
+    }
+  });
+
+  it("can show several things at once", () => {
+    const worst = hudAlerts({
+      weather: { phase: "storm", intensity: 1, secondsLeft: 10, phaseSeconds: 60 },
+      sheltered: false,
+      health: 12,
+      temperatureStage: "hypothermia",
+      thirst: 3,
+      hurtBy: "cold",
+    });
+    expect(worst.edges).toEqual({ storm: true, cold: true, danger: true });
+    expect(worst.blink).toEqual({ health: true, temperature: true, thirst: true });
+  });
+});
+
+describe("damage cue", () => {
+  it("shows while health falls and for a second after, then goes", () => {
+    const cue = createDamageCue(100);
+    expect(stepDamageCue(cue, 100, 0.1)).toBe(false);
+    expect(stepDamageCue(cue, 99, 0.1)).toBe(true);
+    expect(stepDamageCue(cue, 98, 0.1)).toBe(true);
+    // The damage stops.
+    expect(stepDamageCue(cue, 98, DAMAGE_CUE_SECONDS / 2)).toBe(true);
+    expect(stepDamageCue(cue, 98, DAMAGE_CUE_SECONDS / 2 + 0.01)).toBe(false);
+  });
+
+  it("does not take healing for damage", () => {
+    const cue = createDamageCue(40);
+    expect(stepDamageCue(cue, 100, 0.1)).toBe(false);
+    expect(stepDamageCue(cue, 100, 0.1)).toBe(false);
+  });
+});

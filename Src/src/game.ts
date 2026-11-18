@@ -57,6 +57,7 @@ import { createCamera, createRenderer, fitToWindow, warmUpScene } from "./render
 import { createRenderSync } from "./render/renderSync";
 import { createBenchPanel } from "./ui/benchPanel";
 import { createHud } from "./ui/hud";
+import { bearingTo, createDamageCue, headingOf, hudAlerts, stepDamageCue } from "./ui/hudState";
 import { createLookHint } from "./ui/lookHint";
 import type { Ui } from "./ui/uiRoot";
 import { characterById, CHARACTERS } from "./render/characterCatalog";
@@ -453,6 +454,26 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.player.thirst = player.thirst.value;
   };
   showThirst();
+  // Warnings and effects: what the player's situation calls for, worked out each step.
+  const damageCue = createDamageCue(player.health.current);
+  const showAlerts = (dt: number): void => {
+    const hurting = stepDamageCue(damageCue, player.health.current, dt);
+    const alerts = hudAlerts({
+      weather: latestWeather,
+      sheltered: player.shelter.zone !== null,
+      health: player.health.current,
+      temperatureStage: temperatureStage(player.temperature.value),
+      thirst: player.thirst.value,
+      hurtBy: hurting ? (player.health.lastHurtBy ?? null) : null,
+    });
+    hud.setAlerts(alerts);
+    debug.hud.storm = alerts.storm?.kind ?? "none";
+    debug.hud.stormRemaining = alerts.storm?.kind === "warning" ? alerts.storm.remaining : 0;
+    debug.hud.edges = Object.entries(alerts.edges).flatMap(([name, on]) => (on ? [name] : []));
+    debug.hud.blinking = Object.entries(alerts.blink).flatMap(([name, on]) => (on ? [name] : []));
+    debug.hud.damage = alerts.damage;
+  };
+  showAlerts(0);
 
   // The camera's current reach. It shrinks at once when something is in the way and grows back
   // gradually, so it is kept between frames.
@@ -697,6 +718,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       showHealth();
       showTemperature();
       showThirst();
+      showAlerts(dt);
       if (playing && !bench) {
         soundFootsteps(dt);
       }
@@ -749,6 +771,14 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       const deathEase = deathView * deathView * (3 - 2 * deathView);
       const playPitch = looked.pitch + (Math.min(looked.pitch, DEATH_CAMERA_PITCH) - looked.pitch) * deathEase;
       const pitch = playing ? playPitch : TITLE_CAMERA_PITCH;
+      // The compass turns with the view as it is drawn, and points from where the character is drawn.
+      if (playing) {
+        const heading = headingOf(yaw);
+        const mark = hud.setCompass(heading, bearingTo(drawnAt.x, drawnAt.z, respawnEast, respawnSouth));
+        debug.hud.compass.heading = heading;
+        debug.hud.compass.shelterOffset = mark.offset;
+        debug.hud.compass.shelterBeyond = mark.beyond;
+      }
       wantedCameraDistance = applyZoom(wantedCameraDistance, mouse.takeWheel());
       // The distance eases out by itself (updateCameraDistance), as it does after an obstacle.
       const reach = dead ? Math.max(wantedCameraDistance, DEATH_CAMERA_DISTANCE) : wantedCameraDistance;

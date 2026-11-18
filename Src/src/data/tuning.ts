@@ -117,6 +117,11 @@ export const WARMING_PER_SECOND = 5;
 /** Health lost per second of game time in hypothermia. */
 export const HYPOTHERMIA_DAMAGE_PER_SECOND = 2;
 
+/** From this health down the screen warns of danger (UI design 5). */
+export const DANGER_HEALTH = 30;
+/** From this thirst down the thirst bar calls for attention (UI design 5). */
+export const LOW_THIRST = 20;
+
 /** Thirst (prototype design 3.4): the figure a player starts with and can have at most. */
 export const MAX_THIRST = 100;
 /** Lost per second of game time: from full to nothing in ten minutes. */

@@ -956,6 +956,92 @@ try {
     await page.waitForFunction(() => !window.__game.player.dead, undefined, { timeout: 10_000 }).catch(() => {});
     const watered = await page.evaluate(() => window.__game.player);
     check("starting again begins with thirst quenched", watered.thirst > 99 && watered.health === 100, `${watered.thirst.toFixed(1)}, health ${watered.health}`);
+    // HUD: the compass turns with the view and points at the shelter; the storm is announced
+    // with a bar that runs down; edges and blinking bars follow the player's situation.
+    const hudAt = async (query, until = () => true) => {
+      await page.goto(gameUrl(query), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.waitForFunction(until, undefined, { timeout: 60_000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      return page.evaluate(() => {
+        const visible = (selector) => {
+          const node = document.querySelector(selector);
+          return node !== null && !node.hidden;
+        };
+        const has = (selector, name) => document.querySelector(selector)?.classList.contains(name) ?? false;
+        return {
+          ...window.__game.hud,
+          stormShown: visible("#hud-storm"),
+          stormRed: has("#hud-storm", "storm"),
+          stormText: document.querySelector("#hud-storm .hud-storm-text")?.textContent ?? "",
+          stormFill: parseFloat(document.querySelector("#hud-storm .hud-storm-fill")?.style.width || "0"),
+          north: document.querySelector("#hud-compass .hud-point")?.textContent ?? "",
+          northLeft: parseFloat(document.querySelector("#hud-compass .hud-point")?.style.left || "0"),
+          northHidden: document.querySelector("#hud-compass .hud-point")?.hidden ?? true,
+          markLeft: parseFloat(document.querySelector("#hud-compass-shelter")?.style.left || "0"),
+          markArrowLeft: visible("#hud-compass-shelter .hud-arrow:first-child"),
+          marked: has("#hud-compass-shelter", "marked"),
+          edgeStorm: has("#hud-edge-storm", "shown"),
+          edgeCold: has("#hud-edge-cold", "shown"),
+          edgeDanger: has("#hud-edge-danger", "shown"),
+          blinkHealth: has("#hud-health", "blink"),
+          blinkTemperature: has("#hud-temperature", "blink"),
+          blinkThirst: has("#hud-thirst", "blink"),
+          damageShown: visible("#hud-damage"),
+          damageText: document.querySelector("#hud-damage span:last-child")?.textContent ?? "",
+          icons: document.querySelectorAll("#hud .ui-icon svg").length,
+        };
+      });
+    };
+    const hudCalm = await hudAt("seed=1&timescale=0&at=360,600&face=0");
+    const hudEast = await hudAt("seed=1&timescale=0&at=360,600&face=90");
+    check(
+      "the compass shows north ahead when facing north, and the shelter a little to the left",
+      hudCalm.north === "N" && !hudCalm.northHidden && Math.abs(hudCalm.northLeft - 50) < 0.5 && hudCalm.compass.shelterBeyond === 0 &&
+        hudCalm.compass.shelterOffset < -0.05 && hudCalm.compass.shelterOffset > -0.3 && hudCalm.markLeft < 50 && !hudCalm.markArrowLeft,
+      `north at ${hudCalm.northLeft}%, shelter at ${hudCalm.compass.shelterOffset.toFixed(2)} (${hudCalm.markLeft}%)`,
+    );
+    check(
+      "facing east, north is at the left end and the shelter, behind, is held there with an arrow",
+      Math.abs(hudEast.compass.heading - 90) < 0.5 && Math.abs(hudEast.northLeft - 5) < 0.5 && hudEast.compass.shelterBeyond === -1 && hudEast.markArrowLeft,
+      `heading ${hudEast.compass.heading.toFixed(0)}, north at ${hudEast.northLeft}%, beyond ${hudEast.compass.shelterBeyond}`,
+    );
+    check(
+      "in calm weather and good shape the HUD shows no warning, edge or blinking bar",
+      hudCalm.storm === "none" && !hudCalm.stormShown && hudCalm.edges.length === 0 && hudCalm.blinking.length === 0 && !hudCalm.damageShown && !hudCalm.marked && hudCalm.icons >= 5,
+      `${hudCalm.icons} icons`,
+    );
+    const hudWarned = await hudAt("seed=1&storm=warning&at=360,600", () => window.__game.hud.stormRemaining > 0 && window.__game.hud.stormRemaining < 0.9);
+    await page.screenshot({ path: join(outDir, "hud-warning.png") });
+    check(
+      "a coming storm is announced with a bar that runs down, and the shelter is marked on the compass",
+      hudWarned.storm === "warning" && hudWarned.stormShown && !hudWarned.stormRed && hudWarned.stormText === "Storm approaching" &&
+        hudWarned.stormFill > 0 && hudWarned.stormFill < 90 && hudWarned.marked && !hudWarned.edgeStorm,
+      `"${hudWarned.stormText}", bar ${hudWarned.stormFill}%`,
+    );
+    const hudStorm = await hudAt("seed=1&storm=now&at=360,600&health=40", () => window.__game.player.health <= 30);
+    await page.screenshot({ path: join(outDir, "hud-storm.png") });
+    const hudStormInside = await hudAt("seed=1&storm=now&at=280,282", () => window.__game.weather.intensity >= 1);
+    check(
+      "in the storm the warning turns red, the edges cloud, and the health bar names the storm and blinks",
+      hudStorm.storm === "storm" && hudStorm.stormRed && hudStorm.stormText === "Storm" && hudStorm.edgeStorm && hudStorm.edgeDanger &&
+        hudStorm.blinkHealth && hudStorm.damageShown && hudStorm.damageText === "Storm",
+      `"${hudStorm.stormText}", edges ${hudStorm.edges.join("+")}, damage "${hudStorm.damageText}"`,
+    );
+    check(
+      "indoors the storm clouds no edges and hurts nobody",
+      hudStormInside.storm === "storm" && !hudStormInside.edgeStorm && !hudStormInside.damageShown && !hudStormInside.blinkHealth,
+      `edges ${hudStormInside.edges.join("+") || "none"}`,
+    );
+    const hudCold = await hudAt("seed=1&time=22:00&timescale=0&temperature=-60&thirst=10&at=360,600");
+    await page.screenshot({ path: join(outDir, "hud-cold.png") });
+    check(
+      "cold turns the edges blue and blinks the temperature bar; low thirst blinks the thirst bar",
+      hudCold.edgeCold && hudCold.blinkTemperature && hudCold.blinkThirst && !hudCold.edgeDanger && !hudCold.blinkHealth && !hudCold.edgeStorm,
+      `edges ${hudCold.edges.join("+")}, blinking ${hudCold.blinking.join("+")}`,
+    );
+    const hudKorean = await hudAt("seed=1&storm=warning&lang=ko&at=360,600&face=0");
+    check("the HUD's warning and compass are in Korean too", hudKorean.stormText === "폭풍이 다가옵니다" && hudKorean.north === "북", `"${hudKorean.stormText}", "${hudKorean.north}"`);
     // Footsteps: about one every 2.6 m while walking (12 m/s), none while standing.
     await page.goto(gameUrl("at=360,600&face=0"), { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
