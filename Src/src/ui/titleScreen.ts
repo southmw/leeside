@@ -35,6 +35,9 @@ const css = `
 
 const LANGUAGES: readonly Language[] = ["en", "ko"];
 
+/** The title can come back (after quitting from the game); its styles are added only once. */
+let styled = false;
+
 export interface TitleScreenOptions {
   /** Shown in the corner, such as "0.1". */
   version: string;
@@ -59,9 +62,12 @@ export interface TitleScreen {
  */
 export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOptions): TitleScreen {
   const { t } = i18n;
-  const style = document.createElement("style");
-  style.textContent = css;
-  document.head.append(style);
+  if (!styled) {
+    styled = true;
+    const style = document.createElement("style");
+    style.textContent = css;
+    document.head.append(style);
+  }
 
   const screen = document.createElement("div");
   screen.className = "title-screen loading";

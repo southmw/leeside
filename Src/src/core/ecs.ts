@@ -56,6 +56,12 @@ export interface ShelterZone {
   height: number;
 }
 
+/** What an entity can take before it dies (gameplay/health.ts). */
+export interface Health {
+  current: number;
+  max: number;
+}
+
 /** Whether an entity is out of the weather, as of the latest step. */
 export interface Shelter {
   /** Id of the shelter zone the entity is in; null out in the open. */
@@ -75,6 +81,7 @@ export interface Entity {
   input?: PlayerActions;
   /** Where a player looks. Movement is relative to it, and the camera follows the local player's. */
   view?: View;
+  health?: Health;
   /** Kept up to date for entities the weather can hurt (players). */
   shelter?: Shelter;
   /** Makes the entity a place of shelter; needs a `transform`. */

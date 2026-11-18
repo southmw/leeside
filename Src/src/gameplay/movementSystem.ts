@@ -1,8 +1,9 @@
 import type { GameWorld } from "../core/ecs";
 import { turnTowards } from "../core/math";
 import { CHARACTER_TURN_RATE, MOVE_SPEED } from "../data/tuning";
-import type { PlayerActions } from "../input/actions";
+import { createEmptyActions, type PlayerActions } from "../input/actions";
 import type { PhysicsWorld, Vec3 } from "../physics/physicsWorld";
+import { isDead } from "./health";
 import { settleVertical, stepVertical } from "./verticalMotion";
 import { moveDirection } from "./view";
 
@@ -26,10 +27,14 @@ export function facingOf(x: number, z: number): number {
   return Math.atan2(-x, -z);
 }
 
+/** What a character that has collapsed does, whatever its input says: nothing. */
+const STILL: Readonly<PlayerActions> = createEmptyActions();
+
 /**
  * Moves every character by its own input, plus jumping and gravity. The physics world
  * shortens the movement where something is in the way; the new position takes effect in the
  * physics step that follows, so this system must run before the physics system.
+ * A character whose health has run out neither walks nor jumps, but still falls.
  * `speed` overrides the walking speed, for trying out values (`?speed`); a function is asked
  * again every step, so the value can change while the game runs.
  */
@@ -40,7 +45,8 @@ export function createMovementSystem(
 ): (dt: number) => void {
   const characters = world.with("character", "input", "body");
   return (dt) => {
-    for (const { character, input, body, view } of characters) {
+    for (const { character, input: wished, body, view, health } of characters) {
+      const input = health && isDead(health) ? STILL : wished;
       const desired = desiredMovement(input, dt, view?.yaw, typeof speed === "function" ? speed() : speed);
       if (desired.x !== 0 || desired.z !== 0) {
         character.facing = turnTowards(character.facing, facingOf(desired.x, desired.z), CHARACTER_TURN_RATE * dt);

@@ -3,7 +3,7 @@ import { advanceStartFlow, initialStartFlow, type StartFlowEvent } from "./app/s
 import { checkSupport } from "./app/support";
 import { createI18n, detectLanguage } from "./locales/i18n";
 import { chooseCharacter } from "./render/characterCatalog";
-import { createTitleScreen } from "./ui/titleScreen";
+import { createTitleScreen, type TitleScreen } from "./ui/titleScreen";
 import { createUi } from "./ui/uiRoot";
 
 /**
@@ -54,27 +54,34 @@ let flow = initialStartFlow(LOADING_STEPS);
 let startGame: (() => void) | undefined;
 let setGameCharacter: ((id: string) => Promise<void>) | undefined;
 
-const title = withoutTitle
-  ? undefined
-  : createTitleScreen(ui, i18n, {
-      // "0.1.0" is shown as "0.1".
-      version: version.split(".").slice(0, 2).join("."),
-      character,
-      onStart: () => dispatch({ type: "start" }),
-      onCharacter: (id) => {
-        character = id;
-        storeCharacter(id);
-        void setGameCharacter?.(id);
-      },
-    });
+const showTitle = (): TitleScreen =>
+  createTitleScreen(ui, i18n, {
+    // "0.1.0" is shown as "0.1".
+    version: version.split(".").slice(0, 2).join("."),
+    character,
+    onStart: () => dispatch({ type: "start" }),
+    onCharacter: (id) => {
+      character = id;
+      storeCharacter(id);
+      void setGameCharacter?.(id);
+    },
+  });
+let title = withoutTitle ? undefined : showTitle();
 
 function dispatch(event: StartFlowEvent): void {
-  const before = flow.phase;
+  const wasPlaying = flow.phase === "playing";
   flow = advanceStartFlow(flow, event);
   title?.setState(flow);
-  if (flow.phase === "playing" && before !== "playing") {
+  const isPlaying = flow.phase === "playing";
+  if (isPlaying && !wasPlaying) {
     title?.remove();
+    title = undefined;
     startGame?.();
+  } else if (wasPlaying && !isPlaying) {
+    // Back from the game, which has put itself back to its beginning. This is the one way to
+    // the title for a visit that began without it (`?skipTitle`).
+    title = showTitle();
+    title.setState(flow);
   }
 }
 
@@ -91,7 +98,14 @@ if (unsupported && !withoutTitle) {
   try {
     const { bootGame } = await import("./game");
     dispatch({ type: "step_done" });
-    const game = await bootGame({ i18n, ui, startParams, character, onProgress: () => dispatch({ type: "step_done" }) });
+    const game = await bootGame({
+      i18n,
+      ui,
+      startParams,
+      character,
+      onProgress: () => dispatch({ type: "step_done" }),
+      onQuit: () => dispatch({ type: "quit" }),
+    });
     startGame = () => game.start();
     setGameCharacter = (id) => game.setCharacter(id);
     // The player may have picked another character while the game was still loading.

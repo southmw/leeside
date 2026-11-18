@@ -4,9 +4,9 @@ import type { Ui } from "./uiRoot";
 
 /**
  * What is on screen during play (UI design 5). So far the day and time, top right, with a
- * word under it from dusk on (colour alone is not to be relied on: UI design 1, rule 4), and
- * the "sheltered" sign, bottom right; health, the storm warning and the rest join as the
- * systems behind them are built.
+ * word under it from dusk on (colour alone is not to be relied on: UI design 1, rule 4), the
+ * "sheltered" sign, bottom right, and health, bottom left; the storm warning and the rest
+ * join as the systems behind them are built.
  */
 
 const css = `
@@ -22,6 +22,13 @@ const css = `
 /* From dusk on the clock says that the light is going: in colour, and in a word under it. */
 #hud-clock.dusk .hud-time, #hud-clock.dusk .hud-phase { color: #ff8a2a; }
 #hud-clock.night .hud-time, #hud-clock.night .hud-phase { color: #6fa0ff; }
+#hud-health {
+  position: absolute; left: 1.25em; bottom: 1em; width: 14em; margin: 0;
+  text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.75);
+}
+#hud-health .ui-bar-label { font-weight: 700; opacity: 1; }
+#hud-health .ui-bar-track { height: 0.7em; background: rgba(20, 19, 16, 0.6); border: 0.06em solid rgba(232, 220, 192, 0.5); }
+#hud-health .ui-bar-fill { background: #c9584a; }
 #hud-shelter {
   position: absolute; right: 1.25em; bottom: 1em; padding: 0.35em 0.9em;
   font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
@@ -39,6 +46,8 @@ export interface Hud {
   setVisible(visible: boolean): void;
   /** Call every frame; the text is rewritten only when it changes. */
   update(time: ClockTime): void;
+  /** Sets the health bar. */
+  setHealth(current: number, max: number): void;
   /** Shows the "sheltered" sign while the player is in a shelter zone, marked out during a storm. */
   setShelter(sheltered: boolean, storm: boolean): void;
 }
@@ -63,7 +72,23 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   const shelter = document.createElement("div");
   shelter.id = "hud-shelter";
   shelter.hidden = true;
-  root.append(clock, shelter);
+  // The shared bar (label and value over a track), filled in as health changes.
+  const health = document.createElement("div");
+  health.id = "hud-health";
+  health.className = "ui-bar";
+  const healthLabel = document.createElement("div");
+  healthLabel.className = "ui-bar-label";
+  const healthName = document.createElement("span");
+  const healthValue = document.createElement("span");
+  healthValue.id = "hud-health-value";
+  healthLabel.append(healthName, healthValue);
+  const healthTrack = document.createElement("div");
+  healthTrack.className = "ui-bar-track";
+  const healthFill = document.createElement("div");
+  healthFill.className = "ui-bar-fill";
+  healthTrack.append(healthFill);
+  health.append(healthLabel, healthTrack);
+  root.append(clock, health, shelter);
   // Under the title and windows, which are added to the root later or sit above by their own rules.
   ui.root.prepend(root);
 
@@ -87,6 +112,7 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   };
   const renderShelter = (): void => {
     shelter.textContent = i18n.t("hud.sheltered");
+    healthName.textContent = i18n.t("hud.health");
   };
   renderShelter();
   i18n.onChange(render);
@@ -99,6 +125,17 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
     update(next): void {
       latest = next;
       render();
+    },
+    setHealth(current, max): void {
+      // Rounded up, so the number reads 0 only when there is none left.
+      const text = String(Math.ceil(current));
+      if (text !== healthValue.textContent) {
+        healthValue.textContent = text;
+      }
+      const width = `${(Math.min(Math.max(current / max, 0), 1) * 100).toFixed(1)}%`;
+      if (width !== healthFill.style.width) {
+        healthFill.style.width = width;
+      }
     },
     setShelter(sheltered, storm): void {
       if (shelter.hidden === sheltered) {

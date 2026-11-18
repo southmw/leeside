@@ -96,6 +96,14 @@ export const STORM_RISE_SECONDS = 4;
 export const INTRO_STORM_WARNING_SECONDS = 75;
 export const INTRO_STORM_SECONDS = 40;
 
+/** Health a player starts with and can have at most (prototype design 3.4). */
+export const MAX_HEALTH = 100;
+/**
+ * Health lost per second of game time out in a storm at full strength: 25 seconds from full
+ * health to none, about 160 m on foot.
+ */
+export const STORM_DAMAGE_PER_SECOND = 4;
+
 /** How far one can see in a storm at full strength, in metres. */
 export const STORM_VISIBILITY = 25;
 

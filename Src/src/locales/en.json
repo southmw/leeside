@@ -10,6 +10,7 @@
   "hud.phase.dusk": "Dusk",
   "hud.phase.night": "Night",
   "hud.sheltered": "Sheltered",
+  "hud.health": "Health",
 
   "weather.clear": "Clear",
   "weather.warning": "Storm approaching",
@@ -52,6 +53,11 @@
   "bench.copy_failed": "Could not copy",
   "bench.note": "Remove ?bench from the address to play.",
 
+  "death.title": "You died",
+  "death.text.storm": "Caught in the storm. Continue to start again at the shelter the next morning.",
+  "death.continue": "Continue",
+  "death.quit": "Quit to title",
+
   "ui.close": "Close",
   "ui.window_too_small": "Please make the window larger (at least {width} x {height}).",
   "ui.sample.title": "Sample window",
@@ -78,6 +84,8 @@
   "dev.audio": "Sound",
   "dev.audio.on": "On",
   "dev.audio.off": "Muted",
+  "dev.health": "Health",
+  "dev.health.value": "{health}",
   "dev.shelter": "Shelter zones",
   "dev.shelter.show": "Show",
   "dev.shelter.hide": "Hide",
@@ -143,6 +151,8 @@
   "debug.audio_value_muted": "{state}, muted, wind {volume} (below {cutoff} Hz)",
   "debug.inside": "Inside",
   "debug.shelter": "Sheltered in",
+  "debug.health": "Health",
+  "debug.health_value": "{health} (died {deaths} times)",
   "debug.entities": "Entities",
   "debug.bodies": "Physics bodies",
   "debug.position": "Player position",

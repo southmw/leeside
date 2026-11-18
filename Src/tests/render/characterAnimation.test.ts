@@ -5,9 +5,15 @@ import {
   runPlaybackRate,
 } from "../../src/render/characterAnimation";
 
-const standing: AnimationInput = { moving: false, speed: 12, grounded: true, velocityY: 0, airborneSeconds: 0 };
+const standing: AnimationInput = { dead: false, moving: false, speed: 12, grounded: true, velocityY: 0, airborneSeconds: 0 };
 
 describe("chooseAnimation", () => {
+  it("shows a collapsed character as fallen, whatever else it was doing", () => {
+    expect(chooseAnimation({ ...standing, dead: true })).toBe("death");
+    expect(chooseAnimation({ ...standing, dead: true, moving: true })).toBe("death");
+    expect(chooseAnimation({ ...standing, dead: true, grounded: false, velocityY: 6, airborneSeconds: 1 })).toBe("death");
+  });
+
   it("idles when standing and runs when moving", () => {
     expect(chooseAnimation(standing)).toBe("idle");
     expect(chooseAnimation({ ...standing, moving: true })).toBe("run");

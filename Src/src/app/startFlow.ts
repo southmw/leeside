@@ -1,6 +1,7 @@
 /**
  * The steps from opening the page to playing, as a small state machine with no side effects:
- * loading (with progress) -> ready (START can be pressed) -> playing.
+ * loading (with progress) -> ready (START can be pressed) -> playing, and back to ready when
+ * the player gives up and returns to the title.
  */
 
 export type StartFlowState =
@@ -21,6 +22,8 @@ export type StartFlowEvent =
   | { type: "loaded" }
   /** The player pressed START. */
   | { type: "start" }
+  /** The player left the game for the title screen. */
+  | { type: "quit" }
   | { type: "unsupported"; reason: UnsupportedReason }
   | { type: "failed"; message: string };
 
@@ -37,6 +40,8 @@ export function advanceStartFlow(state: StartFlowState, event: StartFlowEvent): 
       return state.phase === "loading" ? { phase: "ready" } : state;
     case "start":
       return state.phase === "ready" ? { phase: "playing" } : state;
+    case "quit":
+      return state.phase === "playing" ? { phase: "ready" } : state;
     case "unsupported":
       return state.phase === "playing" ? state : { phase: "unsupported", reason: event.reason };
     case "failed":

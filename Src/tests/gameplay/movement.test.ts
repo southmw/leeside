@@ -80,6 +80,42 @@ describe("character movement", () => {
     physics.dispose();
   });
 
+  it("does not walk or jump once its health has run out", () => {
+    const world = createWorld();
+    const physics = new PhysicsWorld();
+    physics.addStaticBox({ x: 0, y: -0.5, z: 0 }, { x: 50, y: 0.5, z: 50 });
+    const start = { x: 0, y: CHARACTER_HEIGHT / 2 + CHARACTER_SKIN, z: 0 };
+    const player = world.add({
+      transform: createTransform(start.x, start.y, start.z),
+      input: createEmptyActions(),
+      character: createCharacter(),
+      health: { current: 0, max: 100 },
+      body: { handle: physics.addCharacter(start) },
+    });
+    const movement = createMovementSystem(world, physics);
+    const physicsSystem = createPhysicsSystem(world, physics);
+    const run = (ticks: number): void => {
+      for (let tick = 0; tick < ticks; tick += 1) {
+        movement(TICK_SECONDS);
+        physicsSystem.update();
+      }
+    };
+    run(10);
+    const groundY = player.transform.y;
+    player.input.moveY = 1;
+    player.input.jump = true;
+    run(TICK_RATE);
+    expect(Math.hypot(player.transform.x, player.transform.z)).toBeLessThan(0.001);
+    expect(player.transform.y).toBeCloseTo(groundY, 2);
+
+    // With health again, the same input moves it.
+    player.health.current = 100;
+    player.input.jump = false;
+    run(TICK_RATE);
+    expect(-player.transform.z).toBeCloseTo(MOVE_SPEED, 0);
+    physics.dispose();
+  });
+
   it("walks at an overridden speed when one is given", () => {
     const world = createWorld();
     const physics = new PhysicsWorld();

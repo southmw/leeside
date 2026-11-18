@@ -3,9 +3,11 @@
  * mixing clips) lives in characterModel.ts.
  */
 
-export type CharacterAnimation = "idle" | "run" | "jump";
+export type CharacterAnimation = "idle" | "run" | "jump" | "death";
 
 export interface AnimationInput {
+  /** Whether the character has collapsed (health at zero). Nothing else matters then. */
+  dead: boolean;
   /** Whether the character is trying to move. */
   moving: boolean;
   /** Movement speed in m/s while moving. */
@@ -30,6 +32,9 @@ const AIRBORNE_GRACE_SECONDS = 0.12;
 const RISING_SPEED = 2;
 
 export function chooseAnimation(input: AnimationInput): CharacterAnimation {
+  if (input.dead) {
+    return "death";
+  }
   if (!input.grounded && (input.velocityY > RISING_SPEED || input.airborneSeconds >= AIRBORNE_GRACE_SECONDS)) {
     return "jump";
   }

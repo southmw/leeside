@@ -7,7 +7,7 @@ import type { ZonePlace } from "../world/startPoint";
 
 /**
  * The development panel: everything the start conditions in the address do (`?character`,
- * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?mute`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
+ * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?health`, `?mute`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
  * Development builds only. F2 or the button in the corner opens and closes it.
  *
  * A new start condition gets a control here as well, so that nothing has to be tested by
@@ -20,6 +20,8 @@ const LANGUAGES: readonly Language[] = ["en", "ko"];
 const CLOCK_REFRESH_MS = 200;
 /** How much one press of - or + changes the walking speed, in m/s. */
 const SPEED_STEP = 1;
+/** A health low enough that a storm finishes it off within seconds. */
+const LOW_HEALTH = 10;
 /** Hours the clock can be set to: setting out, noon, dusk, nightfall, midnight, the end of night. */
 const HOURS = [6, 12, 18, 19, 0, 5];
 /** Speeds the clock can be set to; 1 is normal and 0 stops it. A day takes 8 minutes at 1 and 8 seconds at 60. */
@@ -65,6 +67,9 @@ export interface DevControls {
   calmWeather(): void;
   audio(): { state: AudioState; muted: boolean };
   setMuted(muted: boolean): void;
+  health(): number;
+  setHealth(health: number): void;
+  maxHealth: number;
   shelterZonesShown(): boolean;
   /** Draws the shelter zones as boxes, or stops drawing them. */
   showShelterZones(shown: boolean): void;
@@ -175,7 +180,25 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
     heading?.append(audioNow);
     return heading && row ? [heading, row] : [];
   };
+  // Health drains by itself in a storm.
+  let healthNow: HTMLElement | undefined;
+  const healthSection = (): HTMLElement[] => {
+    const [heading, row] = section(
+      t("dev.health"),
+      button("dev-health-full", t("dev.health.value", { health: controls.maxHealth }), () => controls.setHealth(controls.maxHealth)),
+      button("dev-health-low", t("dev.health.value", { health: LOW_HEALTH }), () => controls.setHealth(LOW_HEALTH)),
+      // Zero is death, without waiting for a storm.
+      button("dev-health-zero", t("dev.health.value", { health: 0 }), () => controls.setHealth(0)),
+    );
+    healthNow = element("span", "", "dev-now");
+    healthNow.id = "dev-health-now";
+    heading?.append(healthNow);
+    return heading && row ? [heading, row] : [];
+  };
   function refreshClock(): void {
+    if (healthNow) {
+      healthNow.textContent = String(Math.ceil(controls.health()));
+    }
     if (audioNow) {
       audioNow.textContent = t(`audio.${controls.audio().state}`);
     }
@@ -243,6 +266,7 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
         ),
       ),
       ...weatherSection(),
+      ...healthSection(),
       ...audioSection(),
       ...section(
         t("dev.shelter"),

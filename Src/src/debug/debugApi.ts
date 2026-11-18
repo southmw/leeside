@@ -65,12 +65,16 @@ export interface GameDebug {
     groundHeight: number;
     inside: string | null;
     shelter: string | null;
+    /** Health now (0 to 100), whether the character lies collapsed, and how many times health has run out. */
+    health: number;
+    dead: boolean;
+    deaths: number;
     /** What is drawn for the character: the model, or the capsule if the model could not be loaded. */
     model: "capsule" | "model";
     /** Id of the character model in the catalog (render/characterCatalog.ts). */
     character: string;
     /** Animation the model is playing; "none" while there is no model. */
-    animation: "none" | "idle" | "run" | "jump";
+    animation: "none" | "idle" | "run" | "jump" | "death";
   };
   /** The zone the player is in: its id, the text key of its name, and how many buildings, props and rocks it has. */
   zone: {
@@ -160,7 +164,7 @@ export function installDebugApi(language: Language): GameDebug {
     simSeconds: 0,
     entityCount: 0,
     bodyCount: 0,
-    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, shelter: null, model: "capsule", character: "", animation: "none" },
+    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, shelter: null, health: 0, dead: false, deaths: 0, model: "capsule", character: "", animation: "none" },
     zone: { id: "", nameKey: "", buildings: 0, shelterZones: 0, props: 0, propModels: 0, rockModels: false, propSet: "", rocks: 0 },
     view: { yaw: 0, pitch: 0, looking: false },
     bench: { state: "off", progress: 0, summary: null, withinBudget: null },

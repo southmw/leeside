@@ -1,4 +1,4 @@
-import { type AnimationAction, AnimationMixer, Box3, Group, LoopRepeat, type Object3D } from "three";
+import { type AnimationAction, AnimationMixer, Box3, Group, LoopOnce, LoopRepeat, type Object3D } from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import {
   type AnimationInput,
@@ -61,6 +61,9 @@ export async function loadCharacterModel(
     }
     actions[animation] = mixer.clipAction(clip).setLoop(LoopRepeat, Number.POSITIVE_INFINITY);
   }
+  // Falling down happens once, and the character stays down.
+  actions.death.setLoop(LoopOnce, 1);
+  actions.death.clampWhenFinished = true;
 
   let current: CharacterAnimation = "idle";
   let airborneSeconds = 0;
@@ -80,7 +83,12 @@ export async function loadCharacterModel(
       const next = chooseAnimation({ ...input, airborneSeconds });
       if (next !== current) {
         actions[next].reset().play();
-        actions[current].crossFadeTo(actions[next], next === "jump" ? JUMP_BLEND_SECONDS : BLEND_SECONDS, false);
+        if (current === "death") {
+          // Starting again is a cut to somewhere else, not a matter of getting up.
+          actions[current].stop();
+        } else {
+          actions[current].crossFadeTo(actions[next], next === "jump" ? JUMP_BLEND_SECONDS : BLEND_SECONDS, false);
+        }
         current = next;
       }
       actions.run.timeScale = runPlaybackRate(input.speed, definition.runClipSpeed);

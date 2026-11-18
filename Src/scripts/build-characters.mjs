@@ -20,7 +20,7 @@ const CHARACTERS = ["Matt", "Lis", "Sam", "Shaun"];
 /** Objects in the files that are not part of the character. */
 const WEAPONS = ["Axe", "Guitar", "Knife", "Pistol", "Rifle", "Shotgun", "SMG", "Spear", "WoodenBat_Barbed", "WoodenBat_Saw"];
 /** Must match the clip names in src/render/characterCatalog.ts. */
-const ANIMATIONS = ["Idle", "Run", "Jump_Idle"];
+const ANIMATIONS = ["Idle", "Run", "Jump_Idle", "Death"];
 
 function build(name) {
   const { json, source } = readEmbeddedGltf(join(sourceDir, `Characters_${name}.gltf`));

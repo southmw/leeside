@@ -27,9 +27,12 @@ import {
   DEFAULT_VOLUME,
   FOOTSTEP_STRIDE,
   FOOTSTEP_VOLUME,
+  MAX_HEALTH,
   MOVE_SPEED,
 } from "./data/tuning";
-import { advanceClock, createClock, parseTimeOfDay, readClock, setHour } from "./gameplay/clock";
+import { advanceClock, createClock, parseTimeOfDay, readClock, setHour, startNextDay } from "./gameplay/clock";
+import { createDeathScreen } from "./ui/deathScreen";
+import { createExposureSystem, createHealth, isDead } from "./gameplay/health";
 import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
 import { createShelterSystem } from "./gameplay/shelter";
@@ -82,6 +85,20 @@ const MAX_TIME_SCALE = 600;
 const MIN_MOVE_SPEED = 1;
 const MAX_MOVE_SPEED = 30;
 
+/**
+ * How long a character that has collapsed lies there, the picture darkening, before the
+ * player is asked whether to go on. Long enough to see the fall. Seconds.
+ */
+const DEATH_NOTICE_SECONDS = 1.5;
+/**
+ * The character falls backwards, towards the camera and out of the picture. So the camera
+ * draws back to at least this far and looks down at least this steeply (radians), over this
+ * many seconds.
+ */
+const DEATH_CAMERA_DISTANCE = 7;
+const DEATH_CAMERA_PITCH = -0.85;
+const DEATH_CAMERA_SECONDS = 1;
+
 /** The view starts tilted slightly down, so the ground ahead is in sight. Radians. */
 const START_PITCH = -0.2;
 
@@ -99,6 +116,11 @@ export interface GameContext {
   character: string;
   /** Called as each part of loading finishes. */
   onProgress(step: LoadingStep): void;
+  /**
+   * Called when the player gives up and leaves for the title. The game has put itself back
+   * to its beginning by then and waits for `start` again.
+   */
+  onQuit(): void;
 }
 
 export interface RunningGame {
@@ -264,6 +286,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     character: createCharacter(startYaw),
     view: createView(startYaw, START_PITCH),
     shelter: { zone: null },
+    // `?health=10` starts hurt, for seeing what happens at zero without waiting.
+    health: createHealth(numberParam(startParams.get("health"), 1, MAX_HEALTH, MAX_HEALTH)),
     transform: createTransform(PLAYER_START.x, PLAYER_START.y, PLAYER_START.z, startYaw),
     renderable: { object: playerVisual },
     body: { handle: physics.addCharacter(PLAYER_START) },
@@ -288,13 +312,14 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
 
   // The game's clock: day 1, 06:00. `?time=18:00` starts at another hour and `?timescale=30`
   // makes it run faster, for seeing a whole day without waiting eight minutes.
-  const clock = createClock(
-    parseTimeOfDay(startParams.get("time")),
-    numberParam(startParams.get("timescale"), 0, MAX_TIME_SCALE, 1),
-  );
+  const newClock = (): ReturnType<typeof createClock> =>
+    createClock(parseTimeOfDay(startParams.get("time")), numberParam(startParams.get("timescale"), 0, MAX_TIME_SCALE, 1));
+  const clock = newClock();
   // The weather follows the clock too. Each visit has weather of its own unless `?seed=1`
   // fixes it; `?storm=now` starts in a storm and `?storm=warning` with one announced.
-  const weather = createWeather(numberParam(startParams.get("seed"), 0, 0xffffffff, Date.now() % 0xffffffff));
+  const newWeather = (): ReturnType<typeof createWeather> =>
+    createWeather(numberParam(startParams.get("seed"), 0, 0xffffffff, Date.now() % 0xffffffff));
+  const weather = newWeather();
   const stormWish = startParams.get("storm");
   if (stormWish === "now" || stormWish === "warning") {
     callStorm(weather, clock.elapsed, stormOfDay(weather.seed, readClock(clock).day), stormWish === "warning");
@@ -380,6 +405,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   showSky();
 
   let titleSeconds = 0;
+  // How far the camera has gone over to its view of a fallen character, 0 to 1.
+  let deathView = 0;
   const localInput = createLocalInput({ mouse });
   const inputSystem = createInputSystem(world, localInput);
   const lookSystem = createLookSystem(world);
@@ -395,6 +422,13 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     hud.setShelter(player.shelter.zone !== null, latestWeather.intensity > 0);
     debug.player.shelter = player.shelter.zone;
   };
+  // Out in the storm health drains with the storm's strength as of this step.
+  const exposureSystem = createExposureSystem(world, () => latestWeather.intensity);
+  const showHealth = (): void => {
+    hud.setHealth(player.health.current, player.health.max);
+    debug.player.health = player.health.current;
+  };
+  showHealth();
 
   // The camera's current reach. It shrinks at once when something is in the way and grows back
   // gradually, so it is kept between frames.
@@ -423,6 +457,89 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     player.character.velocityY = 0;
     player.view.yaw = yaw;
     renderSync.snap(player);
+    // The way here was not walked, so it makes no footsteps.
+    lastStepAt.x = east;
+    lastStepAt.z = south;
+  };
+
+  // Where a player who died starts again: at the shelter's entrance, or the zone's start
+  // point if the zone has none. Facing east, towards house A's door.
+  const shelterEntrance = zoneDefinition.exits.find((exit) => exit.to === "shelter");
+  const [respawnEast, respawnSouth] = shelterEntrance?.position ?? zoneDefinition.spawn.position;
+  const RESPAWN_FACING = 90;
+  // Death (prototype design 3.4): the character collapses, the picture darkens, and after a
+  // moment the player is asked whether to go on or to stop. The world keeps running meanwhile.
+  const deathScreen = createDeathScreen(ui, i18n);
+  // Set while the player lies collapsed. The choice is made in the window, outside the
+  // simulation, and carried out in the next step.
+  let death: { seconds: number; asked: boolean; choice?: "continue" | "quit" } | undefined;
+  const endDeath = (): void => {
+    death = undefined;
+    deathScreen.clear();
+    debug.player.dead = false;
+  };
+  // Going on. A stand-in until the dropped bag (step 2.20) and the shelter zone (2.16) exist:
+  // the next morning, at the shelter's entrance, in full health.
+  const respawn = (): void => {
+    endDeath();
+    teleport(respawnEast, respawnSouth, RESPAWN_FACING);
+    player.health.current = player.health.max;
+    startNextDay(clock);
+    shelterSystem();
+    showClock();
+    showWeather();
+  };
+  // Stopping: everything goes back to how a visit begins, behind the title screen. Nothing
+  // is reloaded, so START can be pressed at once.
+  const backToTitle = (): void => {
+    endDeath();
+    playing = false;
+    teleport(start.east, start.south, start.facing);
+    player.view.pitch = START_PITCH;
+    player.health.current = player.health.max;
+    Object.assign(player.input, createEmptyActions());
+    Object.assign(clock, newClock());
+    delete weather.called;
+    delete weather.calmDay;
+    Object.assign(weather, newWeather());
+    debug.weather.seed = weather.seed;
+    debug.player.deaths = 0;
+    wantedCameraDistance = CAMERA_DISTANCE;
+    titleSeconds = 0;
+    if (characterModel) {
+      characterModel.object.rotation.y = Math.PI;
+    }
+    hud.setVisible(false);
+    shelterSystem();
+    showClock();
+    showWeather();
+    context.onQuit();
+  };
+  const advanceDeath = (dt: number): void => {
+    if (!death) {
+      death = { seconds: 0, asked: false };
+      debug.player.deaths += 1;
+      debug.player.dead = true;
+      deathScreen.darken(DEATH_NOTICE_SECONDS);
+    }
+    const dying = death;
+    dying.seconds += dt;
+    if (!dying.asked && dying.seconds >= DEATH_NOTICE_SECONDS) {
+      dying.asked = true;
+      deathScreen.ask("storm", {
+        onContinue: () => {
+          dying.choice = "continue";
+        },
+        onQuit: () => {
+          dying.choice = "quit";
+        },
+      });
+    }
+    if (dying.choice === "continue") {
+      respawn();
+    } else if (dying.choice === "quit") {
+      backToTitle();
+    }
   };
 
   // Development panel (F2): everything the start conditions do, changed on screen instead.
@@ -472,6 +589,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           audio.setMuted(muted);
           showAudio();
         },
+        health: () => player.health.current,
+        setHealth: (health) => {
+          player.health.current = Math.min(Math.max(health, 0), player.health.max);
+          showHealth();
+        },
+        maxHealth: MAX_HEALTH,
         shelterZonesShown: () => shelterZones.visible,
         showShelterZones: (shown) => {
           shelterZones.setVisible(shown);
@@ -516,8 +639,19 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         benchReading = benchWeather(bench.recorder.progress, benchSeconds);
       }
       showWeather();
+      // The storm hurts in game time: not behind the title, nor while the clock is stopped.
+      if (playing && !bench) {
+        exposureSystem(dt * clock.scale);
+        if (isDead(player.health)) {
+          advanceDeath(dt);
+        } else if (death) {
+          // Brought back by a development tool.
+          endDeath();
+        }
+      }
       showAudio();
       showShelter();
+      showHealth();
       if (playing && !bench) {
         soundFootsteps(dt);
       }
@@ -545,9 +679,11 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     render(alpha) {
       sectionTimer.begin("render");
       renderSync.sync(alpha);
+      const dead = playing && isDead(player.health);
       if (characterModel) {
-        const moving = player.input.moveX !== 0 || player.input.moveY !== 0;
+        const moving = !dead && (player.input.moveX !== 0 || player.input.moveY !== 0);
         characterModel.update(lastFrameSeconds, {
+          dead,
           moving,
           speed: moveSpeed,
           grounded: player.character.grounded,
@@ -563,9 +699,15 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       // Behind the title screen the camera sways slowly instead of following the mouse.
       titleSeconds += playing ? 0 : lastFrameSeconds;
       const yaw = playing ? looked.yaw : titleCameraYaw(startYaw, titleSeconds);
-      const pitch = playing ? looked.pitch : TITLE_CAMERA_PITCH;
+      // Starting again is a cut, so the view of the fallen character is dropped at once.
+      deathView = dead ? Math.min(deathView + lastFrameSeconds / DEATH_CAMERA_SECONDS, 1) : 0;
+      const deathEase = deathView * deathView * (3 - 2 * deathView);
+      const playPitch = looked.pitch + (Math.min(looked.pitch, DEATH_CAMERA_PITCH) - looked.pitch) * deathEase;
+      const pitch = playing ? playPitch : TITLE_CAMERA_PITCH;
       wantedCameraDistance = applyZoom(wantedCameraDistance, mouse.takeWheel());
-      const fit = fitCamera(drawnAt, yaw, pitch, cameraSweep, wantedCameraDistance);
+      // The distance eases out by itself (updateCameraDistance), as it does after an obstacle.
+      const reach = dead ? Math.max(wantedCameraDistance, DEATH_CAMERA_DISTANCE) : wantedCameraDistance;
+      const fit = fitCamera(drawnAt, yaw, pitch, cameraSweep, reach);
       cameraFit.shoulderOffset = easeCameraLength(cameraFit.shoulderOffset, fit.shoulderOffset, lastFrameSeconds);
       // Where the camera would be if it stayed at its current distance, and whether that spot is free.
       const stayed = computeCameraPose(drawnAt, yaw, pitch, cameraFit).position;
@@ -645,6 +787,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   });
 
   await firstFrame;
+  let lookHintShown = false;
   return {
     start(): void {
       if (playing || bench) {
@@ -656,7 +799,11 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         characterModel.object.rotation.y = 0;
       }
       hud.setVisible(true);
-      createLookHint(mouse, i18n);
+      // Once: the game can be started again after quitting to the title.
+      if (!lookHintShown) {
+        lookHintShown = true;
+        createLookHint(mouse, i18n);
+      }
       audio.start();
     },
     setCharacter,

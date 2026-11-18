@@ -12,8 +12,11 @@ export interface CharacterDefinition {
   nameKey: string;
   /** The model file with its animations, relative to the `models/` folder. */
   url: string;
-  /** Names of the clips for each animation the game uses. `jump` loops while in the air. */
-  clips: { idle: string; run: string; jump: string };
+  /**
+   * Names of the clips for each animation the game uses. `jump` loops while in the air;
+   * `death` plays once and holds its last pose.
+   */
+  clips: { idle: string; run: string; jump: string; death: string };
   /**
    * Speed in m/s at which the run clip's feet match the ground when played at normal rate,
    * for a model scaled to the character's height. Found by eye; adjust if the feet slide.
@@ -26,7 +29,7 @@ function survivor(id: string): CharacterDefinition {
     id,
     nameKey: `character.${id}`,
     url: `${id}.glb`,
-    clips: { idle: "Idle", run: "Run", jump: "Jump_Idle" },
+    clips: { idle: "Idle", run: "Run", jump: "Jump_Idle", death: "Death" },
     runClipSpeed: 7,
   };
 }

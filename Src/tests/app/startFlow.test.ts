@@ -5,6 +5,17 @@ import { CAMERA_DISTANCE, CAMERA_SHOULDER_OFFSET } from "../../src/data/tuning";
 import { TITLE_CAMERA_PITCH, TITLE_CAMERA_RIG, titleCameraYaw } from "../../src/app/titleCamera";
 
 describe("start flow", () => {
+  it("goes back to ready when the player quits to the title, and can start again", () => {
+    const playing: StartFlowState = { phase: "playing" };
+    const back = advanceStartFlow(playing, { type: "quit" });
+    expect(back).toEqual({ phase: "ready" });
+    expect(canStart(back)).toBe(true);
+    expect(advanceStartFlow(back, { type: "start" })).toEqual(playing);
+    // Quitting means nothing before the game has started.
+    expect(advanceStartFlow(initialStartFlow(4), { type: "quit" })).toEqual(initialStartFlow(4));
+    expect(advanceStartFlow({ phase: "ready" }, { type: "quit" })).toEqual({ phase: "ready" });
+  });
+
   it("starts out loading, with nothing done", () => {
     const state = initialStartFlow(4);
     expect(state).toEqual({ phase: "loading", done: 0, total: 4 });

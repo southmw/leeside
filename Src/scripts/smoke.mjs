@@ -616,6 +616,11 @@ try {
     await page.locator("#dev-shelter-hide").click();
     const zonesHidden = await page.evaluate(() => window.__game.shelterZonesShown);
     check("the panel shows and hides the shelter zones", zonesShown.shown && zonesShown.zones === 3 && !zonesHidden, `${zonesShown.zones} zones`);
+    await page.locator("#dev-health-low").click();
+    const lowHealth = await page.evaluate(() => window.__game.player.health);
+    await page.locator("#dev-health-full").click();
+    const fullHealth = await page.evaluate(() => window.__game.player.health);
+    check("the panel sets the health", lowHealth === 10 && fullHealth === 100, `${lowHealth} -> ${fullHealth}`);
     await page.locator("#dev-speed-up").click();
     const fasterSpeed = await page.evaluate(() => window.__game.moveSpeed);
     await page.locator("#dev-speed-reset").click();
@@ -792,6 +797,95 @@ try {
       "the sheltered sign is marked out during a storm",
       shelteredSound.shelter === "house_a" && shelteredSound.signClass === "storm" && shelteredCalm.shelter === "house_a" && shelteredCalm.signClass === "",
       `storm: "${shelteredSound.signClass}", calm: "${shelteredCalm.signClass}"`,
+    );
+    // Health: out in the storm it drains, in a house it does not.
+    const stormAt = async (query, until) => {
+      await page.goto(gameUrl(`storm=now&${query}`), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.waitForFunction(until, undefined, { timeout: 90_000 }).catch(() => {});
+      const bar = await page.locator("#hud-health-value").innerText();
+      return page.evaluate((shown) => ({ ...window.__game.player, day: window.__game.clock.day, sim: window.__game.simSeconds, bar: shown }), bar);
+    };
+    const exposed = await stormAt("at=360,600", () => window.__game.player.health < 90);
+    const safe = await stormAt("at=280,282", () => window.__game.simSeconds > 8);
+    check(
+      "the storm drains health in the open and not in a house",
+      exposed.health < 90 && exposed.health > 0 && exposed.bar === String(Math.ceil(exposed.health)) && safe.health === 100 && safe.sim > 8,
+      `${exposed.health.toFixed(1)} in the open (bar "${exposed.bar}"), ${safe.health} in ${safe.shelter} after ${safe.sim.toFixed(0)} s`,
+    );
+    // Death: at zero the character collapses where it is, however hard the player pushes on,
+    // and a window asks whether to go on or to stop.
+    const deathState = () =>
+      page.evaluate(() => ({
+        ...window.__game.player,
+        day: window.__game.clock.day,
+        phase: window.__game.phase,
+        window: window.__game.ui.window,
+        veil: document.querySelector("#death-veil")?.classList.contains("shown") ?? false,
+      }));
+    await page.goto(gameUrl("storm=now&at=360,600&face=0&health=10"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction(() => window.__game.player.dead, undefined, { timeout: 90_000 }).catch(() => {});
+    const fell = await deathState();
+    await page.waitForFunction(() => window.__game.ui.window === "death", undefined, { timeout: 30_000 }).catch(() => {});
+    const asked = await deathState();
+    await page.keyboard.up("KeyW");
+    // Once the window has faded in and the camera has drawn back.
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: join(outDir, "death.png") });
+    const askedText = await page.locator('[data-window="death"]').innerText().catch(() => "");
+    check(
+      "at zero health the character collapses and stays where it fell",
+      fell.dead && fell.health === 0 && fell.deaths === 1 && asked.animation === "death" && Math.hypot(asked.x - fell.x, asked.z - fell.z) < 0.5 && asked.day === 1,
+      `health ${fell.health}, animation ${asked.animation}, moved ${Math.hypot(asked.x - fell.x, asked.z - fell.z).toFixed(2)} m after falling`,
+    );
+    check(
+      "the picture darkens and a window offers to continue or to quit",
+      asked.window === "death" && asked.veil && askedText.includes("Continue") && askedText.includes("Quit to title"),
+      askedText.replace(/\s+/g, " "),
+    );
+    // Continue (the button chosen at first): the next morning at the shelter's entrance in
+    // house A, in full health.
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !window.__game.player.dead, undefined, { timeout: 10_000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const went = await deathState();
+    check(
+      "continuing starts again at the shelter's entrance the next morning",
+      !went.dead && went.deaths === 1 && went.health === 100 && went.day === 2 && went.shelter === "house_a" &&
+        Math.abs(went.x - 281) < 1 && Math.abs(went.z - 281) < 1 && went.window === null && !went.veil && went.animation !== "death" && went.phase === "playing",
+      `died ${went.deaths}, health ${went.health}, day ${went.day}, in ${went.shelter} at ${went.x.toFixed(0)}, ${went.z.toFixed(0)}, ${went.animation}`,
+    );
+    // Quit (the second button): the title comes back over a game put back to its beginning,
+    // and START plays again.
+    await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    await page.keyboard.press("F2");
+    await page.locator("#dev-health-zero").click();
+    await page.keyboard.press("F2");
+    await page.waitForFunction(() => window.__game.ui.window === "death", undefined, { timeout: 30_000 }).catch(() => {});
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.phase === "title", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.locator("#title-start").waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
+    const quit = await deathState();
+    const quitHud = await page.locator("#hud").isVisible();
+    check(
+      "quitting goes to the title screen with the game back at its beginning",
+      quit.phase === "title" && (await page.locator("#title-start").count()) === 1 && !quitHud && !quit.dead && quit.deaths === 0 && quit.health === 100 &&
+        quit.day === 1 && Math.abs(quit.x - 360) < 1 && Math.abs(quit.z - 600) < 1 && quit.window === null && !quit.veil,
+      `${quit.phase}, day ${quit.day}, health ${quit.health}, at ${quit.x.toFixed(0)}, ${quit.z.toFixed(0)}`,
+    );
+    await page.locator("#title-start").click();
+    await page.waitForFunction(() => window.__game.phase === "playing", undefined, { timeout: 5_000 }).catch(() => {});
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction((z) => window.__game.player.z < z - 0.5, quit.z, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.up("KeyW");
+    const again = await deathState();
+    check(
+      "the game can be played again after quitting to the title",
+      again.phase === "playing" && again.z < quit.z - 0.5 && (await page.locator("#hud").isVisible()) && (await page.locator("#title-screen").count()) <= 1,
+      `${again.phase}, z ${quit.z.toFixed(1)} -> ${again.z.toFixed(1)}`,
     );
     // Footsteps: about one every 2.6 m while walking (12 m/s), none while standing.
     await page.goto(gameUrl("at=360,600&face=0"), { waitUntil: "load" });
