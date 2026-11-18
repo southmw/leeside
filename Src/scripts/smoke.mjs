@@ -625,6 +625,11 @@ try {
     const setCold = await page.evaluate(() => window.__game.player.temperature);
     await page.locator("#dev-temperature-0").click();
     const setWarm = await page.evaluate(() => window.__game.player.temperature);
+    await page.locator("#dev-thirst-20").click();
+    const setThirsty = await page.evaluate(() => window.__game.player.thirst);
+    await page.locator("#dev-thirst-100").click();
+    const setQuenched = await page.evaluate(() => window.__game.player.thirst);
+    check("the panel sets the thirst", setThirsty <= 20 && setThirsty > 19 && setQuenched > 99, `${setThirsty.toFixed(1)} -> ${setQuenched.toFixed(1)}`);
     check("the panel sets the body temperature", setCold <= -49 && setCold >= -50 && setWarm === 0, `${setCold.toFixed(1)} -> ${setWarm}`);
     await page.locator("#dev-speed-up").click();
     const fasterSpeed = await page.evaluate(() => window.__game.moveSpeed);
@@ -924,6 +929,33 @@ try {
     await page.waitForFunction(() => !window.__game.player.dead, undefined, { timeout: 10_000 }).catch(() => {});
     const rewarmed = await page.evaluate(() => window.__game.player);
     check("starting again is warm as well as whole", rewarmed.temperature === 0 && rewarmed.health === 100, `${rewarmed.temperature}, health ${rewarmed.health}`);
+    // Thirst: it runs down with the clock, indoors too; with none left it takes health until the
+    // player dies of it, and whoever starts again has had a drink.
+    const thirstAt = async (query, until) => {
+      await page.goto(gameUrl(query), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.waitForFunction(until, undefined, { timeout: 90_000 }).catch(() => {});
+      const shown = await page.locator("#hud-thirst-value").innerText();
+      return page.evaluate((text) => ({ ...window.__game.player, shown: text }), shown);
+    };
+    const thirsty = await thirstAt("timescale=60&at=280,282", () => window.__game.player.thirst < 80);
+    await page.screenshot({ path: join(outDir, "thirst.png") });
+    check(
+      "thirst runs down with the clock, in a house as well, and the HUD shows it",
+      thirsty.thirst < 80 && thirsty.thirst > 40 && thirsty.shown === String(Math.ceil(thirsty.thirst)) && thirsty.shelter === "house_a" && thirsty.health === 100,
+      `${thirsty.thirst.toFixed(1)} (bar "${thirsty.shown}") in ${thirsty.shelter}`,
+    );
+    const parched = await thirstAt("thirst=0&health=3&at=280,282", () => window.__game.ui.window === "death");
+    const parchedText = await page.locator('[data-window="death"]').innerText().catch(() => "");
+    check(
+      "with no water left health drains, and the death window names thirst",
+      parched.dead && parched.health === 0 && parched.thirst === 0 && parched.shown === "0" && parchedText.includes("water"),
+      parchedText.replace(/\s+/g, " "),
+    );
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !window.__game.player.dead, undefined, { timeout: 10_000 }).catch(() => {});
+    const watered = await page.evaluate(() => window.__game.player);
+    check("starting again begins with thirst quenched", watered.thirst > 99 && watered.health === 100, `${watered.thirst.toFixed(1)}, health ${watered.health}`);
     // Footsteps: about one every 2.6 m while walking (12 m/s), none while standing.
     await page.goto(gameUrl("at=360,600&face=0"), { waitUntil: "load" });
     await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });

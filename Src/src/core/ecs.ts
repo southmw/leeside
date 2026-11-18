@@ -57,7 +57,7 @@ export interface ShelterZone {
 }
 
 /** What can take health away. */
-export type DamageCause = "storm" | "cold";
+export type DamageCause = "storm" | "cold" | "thirst";
 
 /** What an entity can take before it dies (gameplay/health.ts). */
 export interface Health {
@@ -69,6 +69,11 @@ export interface Health {
 
 /** How warm an entity's body is (gameplay/temperature.ts): 0 is comfortable, -100 the coldest. */
 export interface Temperature {
+  value: number;
+}
+
+/** How much an entity has left before it must drink (gameplay/thirst.ts): 100 down to 0. */
+export interface Thirst {
   value: number;
 }
 
@@ -93,6 +98,7 @@ export interface Entity {
   view?: View;
   health?: Health;
   temperature?: Temperature;
+  thirst?: Thirst;
   /** Kept up to date for entities the weather can hurt (players). */
   shelter?: Shelter;
   /** Makes the entity a place of shelter; needs a `transform`. */

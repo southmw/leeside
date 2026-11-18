@@ -7,7 +7,7 @@ import type { ZonePlace } from "../world/startPoint";
 
 /**
  * The development panel: everything the start conditions in the address do (`?character`,
- * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?health`, `?temperature`, `?mute`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
+ * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?health`, `?temperature`, `?thirst`, `?mute`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
  * Development builds only. F2 or the button in the corner opens and closes it.
  *
  * A new start condition gets a control here as well, so that nothing has to be tested by
@@ -24,6 +24,8 @@ const SPEED_STEP = 1;
 const LOW_HEALTH = 10;
 /** Body temperatures to jump to: comfortable, just cold, and seconds short of hypothermia. */
 const TEMPERATURES = [0, -50, -95] as const;
+/** Thirst figures to jump to: full, low, and seconds short of running dry. */
+const THIRSTS = [100, 20, 1] as const;
 /** Hours the clock can be set to: setting out, noon, dusk, nightfall, midnight, the end of night. */
 const HOURS = [6, 12, 18, 19, 0, 5];
 /** Speeds the clock can be set to; 1 is normal and 0 stops it. A day takes 8 minutes at 1 and 8 seconds at 60. */
@@ -74,6 +76,8 @@ export interface DevControls {
   maxHealth: number;
   temperature(): number;
   setTemperature(value: number): void;
+  thirst(): number;
+  setThirst(value: number): void;
   shelterZonesShown(): boolean;
   /** Draws the shelter zones as boxes, or stops drawing them. */
   showShelterZones(shown: boolean): void;
@@ -211,7 +215,22 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
     heading?.append(temperatureNow);
     return heading && row ? [heading, row] : [];
   };
+  // Thirst runs down by itself, everywhere.
+  let thirstNow: HTMLElement | undefined;
+  const thirstSection = (): HTMLElement[] => {
+    const [heading, row] = section(
+      t("dev.thirst"),
+      ...THIRSTS.map((value) => button(`dev-thirst-${value}`, t("dev.thirst.value", { value }), () => controls.setThirst(value))),
+    );
+    thirstNow = element("span", "", "dev-now");
+    thirstNow.id = "dev-thirst-now";
+    heading?.append(thirstNow);
+    return heading && row ? [heading, row] : [];
+  };
   function refreshClock(): void {
+    if (thirstNow) {
+      thirstNow.textContent = String(Math.ceil(controls.thirst()));
+    }
     if (healthNow) {
       healthNow.textContent = String(Math.ceil(controls.health()));
     }
@@ -287,6 +306,7 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
       ...weatherSection(),
       ...healthSection(),
       ...temperatureSection(),
+      ...thirstSection(),
       ...audioSection(),
       ...section(
         t("dev.shelter"),

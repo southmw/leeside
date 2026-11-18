@@ -210,6 +210,7 @@ export function createDebugOverlay(
           label: t("debug.temperature"),
           value: t("debug.temperature_value", { value: fixed(player.temperature, 1), stage: t(`hud.temperature.${player.temperatureStage}`) }),
         },
+        { label: t("debug.thirst"), value: fixed(player.thirst, 1) },
         { label: t("debug.entities"), value: integer(debug.entityCount) },
         { label: t("debug.bodies"), value: integer(debug.bodyCount) },
         { label: t("debug.position"), value: `${fixed(player.x, 2)}, ${fixed(player.y, 2)}, ${fixed(player.z, 2)}` },

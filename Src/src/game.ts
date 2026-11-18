@@ -28,6 +28,7 @@ import {
   FOOTSTEP_STRIDE,
   FOOTSTEP_VOLUME,
   MAX_HEALTH,
+  MAX_THIRST,
   MIN_TEMPERATURE,
   MOVE_SPEED,
 } from "./data/tuning";
@@ -35,6 +36,7 @@ import { advanceClock, createClock, parseTimeOfDay, readClock, setHour, startNex
 import { createDeathScreen } from "./ui/deathScreen";
 import { createExposureSystem, createHealth, isDead } from "./gameplay/health";
 import { createTemperature, createTemperatureSystem, temperatureStage } from "./gameplay/temperature";
+import { createThirst, createThirstSystem } from "./gameplay/thirst";
 import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
 import { createShelterSystem } from "./gameplay/shelter";
@@ -292,6 +294,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     health: createHealth(numberParam(startParams.get("health"), 1, MAX_HEALTH, MAX_HEALTH)),
     // `?temperature=-90` starts chilled, for seeing the cold without standing out a night.
     temperature: createTemperature(numberParam(startParams.get("temperature"), MIN_TEMPERATURE, 0, 0)),
+    // `?thirst=5` starts nearly dry, for seeing thirst at work without playing ten minutes.
+    thirst: createThirst(numberParam(startParams.get("thirst"), 0, MAX_THIRST, MAX_THIRST)),
     transform: createTransform(PLAYER_START.x, PLAYER_START.y, PLAYER_START.z, startYaw),
     renderable: { object: playerVisual },
     body: { handle: physics.addCharacter(PLAYER_START) },
@@ -442,6 +446,13 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.player.temperatureStage = stage;
   };
   showTemperature();
+  // Thirst grows everywhere, all the time.
+  const thirstSystem = createThirstSystem(world);
+  const showThirst = (): void => {
+    hud.setThirst(player.thirst.value, MAX_THIRST);
+    debug.player.thirst = player.thirst.value;
+  };
+  showThirst();
 
   // The camera's current reach. It shrinks at once when something is in the way and grows back
   // gradually, so it is kept between frames.
@@ -491,11 +502,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     deathScreen.clear();
     debug.player.dead = false;
   };
-  // Whoever starts again is whole and warm.
+  // Whoever starts again is whole, warm and has had a drink: starting parched would be dying again.
   const restore = (): void => {
     player.health.current = player.health.max;
     delete player.health.lastHurtBy;
     player.temperature.value = 0;
+    player.thirst.value = MAX_THIRST;
   };
   // Going on. A stand-in until the dropped bag (step 2.20) and the shelter zone (2.16) exist:
   // the next morning, at the shelter's entrance, in full health.
@@ -614,6 +626,11 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           showHealth();
         },
         maxHealth: MAX_HEALTH,
+        thirst: () => player.thirst.value,
+        setThirst: (value) => {
+          player.thirst.value = Math.min(Math.max(value, 0), MAX_THIRST);
+          showThirst();
+        },
         temperature: () => player.temperature.value,
         setTemperature: (value) => {
           player.temperature.value = Math.min(Math.max(value, MIN_TEMPERATURE), 0);
@@ -667,6 +684,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       if (playing && !bench) {
         exposureSystem(dt * clock.scale);
         temperatureSystem(dt * clock.scale);
+        thirstSystem(dt * clock.scale);
         if (isDead(player.health)) {
           advanceDeath(dt);
         } else if (death) {
@@ -678,6 +696,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       showShelter();
       showHealth();
       showTemperature();
+      showThirst();
       if (playing && !bench) {
         soundFootsteps(dt);
       }

@@ -72,6 +72,8 @@ export interface GameDebug {
     /** Body temperature (-100 coldest to 0 comfortable) and the stage it makes. */
     temperature: number;
     temperatureStage: "comfortable" | "cold" | "hypothermia";
+    /** Thirst: 100 (none) down to 0 (parched). */
+    thirst: number;
     /** What is drawn for the character: the model, or the capsule if the model could not be loaded. */
     model: "capsule" | "model";
     /** Id of the character model in the catalog (render/characterCatalog.ts). */
@@ -167,7 +169,7 @@ export function installDebugApi(language: Language): GameDebug {
     simSeconds: 0,
     entityCount: 0,
     bodyCount: 0,
-    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, shelter: null, health: 0, dead: false, deaths: 0, temperature: 0, temperatureStage: "comfortable", model: "capsule", character: "", animation: "none" },
+    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, shelter: null, health: 0, dead: false, deaths: 0, temperature: 0, temperatureStage: "comfortable", thirst: 0, model: "capsule", character: "", animation: "none" },
     zone: { id: "", nameKey: "", buildings: 0, shelterZones: 0, props: 0, propModels: 0, rockModels: false, propSet: "", rocks: 0 },
     view: { yaw: 0, pitch: 0, looking: false },
     bench: { state: "off", progress: 0, summary: null, withinBudget: null },

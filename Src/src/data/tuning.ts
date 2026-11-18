@@ -117,6 +117,15 @@ export const WARMING_PER_SECOND = 5;
 /** Health lost per second of game time in hypothermia. */
 export const HYPOTHERMIA_DAMAGE_PER_SECOND = 2;
 
+/** Thirst (prototype design 3.4): the figure a player starts with and can have at most. */
+export const MAX_THIRST = 100;
+/** Lost per second of game time: from full to nothing in ten minutes. */
+export const THIRST_PER_SECOND = MAX_THIRST / 600;
+/** Health lost per second of game time with nothing left. */
+export const THIRST_DAMAGE_PER_SECOND = 1;
+/** What a water bottle gives back (prototype design 4.1). */
+export const WATER_BOTTLE_THIRST = 40;
+
 /** How far one can see in a storm at full strength, in metres. */
 export const STORM_VISIBILITY = 25;
 

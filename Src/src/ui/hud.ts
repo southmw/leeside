@@ -6,7 +6,7 @@ import type { Ui } from "./uiRoot";
 /**
  * What is on screen during play (UI design 5). So far the day and time, top right, with a
  * word under it from dusk on (colour alone is not to be relied on: UI design 1, rule 4), the
- * "sheltered" sign, bottom right, and health and body temperature, bottom left; the storm
+ * "sheltered" sign, bottom right, and health, body temperature and thirst, bottom left; the storm
  * warning and the rest
  * join as the systems behind them are built.
  */
@@ -32,6 +32,7 @@ const css = `
 #hud-vitals .ui-bar-label { font-weight: 700; opacity: 1; }
 #hud-vitals .ui-bar-track { position: relative; height: 0.7em; background: rgba(20, 19, 16, 0.6); border: 0.06em solid rgba(232, 220, 192, 0.5); }
 #hud-health .ui-bar-fill { background: #c9584a; }
+#hud-thirst .ui-bar-fill { background: #4fb3d9; }
 /* Body temperature is comfortable in the middle; the colder, the further the bar grows to the left. */
 #hud-temperature .ui-bar-fill { position: absolute; right: 50%; top: 0; background: #6fa0ff; }
 #hud-temperature .ui-bar-track::after {
@@ -57,6 +58,8 @@ export interface Hud {
   update(time: ClockTime): void;
   /** Sets the health bar. */
   setHealth(current: number, max: number): void;
+  /** Sets the thirst bar. */
+  setThirst(value: number, max: number): void;
   /** Sets the body temperature bar: `value` from -100 (coldest) to 0 (comfortable), and the stage it makes. */
   setTemperature(value: number, stage: TemperatureStage): void;
   /** Shows the "sheltered" sign while the player is in a shelter zone, marked out during a storm. */
@@ -83,22 +86,41 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   const shelter = document.createElement("div");
   shelter.id = "hud-shelter";
   shelter.hidden = true;
-  // The shared bar (label and value over a track), filled in as health changes.
-  const health = document.createElement("div");
-  health.id = "hud-health";
-  health.className = "ui-bar";
-  const healthLabel = document.createElement("div");
-  healthLabel.className = "ui-bar-label";
-  const healthName = document.createElement("span");
-  const healthValue = document.createElement("span");
-  healthValue.id = "hud-health-value";
-  healthLabel.append(healthName, healthValue);
-  const healthTrack = document.createElement("div");
-  healthTrack.className = "ui-bar-track";
-  const healthFill = document.createElement("div");
-  healthFill.className = "ui-bar-fill";
-  healthTrack.append(healthFill);
-  health.append(healthLabel, healthTrack);
+  // The shared bar (label and value over a track), filled in as the figure changes.
+  const amountBar = (id: string): { bar: HTMLElement; name: HTMLElement; set(current: number, max: number): void } => {
+    const bar = document.createElement("div");
+    bar.id = id;
+    bar.className = "ui-bar";
+    const label = document.createElement("div");
+    label.className = "ui-bar-label";
+    const name = document.createElement("span");
+    const value = document.createElement("span");
+    value.id = `${id}-value`;
+    label.append(name, value);
+    const track = document.createElement("div");
+    track.className = "ui-bar-track";
+    const fill = document.createElement("div");
+    fill.className = "ui-bar-fill";
+    track.append(fill);
+    bar.append(label, track);
+    return {
+      bar,
+      name,
+      set(current, max): void {
+        // Rounded up, so the number reads 0 only when there is none left.
+        const text = String(Math.ceil(current));
+        if (text !== value.textContent) {
+          value.textContent = text;
+        }
+        const width = `${(Math.min(Math.max(current / max, 0), 1) * 100).toFixed(1)}%`;
+        if (width !== fill.style.width) {
+          fill.style.width = width;
+        }
+      },
+    };
+  };
+  const healthBar = amountBar("hud-health");
+  const thirstBar = amountBar("hud-thirst");
   // The same again for body temperature, with the stage in words where health has its number.
   const temperature = document.createElement("div");
   temperature.id = "hud-temperature";
@@ -118,7 +140,7 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   temperature.append(temperatureLabel, temperatureTrack);
   const vitals = document.createElement("div");
   vitals.id = "hud-vitals";
-  vitals.append(health, temperature);
+  vitals.append(healthBar.bar, temperature, thirstBar.bar);
   root.append(clock, vitals, shelter);
   // Under the title and windows, which are added to the root later or sit above by their own rules.
   ui.root.prepend(root);
@@ -144,7 +166,8 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   let stage: TemperatureStage = "comfortable";
   const renderShelter = (): void => {
     shelter.textContent = i18n.t("hud.sheltered");
-    healthName.textContent = i18n.t("hud.health");
+    healthBar.name.textContent = i18n.t("hud.health");
+    thirstBar.name.textContent = i18n.t("hud.thirst");
     temperatureName.textContent = i18n.t("hud.temperature");
     temperatureStageText.textContent = i18n.t(`hud.temperature.${stage}`);
   };
@@ -161,15 +184,10 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
       render();
     },
     setHealth(current, max): void {
-      // Rounded up, so the number reads 0 only when there is none left.
-      const text = String(Math.ceil(current));
-      if (text !== healthValue.textContent) {
-        healthValue.textContent = text;
-      }
-      const width = `${(Math.min(Math.max(current / max, 0), 1) * 100).toFixed(1)}%`;
-      if (width !== healthFill.style.width) {
-        healthFill.style.width = width;
-      }
+      healthBar.set(current, max);
+    },
+    setThirst(value, max): void {
+      thirstBar.set(value, max);
     },
     setTemperature(value, next): void {
       if (next !== stage) {
