@@ -3,9 +3,10 @@ import type { I18n } from "../locales/i18n";
 import type { Ui } from "./uiRoot";
 
 /**
- * What is on screen during play (UI design 5). So far only the day and time, top right, with
- * a word under it from dusk on (colour alone is not to be relied on: UI design 1, rule 4);
- * health, the storm warning and the rest join as the systems behind them are built.
+ * What is on screen during play (UI design 5). So far the day and time, top right, with a
+ * word under it from dusk on (colour alone is not to be relied on: UI design 1, rule 4), and
+ * the "sheltered" sign, bottom right; health, the storm warning and the rest join as the
+ * systems behind them are built.
  */
 
 const css = `
@@ -21,6 +22,16 @@ const css = `
 /* From dusk on the clock says that the light is going: in colour, and in a word under it. */
 #hud-clock.dusk .hud-time, #hud-clock.dusk .hud-phase { color: #ff8a2a; }
 #hud-clock.night .hud-time, #hud-clock.night .hud-phase { color: #6fa0ff; }
+#hud-shelter {
+  position: absolute; right: 1.25em; bottom: 1em; padding: 0.35em 0.9em;
+  font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #e8dcc0; background: rgba(20, 19, 16, 0.55);
+  border: 0.1em solid rgba(232, 220, 192, 0.7); border-radius: 0.25em;
+  transition: background 0.4s, color 0.4s, border-color 0.4s;
+}
+#hud-shelter[hidden] { display: none; }
+/* In a storm being sheltered is what matters most on screen. */
+#hud-shelter.storm { color: #1b1a17; background: #d9c79a; border-color: #d9c79a; }
 `;
 
 export interface Hud {
@@ -28,6 +39,8 @@ export interface Hud {
   setVisible(visible: boolean): void;
   /** Call every frame; the text is rewritten only when it changes. */
   update(time: ClockTime): void;
+  /** Shows the "sheltered" sign while the player is in a shelter zone, marked out during a storm. */
+  setShelter(sheltered: boolean, storm: boolean): void;
 }
 
 export function createHud(ui: Ui, i18n: I18n): Hud {
@@ -47,7 +60,10 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   const phase = document.createElement("div");
   phase.className = "hud-phase";
   clock.append(day, time, phase);
-  root.append(clock);
+  const shelter = document.createElement("div");
+  shelter.id = "hud-shelter";
+  shelter.hidden = true;
+  root.append(clock, shelter);
   // Under the title and windows, which are added to the root later or sit above by their own rules.
   ui.root.prepend(root);
 
@@ -69,7 +85,12 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
     phase.textContent = latest.phase === "day" ? "" : i18n.t(`hud.phase.${latest.phase}`);
     clock.className = latest.phase;
   };
+  const renderShelter = (): void => {
+    shelter.textContent = i18n.t("hud.sheltered");
+  };
+  renderShelter();
   i18n.onChange(render);
+  i18n.onChange(renderShelter);
 
   return {
     setVisible(visible): void {
@@ -78,6 +99,12 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
     update(next): void {
       latest = next;
       render();
+    },
+    setShelter(sheltered, storm): void {
+      if (shelter.hidden === sheltered) {
+        shelter.hidden = !sheltered;
+      }
+      shelter.classList.toggle("storm", storm);
     },
   };
 }

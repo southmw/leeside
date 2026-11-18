@@ -1,3 +1,4 @@
+import type { ShelterZone, Transform } from "../core/ecs";
 import type { ZoneBuilding } from "./zoneDefinition";
 
 /**
@@ -107,6 +108,25 @@ export function buildingBoxes(building: ZoneBuilding, groundHeight: number): Bui
 
   add("roof", 0, 0, width / 2 + ROOF_OVERHANG, depth / 2 + ROOF_OVERHANG, height, height + t);
   return boxes;
+}
+
+/**
+ * The shelter a building gives, standing on ground of height `groundHeight`: everything within
+ * its outer walls, up to the top of the walls. Undefined for a building that gives none.
+ */
+export function buildingShelterZone(
+  building: ZoneBuilding,
+  groundHeight: number,
+): { shelterZone: ShelterZone; transform: Transform } | undefined {
+  if (!building.shelter) {
+    return undefined;
+  }
+  const [width, depth, height] = building.size;
+  const [east, south] = building.position;
+  return {
+    shelterZone: { id: building.id, halfWidth: width / 2, halfDepth: depth / 2, height },
+    transform: { x: east, y: groundHeight, z: south, rotationY: yawFromDegrees(building.rotation) },
+  };
 }
 
 /** Whether a point is within a building's outer walls, whatever its height. */

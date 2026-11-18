@@ -1,11 +1,12 @@
 import type { InstancedMesh, Mesh, Object3D } from "three";
+import type { Entity, GameWorld } from "../core/ecs";
 import type { PhysicsWorld } from "../physics/physicsWorld";
 import { createBuildingBoxMesh } from "../render/buildingMesh";
 import { createPropMesh, createRockMesh, ROCK_HEIGHT_RATIO, type RockInstance } from "../render/propMesh";
 import type { SceneLike } from "../render/renderSync";
 import { createTerrainMesh } from "../render/terrainMesh";
 import { boundaryWalls } from "./boundary";
-import { buildingBoxes } from "./building";
+import { buildingBoxes, buildingShelterZone } from "./building";
 import { DEFAULT_PROP_SET, type PropSetId } from "./propModels";
 import { type PropBox, propBox } from "./props";
 import { scatterItems } from "./scatter";
@@ -26,6 +27,8 @@ export interface LoadedZone {
   readonly propModelCount: number;
   /** Whether the rocks are drawn with models. */
   readonly rocksModelled: boolean;
+  /** How many shelter zones the zone put into the ECS world. */
+  readonly shelterZoneCount: number;
   /**
    * Takes everything the zone added out of the physics world and the scene again and frees
    * the GPU resources. Zone changes rely on this to not leak.
@@ -34,6 +37,8 @@ export interface LoadedZone {
 }
 
 export interface ZoneLoadOptions {
+  /** The ECS world the zone's entities (shelter zones) go into. Without it none are made. */
+  world?: GameWorld;
   /** The set of models the props' sizes are taken from (world/propModels.ts). */
   propSet?: PropSetId;
   /**
@@ -65,6 +70,7 @@ export function loadZone(
   // Models are shared with other zones and stay loaded; they are only taken out of the scene.
   const models: Object3D[] = [];
   const rockMeshes: InstancedMesh[] = [];
+  const entities: Entity[] = [];
   const propSet = options.propSet ?? DEFAULT_PROP_SET;
   const show = (mesh: Mesh): void => {
     meshes.push(mesh);
@@ -79,9 +85,14 @@ export function loadZone(
   for (const building of definition.buildings) {
     const [east, south] = building.position;
     // A building stands at the height of the ground under its centre; the terrain is levelled there.
-    for (const box of buildingBoxes(building, heightAt(terrain, east, south))) {
+    const groundHeight = heightAt(terrain, east, south);
+    for (const box of buildingBoxes(building, groundHeight)) {
       bodies.push(physics.addStaticBox(box.center, box.halfExtents, 0, box.yaw));
       show(createBuildingBoxMesh(box));
+    }
+    const shelter = buildingShelterZone(building, groundHeight);
+    if (shelter && options.world) {
+      entities.push(options.world.add(shelter));
     }
   }
 
@@ -138,7 +149,12 @@ export function loadZone(
     rockCount: rocks.length,
     propModelCount: models.length,
     rocksModelled: rockMeshes.length > 0,
+    shelterZoneCount: entities.length,
     unload(): void {
+      for (const entity of entities) {
+        options.world?.remove(entity);
+      }
+      entities.length = 0;
       for (const handle of bodies) {
         physics.removeBody(handle);
       }

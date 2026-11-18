@@ -54,8 +54,8 @@ export interface GameDebug {
   bodyCount: number;
   /**
    * The local player's character: position of the capsule's centre in metres, whether it
-   * stands on something, the height of the terrain under it, and the id of the building it
-   * is inside (null outdoors).
+   * stands on something, the height of the terrain under it, the id of the building it
+   * is inside (null outdoors), and the id of the shelter zone it is in (null in the open).
    */
   player: {
     x: number;
@@ -64,6 +64,7 @@ export interface GameDebug {
     grounded: boolean;
     groundHeight: number;
     inside: string | null;
+    shelter: string | null;
     /** What is drawn for the character: the model, or the capsule if the model could not be loaded. */
     model: "capsule" | "model";
     /** Id of the character model in the catalog (render/characterCatalog.ts). */
@@ -76,6 +77,7 @@ export interface GameDebug {
     id: string;
     nameKey: string;
     buildings: number;
+    shelterZones: number;
     props: number;
     /** How many props are drawn with a model, whether the rocks are, and which set of models is in use. */
     propModels: number;
@@ -129,6 +131,8 @@ export interface GameDebug {
    * `footsteps` counts the footsteps sounded so far.
    */
   audio: { state: AudioState; muted: boolean; windVolume: number; windCutoffHz: number; indoors: boolean; footsteps: number };
+  /** Whether the shelter zones are drawn as boxes (development panel). */
+  shelterZonesShown: boolean;
   /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
   moveSpeed: number;
   /** The local player's actions as of the latest simulation step. */
@@ -156,8 +160,8 @@ export function installDebugApi(language: Language): GameDebug {
     simSeconds: 0,
     entityCount: 0,
     bodyCount: 0,
-    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, model: "capsule", character: "", animation: "none" },
-    zone: { id: "", nameKey: "", buildings: 0, props: 0, propModels: 0, rockModels: false, propSet: "", rocks: 0 },
+    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, shelter: null, model: "capsule", character: "", animation: "none" },
+    zone: { id: "", nameKey: "", buildings: 0, shelterZones: 0, props: 0, propModels: 0, rockModels: false, propSet: "", rocks: 0 },
     view: { yaw: 0, pitch: 0, looking: false },
     bench: { state: "off", progress: 0, summary: null, withinBudget: null },
     ui: { scale: 1, tooSmall: false, window: null, selectedButton: -1 },
@@ -165,6 +169,7 @@ export function installDebugApi(language: Language): GameDebug {
     weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0, wallDistance: 0, wallOpacity: 0 },
     sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0, visibility: 0 },
     audio: { state: "off", muted: false, windVolume: 0, windCutoffHz: 0, indoors: false, footsteps: 0 },
+    shelterZonesShown: false,
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },
     input: createEmptyActions(),

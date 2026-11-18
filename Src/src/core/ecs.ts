@@ -42,6 +42,26 @@ export function createCharacter(facing = 0): Character {
   return { velocityY: 0, grounded: false, jumpHeld: false, facing };
 }
 
+/**
+ * A place out of the weather: an upright box whose floor is centred on the entity's
+ * `transform` and which turns with it (gameplay/shelter.ts).
+ */
+export interface ShelterZone {
+  /** Id of the building (or other place) that gives the shelter. */
+  id: string;
+  /** Half the size of the footprint in metres, along the zone's own axes. */
+  halfWidth: number;
+  halfDepth: number;
+  /** How high above the floor the zone reaches, in metres. */
+  height: number;
+}
+
+/** Whether an entity is out of the weather, as of the latest step. */
+export interface Shelter {
+  /** Id of the shelter zone the entity is in; null out in the open. */
+  zone: string | null;
+}
+
 export interface Entity {
   transform?: Transform;
   renderable?: Renderable;
@@ -55,6 +75,10 @@ export interface Entity {
   input?: PlayerActions;
   /** Where a player looks. Movement is relative to it, and the camera follows the local player's. */
   view?: View;
+  /** Kept up to date for entities the weather can hurt (players). */
+  shelter?: Shelter;
+  /** Makes the entity a place of shelter; needs a `transform`. */
+  shelterZone?: ShelterZone;
   /** Marks the entity controlled from this machine's devices. */
   localPlayer?: true;
 }

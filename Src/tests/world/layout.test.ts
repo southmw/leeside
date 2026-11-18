@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { createWorld } from "../../src/core/ecs";
 import { CHARACTER_HEIGHT, MOVE_SPEED } from "../../src/data/tuning";
 import { CHARACTER_SKIN, initPhysics, PhysicsWorld } from "../../src/physics/physicsWorld";
 import { boundaryWalls } from "../../src/world/boundary";
@@ -243,6 +244,24 @@ describe("the loaded zone", () => {
     loaded.unload();
     expect(physics.bodyCount).toBe(0);
     expect(scene.objects.size).toBe(0);
+    physics.dispose();
+  });
+
+  it("puts a shelter zone into the world for each house and takes them out on unload", () => {
+    const physics = new PhysicsWorld();
+    const world = createWorld();
+    const loaded = loadZone(zone, physics, fakeScene(), { world });
+    const zones = world.with("shelterZone", "transform");
+    expect(loaded.shelterZoneCount).toBe(3);
+    expect([...zones].map((entity) => entity.shelterZone.id).sort()).toEqual(["house_a", "house_b", "house_c"]);
+    // Each stands on the ground under its house.
+    for (const { shelterZone, transform } of zones) {
+      const house = zone.buildings.find((building) => building.id === shelterZone.id);
+      expect(transform.y).toBeCloseTo(heightAt(loaded.terrain, house?.position[0] ?? 0, house?.position[1] ?? 0));
+    }
+
+    loaded.unload();
+    expect(world.entities).toHaveLength(0);
     physics.dispose();
   });
 

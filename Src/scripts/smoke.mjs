@@ -427,11 +427,14 @@ try {
       await page.goto(gameUrl(`at=${at}&face=270`), { waitUntil: "load" });
       await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
       await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 });
+      const sign = page.locator("#hud-shelter");
       const before = await page.evaluate(() => ({ ...window.__game.player, sim: window.__game.simSeconds }));
+      const signBefore = await sign.isVisible();
       await page.keyboard.down("KeyW");
       await page.waitForFunction((sim) => window.__game.simSeconds > sim + 2.5, before.sim, { timeout: 60_000 });
       await page.keyboard.up("KeyW");
-      return { before, after: await page.evaluate(() => ({ ...window.__game.player })) };
+      const after = await page.evaluate(() => ({ ...window.__game.player }));
+      return { before, after, signBefore, signAfter: await sign.isVisible(), signText: await sign.innerText().catch(() => "") };
     };
 
     const throughDoor = await walkFrom("293,281");
@@ -440,6 +443,13 @@ try {
       "walking through the doorway enters the house",
       throughDoor.before.inside === null && throughDoor.after.inside === "house_a",
       `inside: ${throughDoor.after.inside}, x ${throughDoor.after.x.toFixed(2)}`,
+    );
+
+    // Shelter: inside the house the player is in its shelter zone and the HUD says so.
+    check(
+      "walking into a house takes shelter and the HUD shows it",
+      throughDoor.before.shelter === null && !throughDoor.signBefore && throughDoor.after.shelter === "house_a" && throughDoor.signAfter,
+      `shelter: ${throughDoor.before.shelter} -> ${throughDoor.after.shelter}, sign "${throughDoor.signText}"`,
     );
 
     // The zone cannot be left: walking at its southern edge ends against the invisible wall.
@@ -460,7 +470,7 @@ try {
     const intoWall = await walkFrom("293,283.5");
     check(
       "the wall beside the doorway stops the character",
-      intoWall.after.inside === null && intoWall.after.x > 286.3 && intoWall.after.x < 286.6,
+      intoWall.after.inside === null && intoWall.after.shelter === null && !intoWall.signAfter && intoWall.after.x > 286.3 && intoWall.after.x < 286.6,
       `inside: ${intoWall.after.inside}, x ${intoWall.after.x.toFixed(2)}`,
     );
   }
@@ -601,6 +611,11 @@ try {
     await page.waitForFunction(() => Math.abs(window.__game.player.x - 469) < 1, undefined, { timeout: 5_000 }).catch(() => {});
     const moved = await page.evaluate(() => ({ x: window.__game.player.x, z: window.__game.player.z }));
     check("the panel moves the player to a place", Math.abs(moved.x - 469) < 1 && Math.abs(moved.z - 366) < 1, `at ${moved.x.toFixed(1)}, ${moved.z.toFixed(1)}`);
+    await page.locator("#dev-shelter-show").click();
+    const zonesShown = await page.evaluate(() => ({ shown: window.__game.shelterZonesShown, zones: window.__game.zone.shelterZones }));
+    await page.locator("#dev-shelter-hide").click();
+    const zonesHidden = await page.evaluate(() => window.__game.shelterZonesShown);
+    check("the panel shows and hides the shelter zones", zonesShown.shown && zonesShown.zones === 3 && !zonesHidden, `${zonesShown.zones} zones`);
     await page.locator("#dev-speed-up").click();
     const fasterSpeed = await page.evaluate(() => window.__game.moveSpeed);
     await page.locator("#dev-speed-reset").click();
@@ -754,7 +769,8 @@ try {
       await page.goto(gameUrl(query), { waitUntil: "load" });
       await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
       await page.waitForFunction(() => window.__game.audio.state === "playing" && window.__game.weather.intensity % 1 === 0, undefined, { timeout: 20_000 }).catch(() => {});
-      return page.evaluate(() => ({ ...window.__game.audio, inside: window.__game.player.inside }));
+      const signClass = (await page.locator("#hud-shelter").getAttribute("class")) ?? "";
+      return page.evaluate((sign) => ({ ...window.__game.audio, inside: window.__game.player.inside, shelter: window.__game.player.shelter, signClass: sign }), signClass);
     };
     const calmSound = await audioAt("seed=1&timescale=0");
     const stormSound = await audioAt("storm=now");
@@ -769,6 +785,13 @@ try {
       "indoors the storm is quieter and muffled",
       shelteredSound.indoors && Math.abs(shelteredSound.windVolume - 0.7) < 0.001 && shelteredSound.windCutoffHz === 500 && stormSound.windCutoffHz === 20000,
       `inside ${shelteredSound.inside}: volume ${shelteredSound.windVolume.toFixed(2)}, below ${shelteredSound.windCutoffHz} Hz`,
+    );
+    // The "sheltered" sign stands out while a storm blows. (Calm weather, same spot, for comparison.)
+    const shelteredCalm = await audioAt("seed=1&timescale=0&at=280,282");
+    check(
+      "the sheltered sign is marked out during a storm",
+      shelteredSound.shelter === "house_a" && shelteredSound.signClass === "storm" && shelteredCalm.shelter === "house_a" && shelteredCalm.signClass === "",
+      `storm: "${shelteredSound.signClass}", calm: "${shelteredCalm.signClass}"`,
     );
     // Footsteps: about one every 2.6 m while walking (12 m/s), none while standing.
     await page.goto(gameUrl("at=360,600&face=0"), { waitUntil: "load" });

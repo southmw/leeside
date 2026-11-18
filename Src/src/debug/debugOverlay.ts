@@ -204,6 +204,7 @@ export function createDebugOverlay(
           }),
         },
         { label: t("debug.inside"), value: player.inside ?? "-" },
+        { label: t("debug.shelter"), value: player.shelter ?? "-" },
         { label: t("debug.entities"), value: integer(debug.entityCount) },
         { label: t("debug.bodies"), value: integer(debug.bodyCount) },
         { label: t("debug.position"), value: `${fixed(player.x, 2)}, ${fixed(player.y, 2)}, ${fixed(player.z, 2)}` },

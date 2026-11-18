@@ -14,6 +14,7 @@ import { readDevice } from "./debug/deviceInfo";
 import { isWithinBudget, PERF_BUDGETS } from "./debug/perfBudget";
 import type { DebugOverlay } from "./debug/debugOverlay";
 import type { DevLog } from "./debug/devLog";
+import type { ShelterZoneOverlay } from "./debug/shelterZoneOverlay";
 import { FrameStats } from "./debug/frameStats";
 import { readHeapMb } from "./debug/memory";
 import { SectionTimer } from "./debug/sectionTimer";
@@ -31,6 +32,7 @@ import {
 import { advanceClock, createClock, parseTimeOfDay, readClock, setHour } from "./gameplay/clock";
 import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
+import { createShelterSystem } from "./gameplay/shelter";
 import { createView, previewLook } from "./gameplay/view";
 import { callStorm, calmWeather, createWeather, readWeather, stormOfDay, type WeatherReading } from "./gameplay/weather";
 import { createEmptyActions } from "./input/actions";
@@ -181,6 +183,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     }
     const models = library;
     const built = loadZone(riverbed, physics, scene, {
+      world,
       propSet: set,
       propModel: (prop, box) => {
         const model = propModelFor(prop, set);
@@ -192,6 +195,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.zone.id = zoneDefinition.id;
     debug.zone.nameKey = zoneDefinition.nameKey;
     debug.zone.buildings = zoneDefinition.buildings.length;
+    debug.zone.shelterZones = built.shelterZoneCount;
     debug.zone.props = zoneDefinition.props.length;
     debug.zone.rocks = built.rockCount;
     debug.zone.propModels = built.propModelCount;
@@ -259,6 +263,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     input: createEmptyActions(),
     character: createCharacter(startYaw),
     view: createView(startYaw, START_PITCH),
+    shelter: { zone: null },
     transform: createTransform(PLAYER_START.x, PLAYER_START.y, PLAYER_START.z, startYaw),
     renderable: { object: playerVisual },
     body: { handle: physics.addCharacter(PLAYER_START) },
@@ -312,7 +317,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   // without sound, for working on the game with something else playing.
   const audio = createGameAudio(import.meta.env.BASE_URL, DEFAULT_VOLUME, startParams.has("mute"));
   const showAudio = (): void => {
-    const indoors = buildingAt(zoneDefinition.buildings, player.transform.x, player.transform.z) !== undefined;
+    const indoors = player.shelter.zone !== null;
     const mix = windMix(latestWeather.intensity, latestWeather.approach, indoors);
     audio.setWind(mix);
     debug.audio.state = audio.state;
@@ -382,6 +387,14 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   let moveSpeed = numberParam(startParams.get("speed"), MIN_MOVE_SPEED, MAX_MOVE_SPEED, MOVE_SPEED);
   debug.moveSpeed = moveSpeed;
   const movementSystem = createMovementSystem(world, physics, () => moveSpeed);
+  const shelterSystem = createShelterSystem(world);
+  // Where the player is at the start counts from the first frame on, before any step has run.
+  shelterSystem();
+  // The "sheltered" sign stands out while a storm is blowing.
+  const showShelter = (): void => {
+    hud.setShelter(player.shelter.zone !== null, latestWeather.intensity > 0);
+    debug.player.shelter = player.shelter.zone;
+  };
 
   // The camera's current reach. It shrinks at once when something is in the way and grows back
   // gradually, so it is kept between frames.
@@ -414,7 +427,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
 
   // Development panel (F2): everything the start conditions do, changed on screen instead.
   if (import.meta.env.DEV && !bench) {
-    void import("./debug/devPanel").then(({ createDevPanel }) => {
+    void Promise.all([import("./debug/devPanel"), import("./debug/shelterZoneOverlay")]).then(([{ createDevPanel }, { createShelterZoneOverlay }]) => {
+      const shelterZones: ShelterZoneOverlay = createShelterZoneOverlay(world, scene);
       createDevPanel(ui, i18n, {
         characters: CHARACTERS.map((character) => character.id),
         character: () => debug.player.character,
@@ -425,6 +439,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           // The old zone goes first, so its colliders are not in the way of the new ones.
           zone.unload();
           zone = await buildZone(propSetId(set));
+          shelterZones.refresh();
           warmUpScene(renderer, scene, camera);
         },
         moveSpeed: () => moveSpeed,
@@ -457,6 +472,11 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           audio.setMuted(muted);
           showAudio();
         },
+        shelterZonesShown: () => shelterZones.visible,
+        showShelterZones: (shown) => {
+          shelterZones.setVisible(shown);
+          debug.shelterZonesShown = shown;
+        },
         places: zonePlaces(zoneDefinition),
         goTo: (place) => teleport(place.east, place.south, place.facing),
       });
@@ -485,6 +505,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       lookSystem();
       movementSystem(dt);
       physicsSystem.update();
+      shelterSystem();
       // Time stands still behind the title and during a measurement.
       if (playing && !bench) {
         advanceClock(clock, dt);
@@ -496,6 +517,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       }
       showWeather();
       showAudio();
+      showShelter();
       if (playing && !bench) {
         soundFootsteps(dt);
       }

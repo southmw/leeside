@@ -26,7 +26,7 @@ const HOURS = [6, 12, 18, 19, 0, 5];
 const TIME_SCALES = [0, 1, 10, 60];
 
 const css = `
-#dev-open { position: absolute; right: 0.75em; bottom: 3em; width: auto; margin: 0; padding: 0.3em 0.8em; font-size: 0.85em; opacity: 0.75; }
+#dev-open { position: absolute; right: 0.75em; bottom: 4.4em; width: auto; margin: 0; padding: 0.3em 0.8em; font-size: 0.85em; opacity: 0.75; }
 #dev-panel {
   position: absolute; right: 0.75em; top: 4.5em; width: 21em; max-height: calc(100vh - 9em); overflow-y: auto;
   padding: 0.9em 1em; font-size: 0.85em;
@@ -65,6 +65,9 @@ export interface DevControls {
   calmWeather(): void;
   audio(): { state: AudioState; muted: boolean };
   setMuted(muted: boolean): void;
+  shelterZonesShown(): boolean;
+  /** Draws the shelter zones as boxes, or stops drawing them. */
+  showShelterZones(shown: boolean): void;
   places: readonly ZonePlace[];
   goTo(place: ZonePlace): void;
 }
@@ -241,6 +244,11 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
       ),
       ...weatherSection(),
       ...audioSection(),
+      ...section(
+        t("dev.shelter"),
+        button("dev-shelter-show", t("dev.shelter.show"), () => controls.showShelterZones(true), controls.shelterZonesShown()),
+        button("dev-shelter-hide", t("dev.shelter.hide"), () => controls.showShelterZones(false), !controls.shelterZonesShown()),
+      ),
       // Places are named by their ids in the zone data, which are not text for players.
       ...section(t("dev.places"), ...controls.places.map((place) => button(`dev-place-${place.id}`, place.id, () => controls.goTo(place)))),
       ...section(
