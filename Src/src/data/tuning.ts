@@ -167,3 +167,10 @@ export const INTERACT_ANGLE_DEGREES = 60;
 export const INTERACT_HEIGHT = 1.5;
 /** Nearer than this (metres) the direction no longer counts: standing on a target, there is none. */
 export const INTERACT_NEAR_DISTANCE = 0.3;
+
+/** The bag (prototype design 3.4, 4.1, 4.4): how many slots, and how many of one thing fit in a slot. */
+export const BAG_SLOTS = 8;
+export const MATERIAL_STACK = 5;
+export const CONSUMABLE_STACK = 3;
+/** What a bandage gives back (prototype design 4.1). */
+export const BANDAGE_HEALTH = 30;

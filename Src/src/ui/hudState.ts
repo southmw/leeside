@@ -1,5 +1,7 @@
 import type { DamageCause, InteractionKind } from "../core/ecs";
+import type { ItemId } from "../data/items";
 import { DANGER_HEALTH, LOW_THIRST } from "../data/tuning";
+import { type Inventory, isFull, usedSlots } from "../gameplay/inventory";
 import type { TemperatureStage } from "../gameplay/temperature";
 import type { WeatherPhase } from "../gameplay/weather";
 
@@ -149,6 +151,56 @@ export function interactionCue(situation: InteractionSituation): InteractionCue 
 /** What to call a key on screen, from its `KeyboardEvent.code`: "KeyE" is "E", "Digit1" is "1". */
 export function keyLabel(code: string): string {
   return /^(?:Key|Digit)(.)$/.exec(code)?.[1] ?? code;
+}
+
+/**
+ * The bag as the screen draws it: what is in each slot, in the bag's own order; how many
+ * slots are in use, of how many; whether none is empty; and how many things there are in all.
+ */
+export interface BagView {
+  slots: Array<{ item: ItemId; count: number } | null>;
+  used: number;
+  size: number;
+  full: boolean;
+  total: number;
+}
+
+/** A copy of the bag for drawing, so the HUD can tell what has changed since it last drew. */
+export function bagView(inventory: Inventory): BagView {
+  return {
+    slots: inventory.slots.map((slot) => (slot ? { item: slot.item, count: slot.count } : null)),
+    used: usedSlots(inventory),
+    size: inventory.slots.length,
+    full: isFull(inventory),
+    total: inventory.slots.reduce((sum, slot) => sum + (slot?.count ?? 0), 0),
+  };
+}
+
+/** Whether two views of the bag show the same thing. */
+export function sameBag(one: BagView, other: BagView): boolean {
+  return (
+    one.slots.length === other.slots.length &&
+    one.slots.every((slot, index) => slot?.item === other.slots[index]?.item && slot?.count === other.slots[index]?.count)
+  );
+}
+
+/**
+ * The slot selected after a step through a grid of `count` slots in rows of `columns` (the
+ * bag window). A step off the grid's edge goes nowhere.
+ */
+export function moveGridSelection(index: number, count: number, columns: number, direction: "left" | "right" | "up" | "down"): number {
+  const column = index % columns;
+  let next = index;
+  if (direction === "left" && column > 0) {
+    next = index - 1;
+  } else if (direction === "right" && column < columns - 1) {
+    next = index + 1;
+  } else if (direction === "up") {
+    next = index - columns;
+  } else if (direction === "down") {
+    next = index + columns;
+  }
+  return next >= 0 && next < count ? next : index;
 }
 
 /** Remembers health from step to step, to tell when it is being taken. */

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { DANGER_HEALTH, LOW_THIRST } from "../../src/data/tuning";
+import { addItems, createInventory } from "../../src/gameplay/inventory";
 import {
+  bagView,
   bearingTo,
+  moveGridSelection,
+  sameBag,
   compassPosition,
   createDamageCue,
   DAMAGE_CUE_SECONDS,
@@ -226,5 +230,77 @@ describe("ringFill", () => {
     expect(ringFill(-1)).toBe(0);
     expect(ringFill(3)).toBe(100);
     expect(ringFill(Number.NaN)).toBe(0);
+  });
+});
+
+describe("bagView", () => {
+  it("lists the slots in the bag's own order, empty ones included", () => {
+    const bag = createInventory(3);
+    addItems(bag, "scrap", 6);
+    expect(bagView(bag)).toEqual({
+      slots: [{ item: "scrap", count: 5 }, { item: "scrap", count: 1 }, null],
+      used: 2,
+      size: 3,
+      full: false,
+      total: 6,
+    });
+  });
+
+  it("says the bag is full when no slot is empty, even with room left on a stack", () => {
+    const bag = createInventory(2);
+    addItems(bag, "scrap", 6);
+    expect(bagView(bag).full).toBe(true);
+  });
+
+  it("is a copy: later changes to the bag do not change what was drawn", () => {
+    const bag = createInventory(2);
+    addItems(bag, "tape", 1);
+    const view = bagView(bag);
+    addItems(bag, "tape", 2);
+    expect(view.slots[0]).toEqual({ item: "tape", count: 1 });
+  });
+});
+
+describe("sameBag", () => {
+  it("tells whether two views show the same slots", () => {
+    const bag = createInventory(3);
+    addItems(bag, "scrap", 2);
+    const before = bagView(bag);
+    expect(sameBag(before, bagView(bag))).toBe(true);
+    addItems(bag, "scrap", 1);
+    expect(sameBag(before, bagView(bag))).toBe(false);
+    const other = createInventory(3);
+    addItems(other, "cloth", 2);
+    expect(sameBag(before, bagView(other))).toBe(false);
+    expect(sameBag(bagView(createInventory(2)), bagView(createInventory(3)))).toBe(false);
+  });
+});
+
+describe("moveGridSelection", () => {
+  // Eight slots in two rows of four:  0 1 2 3
+  //                                   4 5 6 7
+  const move = (from: number, direction: "left" | "right" | "up" | "down"): number => moveGridSelection(from, 8, 4, direction);
+
+  it("steps to the neighbouring slot", () => {
+    expect(move(1, "right")).toBe(2);
+    expect(move(1, "left")).toBe(0);
+    expect(move(1, "down")).toBe(5);
+    expect(move(5, "up")).toBe(1);
+  });
+
+  it("stays put at the edges", () => {
+    expect(move(0, "left")).toBe(0);
+    expect(move(3, "right")).toBe(3);
+    expect(move(4, "left")).toBe(4);
+    expect(move(7, "right")).toBe(7);
+    expect(move(2, "up")).toBe(2);
+    expect(move(6, "down")).toBe(6);
+  });
+
+  it("does not step onto a slot that is not there", () => {
+    // Six slots: the second row has only two.
+    expect(moveGridSelection(3, 6, 4, "down")).toBe(3);
+    expect(moveGridSelection(1, 6, 4, "down")).toBe(5);
+    expect(moveGridSelection(5, 6, 4, "right")).toBe(5);
   });
 });

@@ -1,5 +1,6 @@
 import { World } from "miniplex";
 import type { Object3D } from "three";
+import type { Inventory } from "../gameplay/inventory";
 import type { VerticalState } from "../gameplay/verticalMotion";
 import type { View } from "../gameplay/view";
 import type { PlayerActions } from "../input/actions";
@@ -108,6 +109,11 @@ export interface Interaction {
 }
 
 export interface Entity {
+  /**
+   * A name that stays the same for as long as the entity exists, by which commands (and later
+   * save files and other machines) refer to it. Players have one.
+   */
+  id?: string;
   transform?: Transform;
   renderable?: Renderable;
   body?: Body;
@@ -127,6 +133,8 @@ export interface Entity {
   shelter?: Shelter;
   /** Makes the entity a place of shelter; needs a `transform`. */
   shelterZone?: ShelterZone;
+  /** What the entity carries: a player's bag (gameplay/inventory.ts). */
+  inventory?: Inventory;
   /** Makes the entity something to interact with; needs a `transform`. */
   interactable?: Interactable;
   /** Kept up to date for entities that can interact (players); needs a `view`. */

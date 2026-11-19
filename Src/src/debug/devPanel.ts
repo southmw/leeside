@@ -32,7 +32,7 @@ const HOURS = [6, 12, 18, 19, 0, 5];
 const TIME_SCALES = [0, 1, 10, 60];
 
 const css = `
-#dev-open { position: absolute; right: 0.75em; bottom: 4.4em; width: auto; margin: 0; padding: 0.3em 0.8em; font-size: 0.85em; opacity: 0.75; }
+#dev-open { position: absolute; right: 0.75em; bottom: 7.8em; width: auto; margin: 0; padding: 0.3em 0.8em; font-size: 0.85em; opacity: 0.75; }
 #dev-panel {
   position: absolute; right: 0.75em; top: 4.5em; width: 21em; max-height: calc(100vh - 9em); overflow-y: auto;
   padding: 0.9em 1em; font-size: 0.85em;
@@ -78,6 +78,14 @@ export interface DevControls {
   setTemperature(value: number): void;
   thirst(): number;
   setThirst(value: number): void;
+  /** The bag: the ids of the things that can be given, how many slots are in use, and of how many. */
+  items: readonly string[];
+  bag(): { used: number; size: number };
+  /** Puts one of an item into the bag, as far as there is room. */
+  giveItem(id: string): void;
+  /** Throws one thing out of the last slot that has anything in it. */
+  discardLast(): void;
+  emptyBag(): void;
   shelterZonesShown(): boolean;
   /** Draws the shelter zones as boxes, or stops drawing them. */
   showShelterZones(shown: boolean): void;
@@ -227,7 +235,24 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
     heading?.append(thirstNow);
     return heading && row ? [heading, row] : [];
   };
+  // The bag changes in the step after a button is pressed, so its count is kept up to date too.
+  let bagNow: HTMLElement | undefined;
+  const bagSection = (): HTMLElement[] => {
+    const [heading, row] = section(
+      t("dev.bag"),
+      ...controls.items.map((id) => button(`dev-bag-give-${id}`, t("dev.bag.give", { item: i18n.tData(`item.${id}.name`) }), () => controls.giveItem(id))),
+      button("dev-bag-discard", t("dev.bag.discard"), () => controls.discardLast()),
+      button("dev-bag-empty", t("dev.bag.empty"), () => controls.emptyBag()),
+    );
+    bagNow = element("span", "", "dev-now");
+    bagNow.id = "dev-bag-now";
+    heading?.append(bagNow);
+    return heading && row ? [heading, row] : [];
+  };
   function refreshClock(): void {
+    if (bagNow) {
+      bagNow.textContent = t("dev.bag.now", controls.bag());
+    }
     if (thirstNow) {
       thirstNow.textContent = String(Math.ceil(controls.thirst()));
     }
@@ -307,6 +332,7 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
       ...healthSection(),
       ...temperatureSection(),
       ...thirstSection(),
+      ...bagSection(),
       ...audioSection(),
       ...section(
         t("dev.shelter"),

@@ -32,10 +32,13 @@ import {
   MIN_TEMPERATURE,
   MOVE_SPEED,
 } from "./data/tuning";
+import { isItemId, ITEM_IDS } from "./data/items";
 import { advanceClock, createClock, parseTimeOfDay, readClock, setHour, startNextDay } from "./gameplay/clock";
 import { createDeathScreen } from "./ui/deathScreen";
+import { createCommandSystem } from "./gameplay/commands";
 import { createExposureSystem, createHealth, isDead } from "./gameplay/health";
 import { createInteractionSystem } from "./gameplay/interaction";
+import { addItems, createInventory, emptyInventory, parseBag, usedSlots } from "./gameplay/inventory";
 import { createTemperature, createTemperatureSystem, temperatureStage } from "./gameplay/temperature";
 import { createThirst, createThirstSystem } from "./gameplay/thirst";
 import { createLookSystem } from "./gameplay/lookSystem";
@@ -56,9 +59,10 @@ import { titleCameraYaw, TITLE_CAMERA_PITCH, TITLE_CAMERA_RIG } from "./app/titl
 import { applyZoom } from "./render/cameraZoom";
 import { createCamera, createRenderer, fitToWindow, warmUpScene } from "./render/renderer";
 import { createRenderSync } from "./render/renderSync";
+import { createBagWindow } from "./ui/bagWindow";
 import { createBenchPanel } from "./ui/benchPanel";
 import { createHud } from "./ui/hud";
-import { bearingTo, createDamageCue, headingOf, hudAlerts, interactionCue, keyLabel, stepDamageCue } from "./ui/hudState";
+import { bagView, bearingTo, createDamageCue, headingOf, hudAlerts, interactionCue, keyLabel, stepDamageCue } from "./ui/hudState";
 import { createLookHint } from "./ui/lookHint";
 import type { Ui } from "./ui/uiRoot";
 import { characterById, CHARACTERS } from "./render/characterCatalog";
@@ -104,6 +108,12 @@ const DEATH_NOTICE_SECONDS = 1.5;
 const DEATH_CAMERA_DISTANCE = 7;
 const DEATH_CAMERA_PITCH = -0.85;
 const DEATH_CAMERA_SECONDS = 1;
+
+/** What the key that opens the bag window is called on screen. */
+const BAG_KEY_LABEL = "Tab";
+
+/** The id of the player on this machine, by which commands name them. */
+const LOCAL_PLAYER_ID = "player_1";
 
 /** The view starts tilted slightly down, so the ground ahead is in sight. Radians. */
 const START_PITCH = -0.2;
@@ -288,7 +298,10 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
 
   const startYaw = yawFromDegrees(start.facing);
   const player = world.add({
+    // The name commands call this player by.
+    id: LOCAL_PLAYER_ID,
     localPlayer: true,
+    inventory: createInventory(),
     input: createEmptyActions(),
     character: createCharacter(startYaw),
     view: createView(startYaw, START_PITCH),
@@ -304,6 +317,15 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     renderable: { object: playerVisual },
     body: { handle: physics.addCharacter(PLAYER_START) },
   });
+  // The bag starts empty. `?bag=scrap:7,water_bottle:2` starts with things in it: until
+  // containers can be searched (step 2.14) there is no other way to come by any.
+  const fillStartBag = (): void => {
+    emptyInventory(player.inventory);
+    for (const stack of parseBag(startParams.get("bag"))) {
+      addItems(player.inventory, stack.item, stack.count);
+    }
+  };
+  fillStartBag();
   const mouse = createMouse(canvas, document);
 
   // `?bench` (or `?bench=seconds`) measures performance: the camera flies a fixed route round
@@ -457,6 +479,32 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.player.thirst = player.thirst.value;
   };
   showThirst();
+  // Whatever changes the bag asks for it with a command, carried out in the next step.
+  const commands = createCommandSystem(world);
+  const runCommands = (): void => {
+    for (const result of commands.run()) {
+      // Something did not fit: the bag sign says so.
+      if (result.reason === "bag_full") {
+        hud.bagRefused();
+      }
+      debug.commands.done += 1;
+      debug.commands.refused += result.ok ? 0 : 1;
+      debug.commands.last = { type: result.command.type, ok: result.ok, moved: result.moved, reason: result.reason ?? null };
+    }
+  };
+  // What is in the bag is seen in the bag window (Tab); the HUD only says how full it is.
+  const bagWindow = createBagWindow(ui, i18n, {
+    canOpen: () => playing && !bench && !isDead(player.health),
+    onDiscard: (slot) => commands.push({ type: "discardItem", actor: LOCAL_PLAYER_ID, slot, count: 1 }),
+  });
+  const showBag = (): void => {
+    const view = bagView(player.inventory);
+    hud.setBag(view, BAG_KEY_LABEL);
+    bagWindow.update(view);
+    debug.player.bag = view.slots;
+    debug.player.bagFull = view.full;
+  };
+  showBag();
   // What the player could use right now: the container they stand by and look towards.
   const interactionSystem = createInteractionSystem(world, physics);
   const interactables = world.with("interactable");
@@ -569,10 +617,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   // is reloaded, so START can be pressed at once.
   const backToTitle = (): void => {
     endDeath();
+    bagWindow.close();
     playing = false;
     teleport(start.east, start.south, start.facing);
     player.view.pitch = START_PITCH;
     restore();
+    fillStartBag();
     Object.assign(player.input, createEmptyActions());
     Object.assign(clock, newClock());
     delete weather.called;
@@ -594,6 +644,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   const advanceDeath = (dt: number): void => {
     if (!death) {
       death = { seconds: 0, asked: false };
+      bagWindow.close();
       debug.player.deaths += 1;
       debug.player.dead = true;
       deathScreen.darken(DEATH_NOTICE_SECONDS);
@@ -681,6 +732,29 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           player.temperature.value = Math.min(Math.max(value, MIN_TEMPERATURE), 0);
           showTemperature();
         },
+        items: ITEM_IDS,
+        bag: () => ({ used: usedSlots(player.inventory), size: player.inventory.slots.length }),
+        giveItem: (id) => {
+          if (isItemId(id)) {
+            commands.push({ type: "giveItem", actor: LOCAL_PLAYER_ID, item: id, count: 1 });
+          }
+        },
+        discardLast: () => {
+          let last = player.inventory.slots.length - 1;
+          while (last >= 0 && !player.inventory.slots[last]) {
+            last -= 1;
+          }
+          if (last >= 0) {
+            commands.push({ type: "discardItem", actor: LOCAL_PLAYER_ID, slot: last, count: 1 });
+          }
+        },
+        emptyBag: () => {
+          player.inventory.slots.forEach((slot, index) => {
+            if (slot) {
+              commands.push({ type: "discardItem", actor: LOCAL_PLAYER_ID, slot: index, count: slot.count });
+            }
+          });
+        },
         shelterZonesShown: () => shelterZones.visible,
         showShelterZones: (shown) => {
           shelterZones.setVisible(shown);
@@ -715,6 +789,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       if (playing && !bench) {
         inputSystem();
       }
+      runCommands();
       lookSystem();
       movementSystem(dt);
       physicsSystem.update();
@@ -753,6 +828,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       showTemperature();
       showThirst();
       showInteraction();
+      showBag();
       showAlerts(dt);
       if (playing && !bench) {
         soundFootsteps(dt);

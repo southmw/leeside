@@ -1089,7 +1089,7 @@ try {
         interactables: window.__game.zone.interactables,
         promptShown: !document.querySelector("#hud-prompt").hidden && !document.querySelector("#hud-aim").hidden,
         promptText: document.querySelector("#hud-prompt").textContent,
-        keyText: document.querySelector("#hud-prompt .hud-key")?.textContent ?? "",
+        keyText: document.querySelector("#hud-prompt .ui-key")?.textContent ?? "",
         ringShown: !document.querySelector("#hud-aim .ui-ring").hidden,
       }));
     const settle = async () => {
@@ -1158,6 +1158,163 @@ try {
       `target ${atCabinet.target}, inside ${atCabinet.inside}`,
     );
     await page.screenshot({ path: join(outDir, "interaction-cabinet.png") });
+
+    // The bag: `?bag` fills it, the HUD says how full it is, Tab opens the window that shows
+    // what is in it, and the window and the panel change it through commands.
+    const bagNow = () =>
+      page.evaluate(() => ({
+        bag: window.__game.player.bag.map((slot) => (slot ? `${slot.item} ${slot.count}` : "-")),
+        full: window.__game.player.bagFull,
+        commands: { ...window.__game.commands },
+        window: window.__game.ui.window,
+        sign: document.querySelector("#hud-bag > span:not(.ui-icon)").textContent,
+        signFull: document.querySelector("#hud-bag").classList.contains("full"),
+        oldSlots: document.querySelectorAll("#hud-bag .hud-slot").length,
+        slots: [...document.querySelectorAll("#bag-window .bag-slot")].map((slot) =>
+          slot.classList.contains("empty") ? "-" : `${slot.dataset.item} ${slot.querySelector(".bag-slot-count").textContent}`,
+        ),
+        selected: [...document.querySelectorAll("#bag-window .bag-slot")].findIndex((slot) => slot.classList.contains("selected")),
+        names: [...document.querySelectorAll("#bag-window .bag-slot:not(.empty) .bag-slot-name")].map((name) => name.textContent),
+        icons: [...document.querySelectorAll("#bag-window .bag-slot:not(.empty) .ui-icon")].map((icon) => icon.dataset.icon),
+        overflow: [...document.querySelectorAll("#bag-window .bag-slot-name")].some((name) => name.scrollWidth > name.parentElement.clientWidth),
+        count: document.querySelector("#bag-window .bag-count")?.textContent ?? "",
+        name: document.querySelector("#bag-window .bag-name")?.textContent ?? "",
+        description: document.querySelector("#bag-window .bag-description")?.textContent ?? "",
+        discardDisabled: document.querySelector("#bag-discard")?.disabled ?? null,
+      }));
+    const bagAt = async (query) => {
+      await page.goto(gameUrl(query), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+      await settle();
+      return bagNow();
+    };
+    const toggleBag = async (shouldOpen) => {
+      await page.keyboard.press("Tab");
+      await page.waitForFunction((open) => (window.__game.ui.window === "bag") === open, shouldOpen, { timeout: 5_000 }).catch(() => {});
+      await settle();
+    };
+    const emptyBag = await bagAt("lang=en");
+    check("the bag starts empty and the HUD says so, without showing its slots", emptyBag.bag.length === 8 && emptyBag.sign === "Tab Bag 0 / 8" && emptyBag.oldSlots === 0 && !emptyBag.signFull && emptyBag.window === null, `"${emptyBag.sign}"`);
+    await toggleBag(true);
+    const emptyWindow = await bagNow();
+    check("Tab opens the bag window, which says an empty bag is empty", emptyWindow.window === "bag" && emptyWindow.slots.length === 8 && emptyWindow.slots.every((slot) => slot === "-") && emptyWindow.name === "The bag is empty." && emptyWindow.discardDisabled === true, `"${emptyWindow.name}"`);
+    await toggleBag(false);
+    check("Tab closes it again", (await bagNow()).window === null);
+
+    const startBag = await bagAt("lang=en&bag=scrap:7,water_bottle:2,bandage");
+    const expectedBag = ["scrap 5", "scrap 2", "water_bottle 2", "bandage 1", "-", "-", "-", "-"];
+    check("?bag fills the bag, stacking up to each item's limit", startBag.bag.join() === expectedBag.join() && startBag.sign === "Tab Bag 4 / 8", `${startBag.bag.join(" | ")}, "${startBag.sign}"`);
+    await toggleBag(true);
+    const opened = await bagNow();
+    check(
+      "the bag window shows what is in the bag: icon, name and count",
+      opened.slots.join() === expectedBag.join() && opened.names.join() === "Scrap,Scrap,Water,Bandage" && opened.icons.join() === "scrap,scrap,water-bottle,bandage" && !opened.overflow && opened.count === "4 / 8",
+      `${opened.slots.join(" | ")} / ${opened.names.join(",")}`,
+    );
+    check("the first slot is selected and described", opened.selected === 0 && opened.name === "Scrap" && opened.description.includes("Repair material"), `"${opened.name}": "${opened.description}"`);
+    await page.screenshot({ path: join(outDir, "bag.png") });
+    // Arrow keys move through the grid: right twice, then down and back up.
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    const onWater = await bagNow();
+    await page.keyboard.press("ArrowDown");
+    const onEmpty = await bagNow();
+    await page.keyboard.press("ArrowUp");
+    check("arrow keys move the selection through the grid", onWater.selected === 2 && onWater.name === "Water bottle" && onEmpty.selected === 6 && onEmpty.name === "Empty slot" && onEmpty.discardDisabled === true, `${onWater.selected} "${onWater.name}", ${onEmpty.selected} "${onEmpty.name}"`);
+    // The game runs on behind the window, and W still walks.
+    const behind = await page.evaluate(() => ({ sim: window.__game.simSeconds, z: window.__game.player.z, hour: window.__game.clock.hour }));
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction((sim) => window.__game.simSeconds > sim + 0.5, behind.sim, { timeout: 30_000 });
+    await page.keyboard.up("KeyW");
+    const walked = await page.evaluate(() => ({ z: window.__game.player.z, hour: window.__game.clock.hour, window: window.__game.ui.window }));
+    check("the game goes on behind the bag window", walked.window === "bag" && walked.hour > behind.hour && Math.abs(walked.z - behind.z) > 1, `moved ${Math.abs(walked.z - behind.z).toFixed(1)} m`);
+    // X throws one out of the selected slot (the water), through a command.
+    const before = (await bagNow()).commands.done;
+    await page.keyboard.press("KeyX");
+    await page.waitForFunction((done) => window.__game.commands.done > done, before, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const discarded = await bagNow();
+    check("X discards one from the selected slot, and the window follows", discarded.bag[2] === "water_bottle 1" && discarded.slots[2] === "water_bottle 1" && discarded.commands.last?.type === "discardItem", discarded.slots.join(" | "));
+    await page.locator("#bag-discard").click();
+    await page.waitForFunction((done) => window.__game.commands.done > done + 1, before, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const discardedAll = await bagNow();
+    check("the Discard button does the same; an emptied slot stays where it is", discardedAll.bag.join() === ["scrap 5", "scrap 2", "-", "bandage 1", "-", "-", "-", "-"].join() && discardedAll.slots[2] === "-" && discardedAll.sign === "Tab Bag 3 / 8" && discardedAll.discardDisabled === true, discardedAll.slots.join(" | "));
+    await page.screenshot({ path: join(outDir, "bag-empty-slot.png") });
+    const discardLook = await page.evaluate(() => {
+      const style = getComputedStyle(document.querySelector("#bag-discard"));
+      return { opacity: Number(style.opacity), border: style.borderTopStyle };
+    });
+    check("the Discard button is plainly dimmed over an empty slot", discardLook.opacity <= 0.3 && discardLook.border === "dashed", `opacity ${discardLook.opacity}, border ${discardLook.border}`);
+    // The window stands to the right of the middle, clear of the character.
+    const placed = await page.evaluate(() => {
+      const box = document.querySelector('[data-window="bag"]').getBoundingClientRect();
+      return { left: box.left, right: box.right, top: box.top, width: window.innerWidth, height: window.innerHeight };
+    });
+    check("the bag window stands top right, clear of the middle of the screen", placed.left > placed.width * 0.6 && placed.right <= placed.width && placed.top < placed.height * 0.25, `left ${Math.round(placed.left)} of ${placed.width}, top ${Math.round(placed.top)}`);
+    // Space still jumps with the bag open; Enter does nothing.
+    const groundedBefore = await page.evaluate(() => window.__game.player.y);
+    await page.keyboard.press("Enter");
+    await page.keyboard.down("Space");
+    await page.waitForFunction((y) => window.__game.player.y > y + 0.3, groundedBefore, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.up("Space");
+    const afterSpace = await page.evaluate(() => ({ y: window.__game.player.y, window: window.__game.ui.window }));
+    await page.waitForFunction(() => window.__game.player.grounded, undefined, { timeout: 10_000 }).catch(() => {});
+    check("Space jumps with the bag open, and the bag stays open", afterSpace.window === "bag" && afterSpace.y > groundedBefore + 0.3, `rose ${(afterSpace.y - groundedBefore).toFixed(2)} m`);
+    // The panel gives through commands; the open window follows.
+    await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    await page.keyboard.press("F2");
+    await page.locator("#dev-bag-give-scrap").click();
+    await page.locator("#dev-bag-give-tape").click();
+    await page.waitForFunction((done) => window.__game.commands.done >= done + 4, before, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const given = await bagNow();
+    const panelBag = await page.locator("#dev-bag-now").innerText();
+    check(
+      "the panel gives items: a stack is topped up first, then the first empty slot is used",
+      given.bag.join() === ["scrap 5", "scrap 3", "tape 1", "bandage 1", "-", "-", "-", "-"].join() && given.slots.join() === given.bag.join() && panelBag === "4 / 8",
+      `${given.bag.join(" | ")}, panel "${panelBag}"`,
+    );
+    await page.locator("#dev-bag-empty").click();
+    await page.waitForFunction(() => window.__game.player.bag.every((slot) => slot === null), undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const emptied = await bagNow();
+    await page.keyboard.press("F2");
+    await page.keyboard.press("Escape");
+    await settle();
+    check("the panel empties the bag, and Escape closes the window", emptied.slots.every((slot) => slot === "-") && emptied.sign === "Tab Bag 0 / 8" && (await bagNow()).window === null, emptied.slots.join(" | "));
+
+    // Eight slots in use is full: the sign turns orange, and a ninth kind of stack is refused.
+    const fullBag = await bagAt("lang=ko&bag=scrap:5,scrap:5,cloth:5,cloth:1,tape:1,water_bottle:3,water_bottle:1,bandage:1");
+    check("a bag with no empty slot is marked as full on the HUD", fullBag.full && fullBag.signFull && fullBag.sign === "Tab 가방 8 / 8", `"${fullBag.sign}"`);
+    await toggleBag(true);
+    const fullWindow = await bagNow();
+    check("the names in the window are in Korean too and fit", fullWindow.names.join() === "고철,고철,천,천,테이프,물병,물병,붕대" && !fullWindow.overflow && fullWindow.name === "고철", fullWindow.names.join(","));
+    await page.screenshot({ path: join(outDir, "bag-full.png") });
+    await toggleBag(false);
+    await page.keyboard.press("F2");
+    const refusedBefore = fullBag.commands.refused;
+    await page.locator("#dev-bag-give-bandage").click();
+    await page.locator("#dev-bag-give-tape").click();
+    await page.waitForFunction((done) => window.__game.commands.done >= done + 2, fullBag.commands.done, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const afterFull = await bagNow();
+    check(
+      "into a full bag only what tops up a stack goes",
+      afterFull.bag[4] === "tape 2" && afterFull.bag[7] === "bandage 2" && afterFull.commands.refused === refusedBefore,
+      `${afterFull.bag.join(" | ")}, refused ${afterFull.commands.refused}`,
+    );
+    await page.locator("#dev-bag-give-scrap").click();
+    await page.waitForFunction((done) => window.__game.commands.done > done, afterFull.commands.done, { timeout: 10_000 }).catch(() => {});
+    const refused = await bagNow();
+    await page.keyboard.press("F2");
+    check("an item with no room at all is refused and the bag stays as it was", refused.commands.refused === refusedBefore + 1 && refused.commands.last?.reason === "bag_full" && refused.bag.join() === afterFull.bag.join(), `last ${JSON.stringify(refused.commands.last)}`);
+    // Behind the title screen there is no bag to open.
+    await page.goto(url, { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+    await page.keyboard.press("Tab");
+    await page.waitForTimeout(300);
+    check("Tab does not open the bag behind the title screen", (await page.evaluate(() => window.__game.ui.window)) === null);
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.
     const phone = await browser.newPage({

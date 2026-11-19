@@ -1,8 +1,9 @@
 import { type ClockTime, displayTime } from "../gameplay/clock";
 import type { TemperatureStage } from "../gameplay/temperature";
 import type { I18n } from "../locales/i18n";
-import { type CompassPosition, compassPosition, type HudAlerts, type InteractionCue } from "./hudState";
+import { type BagView, type CompassPosition, compassPosition, type HudAlerts, type InteractionCue } from "./hudState";
 import { createIcon, type IconName, setIcon } from "./icons";
+import { KEY_MARK, setKeyText } from "./keyCap";
 import { createProgressRing } from "./progressRing";
 import type { Ui } from "./uiRoot";
 
@@ -10,7 +11,7 @@ import type { Ui } from "./uiRoot";
  * What is on screen during play (UI design 5): the compass and the storm warning at the top,
  * the day and time top right (with a word under it from dusk on: colour alone is not to be
  * relied on, UI design 1, rule 4), health, body temperature and thirst bottom left, and the
- * "sheltered" sign bottom right, and in the middle a dot with, under it, what the key E would
+ * "sheltered" sign bottom right, how full the bag is above it, and in the middle a dot with, under it, what the key E would
  * do here. Colours bleed in from the edges of the screen when the player is in trouble. What to show is decided in hudState.ts; this file only draws it.
  */
 
@@ -99,6 +100,20 @@ const css = `
 #hud-shelter[hidden] { display: none; }
 /* In a storm being sheltered is what matters most on screen. */
 #hud-shelter.storm { color: #1b1a17; background: #d9c79a; border-color: #d9c79a; }
+/* The bag: only how many of its slots are in use. What is in it is seen in the bag window. */
+@keyframes hud-bag-pulse { 0% { background: rgba(232, 220, 192, 0.55); } 100% { background: rgba(20, 19, 16, 0.55); } }
+@keyframes hud-bag-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-0.3em); } 75% { transform: translateX(0.3em); } }
+#hud-bag {
+  position: absolute; right: 1.25em; bottom: 3.9em; padding: 0.3em 0.75em; white-space: pre;
+  display: flex; align-items: center; gap: 0.45em; font-weight: 700;
+  color: #e8dcc0; background: rgba(20, 19, 16, 0.55);
+  border: 0.1em solid rgba(232, 220, 192, 0.3); border-radius: 0.25em;
+  text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.75); transition: color 0.3s, border-color 0.3s;
+}
+#hud-bag.pulse { animation: hud-bag-pulse 0.5s ease-out; }
+#hud-bag.shake { animation: hud-bag-shake 0.3s linear; }
+/* No empty slot left: orange, the colour of warnings. */
+#hud-bag.full { color: #ffb45e; border-color: #ff8a2a; }
 /* The middle of the screen: a dot, the ring that fills round it, and the prompt under it. */
 #hud-aim { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
 #hud-aim[hidden] { display: none; }
@@ -116,10 +131,6 @@ const css = `
   font-weight: 700; background: rgba(20, 19, 16, 0.6); text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.75);
 }
 #hud-prompt[hidden] { display: none; }
-#hud-prompt .hud-key {
-  min-width: 1.5em; padding: 0 0.3em; box-sizing: border-box; text-align: center; line-height: 1.5;
-  color: #1b1a17; background: #e8dcc0; border-radius: 0.2em;
-}
 /* Colours from the edges of the whole window, not just the 16:9 area the HUD keeps to. */
 .hud-edge { position: fixed; inset: 0; opacity: 0; transition: opacity 0.6s; }
 .hud-edge.shown { opacity: 1; }
@@ -145,8 +156,6 @@ const COMPASS_REACH = 45;
 
 const EDGES = ["storm", "cold", "danger"] as const;
 
-/** Stands for the key in a prompt's sentence until the key's box is put in its place. Not a character any text uses. */
-const KEY_MARK = "\uE000";
 
 export interface Hud {
   /** Shows the HUD (during play) or hides it (title, measurements). */
@@ -168,6 +177,10 @@ export interface Hud {
   setCompass(heading: number, shelterBearing: number): CompassPosition;
   /** Shows the warnings and effects the player's situation calls for (hudState.ts). */
   setAlerts(alerts: HudAlerts): void;
+  /** Shows how full the bag is (hudState.ts); `key` is what the key that opens the bag window is called. */
+  setBag(bag: BagView, key: string): void;
+  /** Shakes the bag sign: something did not go in. */
+  bagRefused(): void;
   /**
    * Shows the dot in the middle and the prompt under it (hudState.ts). `key` is what the
    * interaction key is called; `progress` (0 to 1) fills the ring round the dot.
@@ -280,10 +293,14 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   const ring = createProgressRing();
   const prompt = make("div", "hud-prompt");
   prompt.hidden = true;
-  const promptKey = make("span", "", "hud-key");
   aim.append(ring.element, make("div", "", "hud-dot"), prompt);
 
-  root.append(...edges.map((edge) => edge.node), clock, top, vitals, shelter, aim);
+  // The bag: an icon, the key that opens it, and how many slots are in use.
+  const bag = make("div", "hud-bag");
+  const bagText = make("span");
+  bag.append(createIcon("bag"), bagText);
+
+  root.append(...edges.map((edge) => edge.node), clock, top, vitals, shelter, bag, aim);
   // Under the title and windows, which are added to the root later or sit above by their own rules.
   ui.root.prepend(root);
 
@@ -309,6 +326,32 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   let stage: TemperatureStage = "comfortable";
   let stormKind: "warning" | "storm" | null = null;
   let damageCause: HudAlerts["damage"] = null;
+  let latestBag: { view: BagView; key: string } | undefined;
+  let bagShown = "";
+  let bagTotal = -1;
+  /** Plays one of the bag sign's short animations from its start, even if it is still playing. */
+  const animateBag = (name: "pulse" | "shake"): void => {
+    bag.classList.remove("pulse", "shake");
+    // Reading the size makes the browser take note of the removal, so adding starts afresh.
+    void bag.offsetWidth;
+    bag.classList.add(name);
+  };
+  const renderBag = (view: BagView, key: string): void => {
+    latestBag = { view, key };
+    const shown = `${i18n.language}|${key}|${view.used}|${view.size}`;
+    if (shown !== bagShown) {
+      bagShown = shown;
+      setKeyText(bagText, i18n.t("hud.bag", { key: KEY_MARK, used: view.used, size: view.size }), key);
+      bag.classList.toggle("full", view.full);
+    }
+    // Something went in or came out: the sign lights up for a moment. Not when first shown.
+    if (view.total !== bagTotal) {
+      if (bagTotal >= 0) {
+        animateBag("pulse");
+      }
+      bagTotal = view.total;
+    }
+  };
   let promptKind: InteractionCue["prompt"] = null;
   let promptKeyLabel = "";
   // The key has a place in the sentence that differs from language to language. The sentence
@@ -317,9 +360,7 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
     if (!promptKind) {
       return;
     }
-    const [before = "", after = ""] = i18n.t(`interact.${promptKind}`, { key: KEY_MARK }).split(KEY_MARK);
-    promptKey.textContent = promptKeyLabel;
-    prompt.replaceChildren(before, promptKey, after);
+    setKeyText(prompt, i18n.t(`interact.${promptKind}`, { key: KEY_MARK }), promptKeyLabel);
   };
   // Everything whose words do not change from frame to frame, written again when the language does.
   const renderWords = (): void => {
@@ -340,6 +381,9 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
       damageText.textContent = i18n.t(`hud.damage.${damageCause}`);
     }
     renderPrompt();
+    if (latestBag) {
+      renderBag(latestBag.view, latestBag.key);
+    }
   };
   renderWords();
   i18n.onChange(renderClock);
@@ -396,6 +440,12 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
       arrowLeft.hidden = at.beyond !== -1;
       arrowRight.hidden = at.beyond !== 1;
       return at;
+    },
+    setBag(view, key): void {
+      renderBag(view, key);
+    },
+    bagRefused(): void {
+      animateBag("shake");
     },
     setInteraction(cue, key, progress): void {
       aim.hidden = cue.crosshair === "hidden";

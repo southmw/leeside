@@ -32,6 +32,11 @@ const css = `
   transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
 .ui-button.selected { background: #d9c79a; border-color: #d9c79a; color: #1b1a17; font-weight: 700; }
+/* A key, in text that says what the key does. */
+.ui-key {
+  display: inline-block; min-width: 1.5em; padding: 0 0.3em; box-sizing: border-box; text-align: center; line-height: 1.5;
+  font-weight: 700; color: #1b1a17; background: #e8dcc0; border-radius: 0.2em; text-shadow: none;
+}
 .ui-bar { margin: 0.5em 0; }
 .ui-bar .ui-bar-label { display: flex; justify-content: space-between; font-size: 0.875em; opacity: 0.85; }
 .ui-bar .ui-bar-track { height: 0.6em; margin-top: 0.2em; border-radius: 0.3em; background: rgba(232, 220, 192, 0.15); overflow: hidden; }
@@ -42,6 +47,11 @@ const css = `
   transition: opacity 0.15s, transform 0.15s;
 }
 .ui-window.entering, .ui-window.leaving { opacity: 0; transform: translate(-50%, -46%); }
+/* A window to the side: top right, under the clock, so the character in the middle stays in sight. */
+.ui-window.side { left: auto; right: 1.25em; top: 5.2em; transform: none; }
+.ui-window.side.entering, .ui-window.side.leaving { opacity: 0; transform: translateY(0.6em); }
+.ui-button:disabled { opacity: 0.3; cursor: default; border-style: dashed; }
+.ui-button:disabled .ui-key { background: rgba(232, 220, 192, 0.5); }
 #ui-too-small {
   position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
   padding: 24px; text-align: center; background: #1b1a17; color: #e8dcc0; font-size: 18px;
@@ -75,6 +85,15 @@ export interface UiWindowOptions {
   /** Anything else to show, between the bars and the buttons. */
   content?: HTMLElement;
   buttons: readonly UiButton[];
+  /** Where the window stands: in the middle of the screen (the default), or top right, clear of the character. */
+  placement?: "centre" | "side";
+  /**
+   * Called for every key pressed while the window is open, before the window's own keys.
+   * Returning true means the key was used: it then goes neither to the buttons nor to the game.
+   * Returning "pass" hands the key to the game untouched, even if it is one of the window's own
+   * (Space, say, to jump with the bag open).
+   */
+  onKey?(event: KeyboardEvent): boolean | "pass";
   /** Called once when the window closes, however that happens. */
   onClose?(): void;
 }
@@ -133,7 +152,7 @@ export function createUi(i18n: I18n): Ui {
     current?.close();
 
     const panel = document.createElement("div");
-    panel.className = "ui-panel ui-window entering";
+    panel.className = `ui-panel ui-window entering${options.placement === "side" ? " side" : ""}`;
     panel.dataset.window = options.id;
     panel.setAttribute("role", "dialog");
 
@@ -177,6 +196,15 @@ export function createUi(i18n: I18n): Ui {
     // Capture phase, and stopped there: keys the window uses must not also reach the game
     // (Space would jump, Escape would open the pause screen).
     const onKeyDown = (event: KeyboardEvent): void => {
+      const used = options.onKey?.(event);
+      if (used === "pass") {
+        return;
+      }
+      if (used) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
       const action = menuAction(event.code, event.shiftKey);
       if (!action) {
         return;
