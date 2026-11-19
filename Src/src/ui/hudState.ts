@@ -1,4 +1,4 @@
-import type { DamageCause, InteractionKind } from "../core/ecs";
+import type { DamageCause } from "../core/ecs";
 import type { ItemId } from "../data/items";
 import { DANGER_HEALTH, LOW_THIRST } from "../data/tuning";
 import { type Inventory, isFull, usedSlots } from "../gameplay/inventory";
@@ -121,10 +121,16 @@ export function hudAlerts(situation: HudSituation): HudAlerts {
   };
 }
 
+/**
+ * What the prompt under the dot can say: hold to search a container, press to open one
+ * already searched, or only that it is empty.
+ */
+export type PromptKind = "search" | "open" | "empty";
+
 /** What the middle of the screen has to go by. */
 export interface InteractionSituation {
   /** What the player's interaction target lets them do, or null without a target. */
-  targetKind: InteractionKind | null;
+  targetKind: PromptKind | null;
   /** Whether a window is open; its keys are not the game's then. */
   windowOpen: boolean;
   /** Whether the character lies collapsed. */
@@ -135,7 +141,7 @@ export interface InteractionCue {
   /** The dot in the middle of the screen: not shown, shown faintly, or marked out because there is a target. */
   crosshair: "hidden" | "idle" | "target";
   /** Which prompt to show under the dot, or null for none. */
-  prompt: InteractionKind | null;
+  prompt: PromptKind | null;
 }
 
 /** The dot and the prompt in the middle of the screen (UI design 5). */

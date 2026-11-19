@@ -1,5 +1,5 @@
-import type { InstancedMesh, Mesh, Object3D } from "three";
-import { createTransform, type Entity, type GameWorld } from "../core/ecs";
+import type { InstancedMesh, Mesh, MeshStandardMaterial, Object3D } from "three";
+import { type Container, createTransform, type Entity, type GameWorld } from "../core/ecs";
 import type { PhysicsWorld } from "../physics/physicsWorld";
 import { createBuildingBoxMesh } from "../render/buildingMesh";
 import { createPropMesh, createRockMesh, ROCK_HEIGHT_RATIO, type RockInstance } from "../render/propMesh";
@@ -7,7 +7,7 @@ import type { SceneLike } from "../render/renderSync";
 import { createTerrainMesh } from "../render/terrainMesh";
 import { boundaryWalls } from "./boundary";
 import { buildingBoxes, buildingShelterZone } from "./building";
-import { placeContainer } from "./containers";
+import { OPENED_SHADE, placeContainer } from "./containers";
 import { DEFAULT_PROP_SET, type PropSetId } from "./propModels";
 import { type PropBox, propBox } from "./props";
 import { scatterItems } from "./scatter";
@@ -33,6 +33,11 @@ export interface LoadedZone {
   /** How many containers the zone has. */
   readonly containerCount: number;
   /**
+   * Draws every container as open or closed, as its state now says. Call when a state may
+   * have changed; only those that did are touched.
+   */
+  showContainers(): void;
+  /**
    * Takes everything the zone added out of the physics world and the scene again and frees
    * the GPU resources. Zone changes rely on this to not leak.
    */
@@ -56,6 +61,12 @@ export interface ZoneLoadOptions {
   rockModels?(rocks: readonly RockInstance[]): InstancedMesh[] | undefined;
   /** Colour of the rocks drawn as plain shapes, to go with the rock models. */
   pebbleColor?: number;
+  /**
+   * Gives the state of a container (opened, what is left in it). The game keeps these, so
+   * that they are still there when the zone is put up again. Without this every container is
+   * closed and holds only what the zone fixes.
+   */
+  containerState?(id: string): Container | undefined;
 }
 
 /**
@@ -77,6 +88,8 @@ export function loadZone(
   const propSet = options.propSet ?? DEFAULT_PROP_SET;
   let shelterZoneCount = 0;
   const propBodies = new Map<string, number>();
+  /** How each container is drawn, with the state it follows and the state it was last drawn in. */
+  const containerLooks: Array<{ state: Container; shown: boolean; apply(opened: boolean): void }> = [];
   const show = (mesh: Mesh): void => {
     meshes.push(mesh);
     scene.add(mesh);
@@ -120,18 +133,50 @@ export function loadZone(
   // Each is an entity, so that players can find it (gameplay/interaction.ts).
   for (const container of definition.containers) {
     const placed = placeContainer(container, definition, (east, south) => heightAt(terrain, east, south), propSet);
+    const state: Container = options.containerState?.(container.id) ?? {
+      kind: container.kind,
+      opened: false,
+      items: (container.contents ?? []).map((stack) => ({ ...stack })),
+    };
     // The solid thing a container is: its own box, or for a trunk its car.
     let solid = container.kind === "trunk" ? propBodies.get(container.prop) : undefined;
     if (placed.box) {
       solid = physics.addStaticBox(placed.box.center, placed.box.halfExtents, 0, placed.box.yaw);
       bodies.push(solid);
-      show(createPropMesh(placed.box));
+      const mesh = createPropMesh(placed.box);
+      show(mesh);
+      // Opened, a cabinet or crate is drawn darker.
+      const material = mesh.material as MeshStandardMaterial;
+      const closedColor = material.color.getHex();
+      containerLooks.push({
+        state,
+        shown: false,
+        apply: (opened) => {
+          material.color.setHex(closedColor);
+          if (opened) {
+            material.color.multiplyScalar(OPENED_SHADE);
+          }
+        },
+      });
+    } else if (placed.lid) {
+      // Opened, a trunk has its lid up.
+      const lid = createPropMesh(placed.lid);
+      lid.visible = false;
+      show(lid);
+      containerLooks.push({
+        state,
+        shown: false,
+        apply: (opened) => {
+          lid.visible = opened;
+        },
+      });
     }
     if (options.world) {
       entities.push(
         options.world.add({
           transform: createTransform(placed.point.x, placed.point.y, placed.point.z),
           interactable: { id: placed.id, kind: "search", ...(solid === undefined ? {} : { solid }) },
+          container: state,
         }),
       );
     }
@@ -168,6 +213,16 @@ export function loadZone(
     show(createRockMesh(plain, modelled ? options.pebbleColor : undefined));
   }
 
+  const showContainers = (): void => {
+    for (const look of containerLooks) {
+      if (look.state.opened !== look.shown) {
+        look.shown = look.state.opened;
+        look.apply(look.shown);
+      }
+    }
+  };
+  showContainers();
+
   for (const wall of boundaryWalls(definition.size)) {
     bodies.push(physics.addStaticBox(wall.center, wall.halfExtents));
   }
@@ -180,6 +235,7 @@ export function loadZone(
     rocksModelled: rockMeshes.length > 0,
     shelterZoneCount,
     containerCount: definition.containers.length,
+    showContainers,
     unload(): void {
       for (const entity of entities) {
         options.world?.remove(entity);

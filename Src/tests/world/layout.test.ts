@@ -1,11 +1,11 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { createTransform, createWorld } from "../../src/core/ecs";
+import { type Container, createTransform, createWorld } from "../../src/core/ecs";
 import { CHARACTER_HEIGHT, MOVE_SPEED } from "../../src/data/tuning";
 import { createInteractionSystem } from "../../src/gameplay/interaction";
 import { createView } from "../../src/gameplay/view";
 import { CHARACTER_SKIN, initPhysics, PhysicsWorld } from "../../src/physics/physicsWorld";
 import { yawFromDegrees } from "../../src/world/building";
-import { containerApproach, placeContainer } from "../../src/world/containers";
+import { CONTAINER_SHAPES, containerApproach, placeContainer } from "../../src/world/containers";
 import { boundaryWalls } from "../../src/world/boundary";
 import { propModelFor } from "../../src/world/propModels";
 import { PROP_SHAPES, propBox, propRadius, propSize } from "../../src/world/props";
@@ -243,8 +243,9 @@ describe("the loaded zone", () => {
     const boxed = zone.containers.filter((container) => container.kind !== "trunk").length;
     // Terrain, 7 boxes per building, one per prop and boxed container, the large rocks, and 4 boundary walls.
     expect(physics.bodyCount).toBe(1 + zone.buildings.length * 7 + zone.props.length + boxed + largeRocks + 4);
-    // Terrain, building boxes, props, boxed containers, and one mesh for all rocks. Boundary walls are invisible.
-    expect(scene.objects.size).toBe(1 + zone.buildings.length * 7 + zone.props.length + boxed + 1);
+    // Terrain, building boxes, props, containers (a box each, or a trunk's lid), and one mesh for all rocks.
+    // Boundary walls are invisible.
+    expect(scene.objects.size).toBe(1 + zone.buildings.length * 7 + zone.props.length + zone.containers.length + 1);
     expect(loaded.rockCount).toBeGreaterThan(1000);
 
     loaded.unload();
@@ -286,6 +287,61 @@ describe("the loaded zone", () => {
     expect(crate?.transform.y).toBeCloseTo(heightAt(loaded.terrain, 406, 114));
     loaded.unload();
     expect(world.entities).toHaveLength(0);
+    physics.dispose();
+  });
+
+  it("gives containers the state it is handed, keeps it across a reload, and draws opened ones differently", () => {
+    const physics = new PhysicsWorld();
+    const scene = fakeScene();
+    const states = new Map<string, Container>(zone.containers.map((container) => [container.id, { kind: container.kind, opened: false, items: [] }]));
+    const options = { world: createWorld(), containerState: (id: string) => states.get(id) };
+    /** How many meshes still have the colour of a crate not yet opened. */
+    const closedCrates = (): number => {
+      const meshes = [...scene.objects] as Array<{ material?: { color?: { getHex(): number } } }>;
+      return meshes.filter((mesh) => mesh.material?.color?.getHex() === CONTAINER_SHAPES.crate.color).length;
+    };
+    let loaded = loadZone(zone, physics, scene, options);
+    const crates = zone.containers.filter((container) => container.kind === "crate").length;
+    expect(closedCrates()).toBe(crates);
+    const lidsUp = (): number => ([...scene.objects] as Array<{ visible: boolean }>).filter((mesh) => !mesh.visible).length;
+    // All four trunk lids are down, which here means not drawn.
+    expect(lidsUp()).toBe(4);
+
+    const crate = states.get("well_crate");
+    const trunk = states.get("car_line_trunk");
+    if (!crate || !trunk) {
+      throw new Error("missing container state");
+    }
+    // The entity holds the very state it was handed.
+    const entity = [...options.world.with("container", "interactable")].find((candidate) => candidate.interactable.id === "well_crate");
+    expect(entity?.container).toBe(crate);
+
+    crate.opened = true;
+    trunk.opened = true;
+    loaded.showContainers();
+    expect(closedCrates()).toBe(crates - 1);
+    expect(lidsUp()).toBe(3);
+
+    // Taken down and put up again, the zone shows them opened from the start.
+    loaded.unload();
+    loaded = loadZone(zone, physics, scene, options);
+    expect(closedCrates()).toBe(crates - 1);
+    expect(lidsUp()).toBe(3);
+    loaded.unload();
+    physics.dispose();
+  });
+
+  it("holds only what the zone fixes when no state is handed over", () => {
+    const physics = new PhysicsWorld();
+    const world = createWorld();
+    const loaded = loadZone(zone, physics, fakeScene(), { world });
+    const contents = Object.fromEntries([...world.with("container", "interactable")].map((entity) => [entity.interactable.id, entity.container.items]));
+    expect(contents.car_line_second_trunk).toEqual([
+      { item: "water_bottle", count: 1 },
+      { item: "cloth", count: 2 },
+    ]);
+    expect(contents.well_crate).toEqual([]);
+    loaded.unload();
     physics.dispose();
   });
 

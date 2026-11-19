@@ -86,6 +86,10 @@ export interface DevControls {
   /** Throws one thing out of the last slot that has anything in it. */
   discardLast(): void;
   emptyBag(): void;
+  /** The containers: how many there are and how many have been opened. */
+  containers(): { count: number; opened: number };
+  /** Fills every container afresh (with other contents) and closes them all. */
+  refillContainers(): void;
   shelterZonesShown(): boolean;
   /** Draws the shelter zones as boxes, or stops drawing them. */
   showShelterZones(shown: boolean): void;
@@ -249,7 +253,18 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
     heading?.append(bagNow);
     return heading && row ? [heading, row] : [];
   };
+  let containersNow: HTMLElement | undefined;
+  const containersSection = (): HTMLElement[] => {
+    const [heading, row] = section(t("dev.containers"), button("dev-containers-refill", t("dev.containers.refill"), () => controls.refillContainers()));
+    containersNow = element("span", "", "dev-now");
+    containersNow.id = "dev-containers-now";
+    heading?.append(containersNow);
+    return heading && row ? [heading, row] : [];
+  };
   function refreshClock(): void {
+    if (containersNow) {
+      containersNow.textContent = t("dev.containers.now", controls.containers());
+    }
     if (bagNow) {
       bagNow.textContent = t("dev.bag.now", controls.bag());
     }
@@ -333,6 +348,7 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
       ...temperatureSection(),
       ...thirstSection(),
       ...bagSection(),
+      ...containersSection(),
       ...audioSection(),
       ...section(
         t("dev.shelter"),

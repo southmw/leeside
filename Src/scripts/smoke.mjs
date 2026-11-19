@@ -1115,12 +1115,6 @@ try {
       `"${facingCrate.promptText}", key "${facingCrate.keyText}"`,
     );
     await page.screenshot({ path: join(outDir, "interaction.png") });
-    // Holding E does nothing yet (searching comes with step 2.14).
-    await page.keyboard.down("KeyE");
-    await settle();
-    const holdingE = await page.evaluate(() => ({ interact: window.__game.input.interact, window: window.__game.ui.window }));
-    await page.keyboard.up("KeyE");
-    check("E is read but opens nothing yet", holdingE.interact === true && holdingE.window === null);
     // A window takes the keys, so the dot and the prompt go.
     await page.keyboard.press("F4");
     await page.waitForFunction(() => window.__game.ui.window === "sample", undefined, { timeout: 5_000 }).catch(() => {});
@@ -1315,6 +1309,256 @@ try {
     await page.keyboard.press("Tab");
     await page.waitForTimeout(300);
     check("Tab does not open the bag behind the title screen", (await page.evaluate(() => window.__game.ui.window)) === null);
+
+    {
+    // Searching: holding E at a container opens it after a moment, its panel shows what is in
+    // it, and E and F take. `?seed=1` fixes the contents; the trunk of the introduction is
+    // always the same anyway. The spot is found with the panel's place button.
+    const lootNow = () =>
+      page.evaluate(() => ({
+        target: window.__game.player.interaction,
+        search: { ...window.__game.player.search },
+        prompt: window.__game.hud.prompt,
+        promptText: document.querySelector("#hud-prompt").textContent,
+        ringShown: !document.querySelector("#hud-aim .ui-ring").hidden,
+        window: window.__game.ui.window,
+        panel: window.__game.containers.panel,
+        containers: JSON.parse(JSON.stringify(window.__game.containers.byId)),
+        bag: window.__game.player.bag.map((slot) => (slot ? `${slot.item} ${slot.count}` : "-")),
+        title: document.querySelector('[data-window="container"] .ui-title')?.textContent ?? "",
+        rows: [...document.querySelectorAll("#container-panel .container-row")].map(
+          (row) => `${row.querySelector(".container-row-name").textContent} ${row.querySelector(".container-row-count").textContent}`,
+        ),
+        selectedRow: [...document.querySelectorAll("#container-panel .container-row")].findIndex((row) => row.classList.contains("selected")),
+        unfit: [...document.querySelectorAll("#container-panel .container-row.unfit")].length,
+        note: document.querySelector("#container-panel .container-note")?.textContent ?? "",
+        bagLine: document.querySelector("#container-panel .container-bag")?.textContent ?? "",
+        last: window.__game.commands.last,
+      }));
+    const goToContainer = async (id) => {
+      await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+      await page.keyboard.press("F2");
+      await page.locator(`#dev-place-${id}`).click();
+      await page.keyboard.press("F2");
+      await page.waitForFunction((target) => window.__game.player.interaction === target && window.__game.player.grounded, id, { timeout: 10_000 }).catch(() => {});
+      await settle();
+    };
+    const lootAt = async (query, id) => {
+      await page.goto(gameUrl(query), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+      await goToContainer(id);
+      return lootNow();
+    };
+    const INTRO_TRUNK = "car_line_second_trunk";
+    const atIntro = await lootAt("lang=en&seed=1", INTRO_TRUNK);
+    check("a container not yet searched asks for E to be held", atIntro.target === INTRO_TRUNK && atIntro.prompt === "search" && atIntro.containers[INTRO_TRUNK].opened === false, `prompt ${atIntro.prompt}`);
+    check("the trunk the introduction leads to holds two cloth and a water bottle", atIntro.containers[INTRO_TRUNK].items.join() === "cloth 2,water_bottle 1", atIntro.containers[INTRO_TRUNK].items.join());
+    const allItems = Object.values(atIntro.containers).flatMap((container) => container.items);
+    const totalOf = (item) => allItems.filter((entry) => entry.startsWith(`${item} `)).reduce((sum, entry) => sum + Number(entry.split(" ")[1]), 0);
+    check("the containers hold what the repair needs", totalOf("scrap") >= 15 && totalOf("cloth") >= 8 && totalOf("tape") >= 3 && Object.keys(atIntro.containers).length === 14, `scrap ${totalOf("scrap")}, cloth ${totalOf("cloth")}, tape ${totalOf("tape")}`);
+
+    // A short hold is not a search: the ring fills, and letting go starts over.
+    const simAtPress = await page.evaluate(() => window.__game.simSeconds);
+    await page.keyboard.down("KeyE");
+    await page.waitForFunction(() => window.__game.player.search.progress > 0.2, undefined, { timeout: 20_000 }).catch(() => {});
+    const midSearch = await lootNow();
+    await page.keyboard.up("KeyE");
+    await settle();
+    const letGo = await lootNow();
+    check("holding E fills the ring; letting go early cancels the search", midSearch.search.target === INTRO_TRUNK && midSearch.ringShown && midSearch.window === null && letGo.search.progress === 0 && !letGo.ringShown && letGo.containers[INTRO_TRUNK].opened === false, `progress ${midSearch.search.progress.toFixed(2)}`);
+    // Moving cancels it too.
+    await page.keyboard.down("KeyE");
+    await page.waitForFunction(() => window.__game.player.search.progress > 0.2, undefined, { timeout: 20_000 }).catch(() => {});
+    await page.keyboard.down("KeyA");
+    await page.waitForFunction(() => window.__game.player.search.progress === 0, undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.up("KeyA");
+    await page.keyboard.up("KeyE");
+    await settle();
+    const moved = await lootNow();
+    check("moving cancels the search", moved.search.progress === 0 && moved.containers[INTRO_TRUNK].opened === false && moved.window === null);
+    await goToContainer(INTRO_TRUNK);
+
+    // Held for the full time, the container opens and its panel comes up.
+    const simBefore = await page.evaluate(() => window.__game.simSeconds);
+    await page.keyboard.down("KeyE");
+    await page.waitForFunction(() => window.__game.containers.panel !== null, undefined, { timeout: 30_000 }).catch(() => {});
+    const simAfter = await page.evaluate(() => window.__game.simSeconds);
+    // E is still down: it must not take anything.
+    await settle();
+    await settle();
+    const opened = await lootNow();
+    await page.keyboard.up("KeyE");
+    check(
+      "holding E for 1.5 seconds opens the container and shows its panel",
+      opened.panel === INTRO_TRUNK && opened.window === "container" && opened.containers[INTRO_TRUNK].opened === true && simAfter - simBefore >= 1.45 && simAfter - simBefore < 2.5 && simAtPress > 0,
+      `${(simAfter - simBefore).toFixed(2)} s`,
+    );
+    check("the panel names the container and lists what is in it", opened.title === "Car trunk" && opened.rows.join() === "Cloth x2,Water bottle x1" && opened.selectedRow === 0 && opened.bagLine === "Bag 0 / 8", `"${opened.title}": ${opened.rows.join(", ")}`);
+    check("the E that searched does not also take", opened.bag.every((slot) => slot === "-") && opened.containers[INTRO_TRUNK].items.length === 2);
+    await page.screenshot({ path: join(outDir, "container.png") });
+    // Down to the water, take it with E; then F takes the rest and the panel closes.
+    await page.keyboard.press("ArrowDown");
+    const onWaterRow = await lootNow();
+    await page.keyboard.press("KeyE");
+    await page.waitForFunction(() => window.__game.player.bag.some((slot) => slot?.item === "water_bottle"), undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const tookWater = await lootNow();
+    check("the arrow keys select an entry and E takes it", onWaterRow.selectedRow === 1 && tookWater.bag[0] === "water_bottle 1" && tookWater.rows.join() === "Cloth x2" && tookWater.panel === INTRO_TRUNK && tookWater.last?.type === "takeItem", `${tookWater.bag[0]}, left ${tookWater.rows.join()}`);
+    await page.keyboard.press("KeyF");
+    await page.waitForFunction(() => window.__game.containers.panel === null, undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const tookAll = await lootNow();
+    check(
+      "F takes everything, the panel closes and the container says it is empty",
+      tookAll.bag.slice(0, 2).join() === "water_bottle 1,cloth 2" && tookAll.panel === null && tookAll.window === null && tookAll.containers[INTRO_TRUNK].items.length === 0 && tookAll.prompt === "empty" && tookAll.promptText === "Empty",
+      `${tookAll.bag.slice(0, 3).join(" | ")}, prompt "${tookAll.promptText}"`,
+    );
+    // An emptied container cannot be opened again.
+    await page.keyboard.down("KeyE");
+    await page.waitForTimeout(600);
+    await page.keyboard.up("KeyE");
+    const emptyAgain = await lootNow();
+    check("an emptied container does not open again", emptyAgain.panel === null && emptyAgain.search.progress === 0);
+    await page.screenshot({ path: join(outDir, "container-opened.png") });
+
+    // A cabinet indoors: open it, close it with Escape, and open it again with one press.
+    const firstCabinet = Object.keys(atIntro.containers).find((id) => id.includes("cabinet") && atIntro.containers[id].items.length > 0);
+    await goToContainer(firstCabinet);
+    await page.keyboard.down("KeyE");
+    await page.waitForFunction(() => window.__game.containers.panel !== null, undefined, { timeout: 30_000 }).catch(() => {});
+    await page.keyboard.up("KeyE");
+    await settle();
+    const cabinetOpen = await lootNow();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => window.__game.containers.panel === null, undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const cabinetClosed = await lootNow();
+    check("Escape closes the panel and leaves the contents; the prompt then says Open", cabinetOpen.title === "Cabinet" && cabinetClosed.panel === null && cabinetClosed.prompt === "open" && cabinetClosed.promptText === "E Open" && cabinetClosed.containers[firstCabinet].items.length > 0, `prompt "${cabinetClosed.promptText}"`);
+    await page.keyboard.press("KeyE");
+    await page.waitForFunction(() => window.__game.containers.panel !== null, undefined, { timeout: 10_000 }).catch(() => {});
+    const reopened = await lootNow();
+    check("a container searched before opens again with one press", reopened.panel === firstCabinet);
+    // Walking away closes the panel.
+    await page.keyboard.down("KeyS");
+    await page.waitForFunction(() => window.__game.containers.panel === null, undefined, { timeout: 20_000 }).catch(() => {});
+    await page.keyboard.up("KeyS");
+    const walkedOff = await lootNow();
+    check("walking away from the container closes its panel", walkedOff.panel === null && walkedOff.containers[firstCabinet].items.length > 0);
+
+    // The bag and a container's panel stand open side by side: a container can be searched
+    // with the bag open, and each keeps its own keys.
+    await goToContainer(firstCabinet);
+    await page.keyboard.press("Tab");
+    await page.waitForFunction(() => window.__game.ui.windows.includes("bag"), undefined, { timeout: 5_000 }).catch(() => {});
+    await settle();
+    const bagOnly = await page.evaluate(() => ({ windows: window.__game.ui.windows, prompt: window.__game.hud.prompt, crosshair: window.__game.hud.crosshair }));
+    check("with only the bag open the prompt at a container still shows", bagOnly.windows.join() === "bag" && bagOnly.prompt === "open" && bagOnly.crosshair === "target", `windows ${bagOnly.windows.join()}, prompt ${bagOnly.prompt}`);
+    await page.keyboard.press("KeyE");
+    await page.waitForFunction(() => window.__game.containers.panel !== null, undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    await page.waitForTimeout(300);
+    const both = await page.evaluate(() => {
+      const box = (id) => document.querySelector(`[data-window="${id}"]`)?.getBoundingClientRect();
+      const container = box("container");
+      const bag = box("bag");
+      return {
+        windows: window.__game.ui.windows,
+        apart: container && bag ? container.right <= bag.left + 1 : false,
+        inView: container && bag ? container.left > window.innerWidth * 0.4 && bag.right <= window.innerWidth : false,
+        left: container ? Math.round(container.left) : -1,
+      };
+    });
+    check("a container opens with the bag open, and the two stand side by side", both.windows.join() === "container,bag" && both.apart && both.inView, `windows ${both.windows.join()}, container from x ${both.left}`);
+    await page.screenshot({ path: join(outDir, "container-and-bag.png") });
+    const sideBySide = () =>
+      page.evaluate(() => ({
+        row: [...document.querySelectorAll("#container-panel .container-row")].findIndex((row) => row.classList.contains("selected")),
+        rows: document.querySelectorAll("#container-panel .container-row").length,
+        slot: [...document.querySelectorAll("#bag-window .bag-slot")].findIndex((slot) => slot.classList.contains("selected")),
+        bag: window.__game.player.bag.map((slot) => (slot ? `${slot.item} ${slot.count}` : "-")),
+        windows: window.__game.ui.windows,
+      }));
+    const startSide = await sideBySide();
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    const movedSlot = await sideBySide();
+    check("side by side, left and right walk through the bag's slots and leave the list alone", startSide.slot === 0 && movedSlot.slot === 4 && movedSlot.row === startSide.row, `slot ${startSide.slot} -> ${movedSlot.slot}`);
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    // X discards from the bag (the water bottle taken earlier is in the first slot), E takes from the container.
+    const beforeDiscard = await sideBySide();
+    await page.keyboard.press("KeyX");
+    await page.waitForFunction(() => window.__game.commands.last?.type === "discardItem", undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const afterDiscard = await sideBySide();
+    await page.keyboard.press("KeyE");
+    await page.waitForFunction(() => window.__game.commands.last?.type === "takeItem", undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const afterTake = await sideBySide();
+    check(
+      "side by side, X discards from the bag and E takes from the container",
+      beforeDiscard.bag[0] === "water_bottle 1" && afterDiscard.bag[0] === "-" && afterTake.bag.join() !== afterDiscard.bag.join() && afterTake.windows.includes("bag"),
+      `${beforeDiscard.bag.slice(0, 3).join(" | ")} -> ${afterDiscard.bag.slice(0, 3).join(" | ")} -> ${afterTake.bag.slice(0, 3).join(" | ")}`,
+    );
+    // Tab closes the bag and leaves the panel; Tab again opens the bag beside it; Escape closes the panel first.
+    const panelLeft = (await sideBySide()).rows > 0;
+    if (panelLeft) {
+      await page.keyboard.press("Tab");
+      await page.waitForFunction(() => !window.__game.ui.windows.includes("bag"), undefined, { timeout: 5_000 }).catch(() => {});
+      const bagShut = (await sideBySide()).windows.join();
+      await page.keyboard.press("Tab");
+      await page.waitForFunction(() => window.__game.ui.windows.includes("bag"), undefined, { timeout: 5_000 }).catch(() => {});
+      const bagBack = (await sideBySide()).windows.join();
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => window.__game.containers.panel === null, undefined, { timeout: 5_000 }).catch(() => {});
+      const panelShut = (await sideBySide()).windows.join();
+      check("Tab opens and closes the bag beside the panel, and Escape closes the panel first", bagShut === "container" && bagBack === "container,bag" && panelShut === "bag", `${bagShut} / ${bagBack} / ${panelShut}`);
+    }
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => window.__game.ui.windows.length === 0, undefined, { timeout: 5_000 }).catch(() => {});
+
+    // A full bag: what does not fit stays in the container, and the panel says why.
+    const fullAt = await lootAt("lang=ko&seed=1&bag=scrap:5,scrap:5,scrap:5,scrap:5,scrap:5,scrap:5,scrap:5,cloth:4", INTRO_TRUNK);
+    await page.keyboard.down("KeyE");
+    await page.waitForFunction(() => window.__game.containers.panel !== null, undefined, { timeout: 30_000 }).catch(() => {});
+    await page.keyboard.up("KeyE");
+    await settle();
+    const fullPanel = await lootNow();
+    check("with a full bag the entries that do not fit are dimmed and the panel says the bag is full", fullAt.target === INTRO_TRUNK && fullPanel.title === "차량 트렁크" && fullPanel.unfit === 1 && fullPanel.note === "가방이 가득 찼습니다." && fullPanel.rows.join() === "천 x2,물병 x1", `${fullPanel.rows.join()}, unfit ${fullPanel.unfit}, "${fullPanel.note}"`);
+    await page.screenshot({ path: join(outDir, "container-full.png") });
+    await page.keyboard.press("KeyF");
+    await page.waitForFunction(() => window.__game.commands.last?.type === "takeAll", undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const partly = await lootNow();
+    check(
+      "taking all takes what fits and leaves the rest in the container, with the panel still open",
+      partly.bag[7] === "cloth 5" && partly.containers[INTRO_TRUNK].items.join() === "cloth 1,water_bottle 1" && partly.panel === INTRO_TRUNK && partly.unfit === 2,
+      `${partly.bag[7]}, left ${partly.containers[INTRO_TRUNK].items.join()}`,
+    );
+    await page.keyboard.press("Escape");
+    // The panel's button fills the containers again and closes them all.
+    await page.keyboard.press("F2");
+    const openedBefore = await page.locator("#dev-containers-now").innerText();
+    await page.locator("#dev-containers-refill").click();
+    await settle();
+    const refilled = await lootNow();
+    await page.keyboard.press("F2");
+    check("the panel fills the containers again and closes them", openedBefore.includes("1") && Object.values(refilled.containers).every((container) => !container.opened) && refilled.containers[INTRO_TRUNK].items.length === 2 && refilled.prompt === "search", `was "${openedBefore}"`);
+    // Another seed puts the materials elsewhere; the same seed puts them in the same places.
+    const contentsWith = async (seed) => {
+      await page.goto(gameUrl(`seed=${seed}`), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      return page.evaluate(() => JSON.stringify(window.__game.containers.byId));
+    };
+    const seedOne = await contentsWith(1);
+    const seedTwo = await contentsWith(2);
+    check("the same seed fills the containers the same way, another seed differently", seedOne === JSON.stringify(atIntro.containers) && seedTwo !== seedOne);
+
+    }
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.
     const phone = await browser.newPage({

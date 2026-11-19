@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ITEM_IDS } from "../data/items";
 
 /**
  * The format of a zone definition and its validator.
@@ -92,8 +93,14 @@ const CABINET_END_MARGIN = 1;
  * Something to search (prototype design 5.2). Where it is depends on its kind: a trunk is the
  * back of a car, a cabinet stands against a wall inside a building, a crate stands by itself.
  */
+/**
+ * Contents that are the same in every game (the trunk the introduction leads to). A container
+ * without them is filled when a game starts (gameplay/loot.ts).
+ */
+const contentsSchema = z.array(z.object({ item: z.enum(ITEM_IDS), count: z.number().int().min(1) }).strict()).optional();
+
 const containerSchema = z.discriminatedUnion("kind", [
-  z.object({ id: idSchema, kind: z.literal("trunk"), /** Id of the car it belongs to. */ prop: idSchema }).strict(),
+  z.object({ id: idSchema, kind: z.literal("trunk"), /** Id of the car it belongs to. */ prop: idSchema, contents: contentsSchema }).strict(),
   z
     .object({
       id: idSchema,
@@ -103,9 +110,12 @@ const containerSchema = z.discriminatedUnion("kind", [
       wall: z.enum(DOOR_SIDES),
       /** Metres along that wall from its middle: towards the east on the north and south walls, towards the south on the others. */
       offset: z.number(),
+      contents: contentsSchema,
     })
     .strict(),
-  z.object({ id: idSchema, kind: z.literal("crate"), position: positionSchema, rotation: rotationSchema.default(0) }).strict(),
+  z
+    .object({ id: idSchema, kind: z.literal("crate"), position: positionSchema, rotation: rotationSchema.default(0), contents: contentsSchema })
+    .strict(),
 ]);
 
 export const SCATTER_KINDS = ["rock"] as const;

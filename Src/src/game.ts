@@ -1,5 +1,5 @@
 import { Group } from "three";
-import { createCharacter, createTransform, createWorld, type InteractionKind } from "./core/ecs";
+import { type Container, createCharacter, createTransform, createWorld } from "./core/ecs";
 import { startGameLoop } from "./core/gameLoop";
 import { createRandom } from "./core/random";
 import { createGameAudio } from "./audio/audio";
@@ -27,6 +27,7 @@ import {
   DEFAULT_VOLUME,
   FOOTSTEP_STRIDE,
   FOOTSTEP_VOLUME,
+  INTERACT_DISTANCE,
   MAX_HEALTH,
   MAX_THIRST,
   MIN_TEMPERATURE,
@@ -38,7 +39,9 @@ import { createDeathScreen } from "./ui/deathScreen";
 import { createCommandSystem } from "./gameplay/commands";
 import { createExposureSystem, createHealth, isDead } from "./gameplay/health";
 import { createInteractionSystem } from "./gameplay/interaction";
-import { addItems, createInventory, emptyInventory, parseBag, usedSlots } from "./gameplay/inventory";
+import { fillContainers } from "./gameplay/loot";
+import { containerState, createSearch, createSearchSystem, searchProgress } from "./gameplay/search";
+import { addItems, createInventory, emptyInventory, parseBag, roomFor, usedSlots } from "./gameplay/inventory";
 import { createTemperature, createTemperatureSystem, temperatureStage } from "./gameplay/temperature";
 import { createThirst, createThirstSystem } from "./gameplay/thirst";
 import { createLookSystem } from "./gameplay/lookSystem";
@@ -61,8 +64,9 @@ import { createCamera, createRenderer, fitToWindow, warmUpScene } from "./render
 import { createRenderSync } from "./render/renderSync";
 import { createBagWindow } from "./ui/bagWindow";
 import { createBenchPanel } from "./ui/benchPanel";
+import { type ContainerView, createContainerPanel } from "./ui/containerPanel";
 import { createHud } from "./ui/hud";
-import { bagView, bearingTo, createDamageCue, headingOf, hudAlerts, interactionCue, keyLabel, stepDamageCue } from "./ui/hudState";
+import { bagView, bearingTo, createDamageCue, headingOf, hudAlerts, interactionCue, keyLabel, type PromptKind, stepDamageCue } from "./ui/hudState";
 import { createLookHint } from "./ui/lookHint";
 import type { Ui } from "./ui/uiRoot";
 import { characterById, CHARACTERS } from "./render/characterCatalog";
@@ -108,6 +112,9 @@ const DEATH_NOTICE_SECONDS = 1.5;
 const DEATH_CAMERA_DISTANCE = 7;
 const DEATH_CAMERA_PITCH = -0.85;
 const DEATH_CAMERA_SECONDS = 1;
+
+/** Mixed into the game's seed for the containers' contents, so they have rolls of their own. */
+const LOOT_SEED_SALT = 0x9e3779b9;
 
 /** What the key that opens the bag window is called on screen. */
 const BAG_KEY_LABEL = "Tab";
@@ -212,6 +219,32 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   // rocks as plain shapes instead, for comparing looks and performance.
   const riverbed = loadDryRiverbed();
   const zoneDefinition = riverbed;
+  // One number decides a game's weather and what is in its containers. Each visit has its
+  // own unless `?seed=1` fixes it.
+  const pickSeed = (): number => numberParam(startParams.get("seed"), 0, 0xffffffff, Date.now() % 0xffffffff);
+  let gameSeed = pickSeed();
+  // The containers' states (opened, what is left) are kept here, not in the zone, so that
+  // they are still there when the zone is put up again.
+  const containerStates = new Map<string, Container>(
+    riverbed.containers.map((container) => [container.id, { kind: container.kind, opened: false, items: [] }]),
+  );
+  const showContainerStates = (): void => {
+    debug.containers.seed = gameSeed;
+    debug.containers.byId = Object.fromEntries(
+      [...containerStates].map(([id, state]) => [id, { opened: state.opened, items: state.items.map((stack) => `${stack.item} ${stack.count}`) }]),
+    );
+  };
+  /** Fills every container for the game with the current seed, and closes them all. */
+  const fillContainerStates = (): void => {
+    // A stream of its own, so the contents do not follow the weather's rolls.
+    const filled = fillContainers(riverbed.containers, (gameSeed ^ LOOT_SEED_SALT) >>> 0);
+    for (const [id, state] of containerStates) {
+      state.opened = false;
+      state.items = filled.get(id) ?? [];
+    }
+    showContainerStates();
+  };
+  fillContainerStates();
   const propLibraries = new Map<PropSetId, PropModelLibrary>();
   const buildZone = async (set: PropSetId): Promise<LoadedZone> => {
     let library = propLibraries.get(set);
@@ -229,6 +262,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       },
       rockModels: (rocks) => models.createRocks(PROP_SETS[set].rocks, rocks),
       pebbleColor: (PROP_SETS[set] as PropSet).pebbleColor,
+      containerState: (id) => containerStates.get(id),
     });
     debug.zone.id = zoneDefinition.id;
     debug.zone.nameKey = zoneDefinition.nameKey;
@@ -307,6 +341,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     view: createView(startYaw, START_PITCH),
     shelter: { zone: null },
     interaction: { target: null },
+    search: createSearch(),
     // `?health=10` starts hurt, for seeing what happens at zero without waiting.
     health: createHealth(numberParam(startParams.get("health"), 1, MAX_HEALTH, MAX_HEALTH)),
     // `?temperature=-90` starts chilled, for seeing the cold without standing out a night.
@@ -351,8 +386,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   const clock = newClock();
   // The weather follows the clock too. Each visit has weather of its own unless `?seed=1`
   // fixes it; `?storm=now` starts in a storm and `?storm=warning` with one announced.
-  const newWeather = (): ReturnType<typeof createWeather> =>
-    createWeather(numberParam(startParams.get("seed"), 0, 0xffffffff, Date.now() % 0xffffffff));
+  const newWeather = (): ReturnType<typeof createWeather> => createWeather(gameSeed);
   const weather = newWeather();
   const stormWish = startParams.get("storm");
   if (stormWish === "now" || stormWish === "warning") {
@@ -490,11 +524,57 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       debug.commands.done += 1;
       debug.commands.refused += result.ok ? 0 : 1;
       debug.commands.last = { type: result.command.type, ok: result.ok, moved: result.moved, reason: result.reason ?? null };
+      // A container the local player has just opened shows what is in it, if anything.
+      const { command } = result;
+      if (result.ok && command.type === "openContainer" && command.actor === LOCAL_PLAYER_ID) {
+        const view = containerView(command.container);
+        if (view && view.items.length > 0) {
+          containerPanel.open(view, bagView(player.inventory));
+        }
+      }
+      showContainerStates();
     }
+  };
+  // The panel of an opened container: what is in it, and taking it.
+  const containerPanel = createContainerPanel(ui, i18n, {
+    onTake: (container, index) => commands.push({ type: "takeItem", actor: LOCAL_PLAYER_ID, container, index }),
+    onTakeAll: (container) => commands.push({ type: "takeAll", actor: LOCAL_PLAYER_ID, container }),
+  });
+  const containerView = (id: string): ContainerView | undefined => {
+    const state = containerStates.get(id);
+    return state && {
+      id,
+      kind: state.kind,
+      items: state.items.map((stack) => ({ ...stack, fits: roomFor(player.inventory, stack.item) > 0 })),
+    };
+  };
+  const containers = world.with("container", "interactable", "transform");
+  /** Keeps the open panel in step with its container, and closes it when there is no more use for it. */
+  const showContainers = (): void => {
+    zone.showContainers();
+    debug.containers.panel = containerPanel.openId;
+    const openId = containerPanel.openId;
+    if (openId === null) {
+      return;
+    }
+    const view = containerView(openId);
+    let distance = Number.POSITIVE_INFINITY;
+    for (const entity of containers) {
+      if (entity.interactable.id === openId) {
+        distance = Math.hypot(entity.transform.x - player.transform.x, entity.transform.z - player.transform.z);
+      }
+    }
+    // Emptied, walked away from, or the player has collapsed.
+    if (!view || view.items.length === 0 || distance > INTERACT_DISTANCE || isDead(player.health)) {
+      containerPanel.close();
+      return;
+    }
+    containerPanel.update(view, bagView(player.inventory));
   };
   // What is in the bag is seen in the bag window (Tab); the HUD only says how full it is.
   const bagWindow = createBagWindow(ui, i18n, {
     canOpen: () => playing && !bench && !isDead(player.health),
+    listBeside: () => containerPanel.openId !== null,
     onDiscard: (slot) => commands.push({ type: "discardItem", actor: LOCAL_PLAYER_ID, slot, count: 1 }),
   });
   const showBag = (): void => {
@@ -507,19 +587,25 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   showBag();
   // What the player could use right now: the container they stand by and look towards.
   const interactionSystem = createInteractionSystem(world, physics);
+  const searchSystem = createSearchSystem(world, (command) => commands.push(command));
   const interactables = world.with("interactable");
   const interactKey = keyLabel(DEFAULT_KEY_BINDINGS.interact[0] ?? "");
   const showInteraction = (): void => {
     const target = player.interaction.target;
-    let targetKind: InteractionKind | null = null;
-    for (const { interactable } of interactables) {
-      if (interactable.id === target) {
-        targetKind = interactable.kind;
-      }
+    // What E would do depends on the container: search it, open it again, or nothing if it is empty.
+    let targetKind: PromptKind | null = null;
+    const targetState = target === null ? undefined : containerStates.get(target);
+    if (targetState) {
+      targetKind = ({ closed: "search", stocked: "open", empty: "empty" } as const)[containerState(targetState)];
     }
-    const cue = interactionCue({ targetKind, windowOpen: ui.openWindowId !== null, dead: isDead(player.health) });
-    // The ring fills while the key is held, from step 2.14 on.
-    hud.setInteraction(cue, interactKey, 0);
+    // The bag window does not hide the prompt: a container can be searched with the bag open.
+    const windowOpen = ui.centreWindowId !== null || containerPanel.openId !== null;
+    const cue = interactionCue({ targetKind, windowOpen, dead: isDead(player.health) });
+    // The ring fills while the key is held on a container not yet searched.
+    const progress = searchProgress(player.search);
+    hud.setInteraction(cue, interactKey, progress);
+    debug.player.search.target = player.search.target;
+    debug.player.search.progress = progress;
     debug.player.interaction = target;
     debug.zone.interactables = interactables.size;
     debug.hud.crosshair = cue.crosshair;
@@ -618,6 +704,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   const backToTitle = (): void => {
     endDeath();
     bagWindow.close();
+    containerPanel.close();
     playing = false;
     teleport(start.east, start.south, start.facing);
     player.view.pitch = START_PITCH;
@@ -627,6 +714,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     Object.assign(clock, newClock());
     delete weather.called;
     delete weather.calmDay;
+    // A new game: other weather, and the containers filled afresh.
+    gameSeed = pickSeed();
+    fillContainerStates();
     Object.assign(weather, newWeather());
     debug.weather.seed = weather.seed;
     debug.player.deaths = 0;
@@ -645,6 +735,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     if (!death) {
       death = { seconds: 0, asked: false };
       bagWindow.close();
+      containerPanel.close();
       debug.player.deaths += 1;
       debug.player.dead = true;
       deathScreen.darken(DEATH_NOTICE_SECONDS);
@@ -755,6 +846,16 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
             }
           });
         },
+        containers: () => ({
+          count: containerStates.size,
+          opened: [...containerStates.values()].filter((state) => state.opened).length,
+        }),
+        refillContainers: () => {
+          // Development only: other contents without starting the game again.
+          gameSeed = (gameSeed + 1) >>> 0;
+          containerPanel.close();
+          fillContainerStates();
+        },
         shelterZonesShown: () => shelterZones.visible,
         showShelterZones: (shown) => {
           shelterZones.setVisible(shown);
@@ -797,8 +898,10 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       // Behind the title and during a measurement there is nobody to use anything.
       if (playing && !bench) {
         interactionSystem();
+        searchSystem(dt);
       } else {
         player.interaction.target = null;
+        Object.assign(player.search, createSearch());
       }
       // Time stands still behind the title and during a measurement.
       if (playing && !bench) {
@@ -829,6 +932,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       showThirst();
       showInteraction();
       showBag();
+      showContainers();
       showAlerts(dt);
       if (playing && !bench) {
         soundFootsteps(dt);
@@ -847,6 +951,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       debug.ui.scale = ui.scale;
       debug.ui.tooSmall = ui.tooSmall;
       debug.ui.window = ui.openWindowId;
+      debug.ui.windows = ui.openWindowIds;
       debug.ui.selectedButton = ui.selectedButton;
       debug.camera.distance = cameraFit.distance;
       debug.camera.wantedDistance = wantedCameraDistance;
@@ -890,7 +995,13 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         debug.hud.compass.shelterOffset = mark.offset;
         debug.hud.compass.shelterBeyond = mark.beyond;
       }
-      wantedCameraDistance = applyZoom(wantedCameraDistance, mouse.takeWheel());
+      // With a container's panel open the wheel goes through its list instead of moving the camera.
+      const wheel = mouse.takeWheel();
+      if (containerPanel.openId !== null) {
+        containerPanel.scroll(wheel);
+      } else {
+        wantedCameraDistance = applyZoom(wantedCameraDistance, wheel);
+      }
       // The distance eases out by itself (updateCameraDistance), as it does after an obstacle.
       const reach = dead ? Math.max(wantedCameraDistance, DEATH_CAMERA_DISTANCE) : wantedCameraDistance;
       const fit = fitCamera(drawnAt, yaw, pitch, cameraSweep, reach);

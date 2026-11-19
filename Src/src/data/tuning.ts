@@ -174,3 +174,10 @@ export const MATERIAL_STACK = 5;
 export const CONSUMABLE_STACK = 3;
 /** What a bandage gives back (prototype design 4.1). */
 export const BANDAGE_HEALTH = 30;
+
+/** Searching a container for the first time: how long E is held, in seconds (prototype design 3.4). */
+export const SEARCH_SECONDS = 1.5;
+/** What the shelter's door takes to repair (prototype design 2.1). Containers are sure to hold this much. */
+export const REPAIR_NEEDS = { scrap: 15, cloth: 8, tape: 3 } as const;
+/** Of the amounts that are sure to be found, no container holds more than this many of one material. */
+export const GUARANTEED_PER_CONTAINER = 3;

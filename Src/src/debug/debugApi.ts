@@ -79,6 +79,8 @@ export interface GameDebug {
     /** The bag: what is in each slot (null for an empty one), and whether no slot is empty. */
     bag: Array<{ item: string; count: number } | null>;
     bagFull: boolean;
+    /** The search under way: the container being searched (null if none) and how far along it is, 0 to 1. */
+    search: { target: string | null; progress: number };
     /** What is drawn for the character: the model, or the capsule if the model could not be loaded. */
     model: "capsule" | "model";
     /** Id of the character model in the catalog (render/characterCatalog.ts). */
@@ -116,9 +118,10 @@ export interface GameDebug {
   bench: { state: "off" | "running" | "done"; progress: number; summary: BenchSummary | null; withinBudget: boolean | null };
   /**
    * The UI: its size factor (1 at a window height of 1080 px), whether the window is too
-   * small to play in, the id of the open window (null if none) and its selected button (-1 if none).
+   * small to play in, the id of the open window (null if none; of several at the side, the one
+   * that is offered keys first), the ids of all open windows, and the selected button (-1 if none).
    */
-  ui: { scale: number; tooSmall: boolean; window: string | null; selectedButton: number };
+  ui: { scale: number; tooSmall: boolean; window: string | null; windows: string[]; selectedButton: number };
   /** The game's clock: day (from 1), hour of the day with fractions, part of the day, and how fast it runs (1 is normal). */
   clock: { day: number; hour: number; phase: "day" | "dusk" | "night"; scale: number };
   /**
@@ -170,6 +173,11 @@ export interface GameDebug {
    * refused, and what became of the latest one.
    */
   commands: { done: number; refused: number; last: { type: string; ok: boolean; moved: number; reason: string | null } | null };
+  /**
+   * The containers, by id: whether each has been opened and what is left in it ("scrap 2").
+   * `panel` is the id of the container whose panel is open, or null; `seed` decided the contents.
+   */
+  containers: { byId: Record<string, { opened: boolean; items: string[] }>; panel: string | null; seed: number };
   /** Whether the shelter zones are drawn as boxes (development panel). */
   shelterZonesShown: boolean;
   /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
@@ -199,17 +207,18 @@ export function installDebugApi(language: Language): GameDebug {
     simSeconds: 0,
     entityCount: 0,
     bodyCount: 0,
-    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, shelter: null, health: 0, dead: false, deaths: 0, temperature: 0, temperatureStage: "comfortable", thirst: 0, interaction: null, bag: [], bagFull: false, model: "capsule", character: "", animation: "none" },
+    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, shelter: null, health: 0, dead: false, deaths: 0, temperature: 0, temperatureStage: "comfortable", thirst: 0, interaction: null, bag: [], bagFull: false, search: { target: null, progress: 0 }, model: "capsule", character: "", animation: "none" },
     zone: { id: "", nameKey: "", buildings: 0, shelterZones: 0, props: 0, propModels: 0, rockModels: false, propSet: "", rocks: 0, containers: 0, interactables: 0 },
     view: { yaw: 0, pitch: 0, looking: false },
     bench: { state: "off", progress: 0, summary: null, withinBudget: null },
-    ui: { scale: 1, tooSmall: false, window: null, selectedButton: -1 },
+    ui: { scale: 1, tooSmall: false, window: null, windows: [], selectedButton: -1 },
     clock: { day: 1, hour: 0, phase: "day", scale: 1 },
     weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0, wallDistance: 0, wallOpacity: 0 },
     sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0, visibility: 0 },
     audio: { state: "off", muted: false, windVolume: 0, windCutoffHz: 0, indoors: false, footsteps: 0 },
     hud: { storm: "none", stormRemaining: 0, edges: [], blinking: [], damage: null, compass: { heading: 0, shelterOffset: 0, shelterBeyond: 0 }, crosshair: "hidden", prompt: null },
     commands: { done: 0, refused: 0, last: null },
+    containers: { byId: {}, panel: null, seed: 0 },
     shelterZonesShown: false,
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },

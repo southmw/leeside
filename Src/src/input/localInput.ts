@@ -42,7 +42,8 @@ export function createLocalInput(options: LocalInputOptions = {}): LocalInput {
       if (!hasFocus()) {
         keyboard.releaseAll();
       }
-      const actions = actionsFromKeys(keyboard.pressed, bindings);
+      // Keys tapped between two steps count for this one, so a quick press is never lost.
+      const actions = actionsFromKeys(keyboard.takeHeld(), bindings);
       if (mouse) {
         const movement = mouse.takeMovement();
         actions.lookX = movement.x * sensitivity;

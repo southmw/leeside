@@ -48,7 +48,11 @@ const css = `
 }
 .ui-window.entering, .ui-window.leaving { opacity: 0; transform: translate(-50%, -46%); }
 /* A window to the side: top right, under the clock, so the character in the middle stays in sight. */
-.ui-window.side { left: auto; right: 1.25em; top: 5.2em; transform: none; }
+#ui-side { position: absolute; right: 1.25em; top: 5.2em; display: flex; align-items: flex-start; gap: 0.6em; }
+/* The row itself is not in the way of the mouse: only the windows in it are. */
+#ui > #ui-side { pointer-events: none; }
+#ui-side > * { pointer-events: auto; }
+.ui-window.side { position: static; transform: none; }
 .ui-window.side.entering, .ui-window.side.leaving { opacity: 0; transform: translateY(0.6em); }
 .ui-button:disabled { opacity: 0.3; cursor: default; border-style: dashed; }
 .ui-button:disabled .ui-key { background: rgba(232, 220, 192, 0.5); }
@@ -85,8 +89,16 @@ export interface UiWindowOptions {
   /** Anything else to show, between the bars and the buttons. */
   content?: HTMLElement;
   buttons: readonly UiButton[];
-  /** Where the window stands: in the middle of the screen (the default), or top right, clear of the character. */
+  /**
+   * Where the window stands: in the middle of the screen (the default), where it is the only
+   * window, or top right, clear of the character, where several stand side by side.
+   */
   placement?: "centre" | "side";
+  /**
+   * Among windows at the side: lower numbers stand further left and are offered keys first.
+   * Defaults to 0.
+   */
+  order?: number;
   /**
    * Called for every key pressed while the window is open, before the window's own keys.
    * Returning true means the key was used: it then goes neither to the buttons nor to the game.
@@ -109,11 +121,18 @@ export interface Ui {
   readonly scale: number;
   /** True while the window is below the smallest supported size and the notice is shown. */
   readonly tooSmall: boolean;
-  /** Id of the window that is open, or null. */
+  /** Id of the window that is open (of several at the side: the first to be offered keys), or null. */
   readonly openWindowId: string | null;
+  /** Id of the window open in the middle of the screen, or null. Side windows do not count. */
+  readonly centreWindowId: string | null;
+  /** Ids of all open windows, in the order they are offered keys. */
+  readonly openWindowIds: string[];
   /** Index of the selected button in the open window, or -1. */
   readonly selectedButton: number;
-  /** Opens a window. Only one is open at a time: opening another closes the current one. */
+  /**
+   * Opens a window. A window in the middle closes every other; windows at the side stay open
+   * next to each other, and one of the same id is replaced.
+   */
   openWindow(options: UiWindowOptions): UiWindow;
 }
 
@@ -146,15 +165,60 @@ export function createUi(i18n: I18n): Ui {
   i18n.onChange(layout);
   layout();
 
-  let current: { id: string; close(): void; selected(): number } | undefined;
+  /** An open window: how it is closed, and what it does with a key. */
+  interface OpenWindow {
+    id: string;
+    order: number;
+    close(): void;
+    selected(): number;
+    /** True if the window used the key, "pass" if the game is to have it at once, false if it is not the window's. */
+    handleKey(event: KeyboardEvent): boolean | "pass";
+  }
+  // A window in the middle is alone on screen. Windows at the side stand next to each other.
+  let centre: OpenWindow | undefined;
+  let sides: OpenWindow[] = [];
+  const sideRow = document.createElement("div");
+  sideRow.id = "ui-side";
+  root.append(sideRow);
+  /** The open windows in the order they are offered a key. */
+  const openWindows = (): OpenWindow[] => (centre ? [centre] : [...sides].sort((one, other) => one.order - other.order));
+
+  // Capture phase, and stopped there: keys a window uses must not also reach the game
+  // (Escape would open the pause screen). Side windows are asked one after the other.
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      for (const open of openWindows()) {
+        const used = open.handleKey(event);
+        if (used === "pass") {
+          return;
+        }
+        if (used) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+      }
+    },
+    true,
+  );
 
   const openWindow = (options: UiWindowOptions): UiWindow => {
-    current?.close();
+    const atSide = options.placement === "side";
+    // A window in the middle takes the screen for itself. At the side only a window of the
+    // same name makes way.
+    centre?.close();
+    for (const open of [...sides]) {
+      if (!atSide || open.id === options.id) {
+        open.close();
+      }
+    }
 
     const panel = document.createElement("div");
-    panel.className = `ui-panel ui-window entering${options.placement === "side" ? " side" : ""}`;
+    panel.className = `ui-panel ui-window entering${atSide ? " side" : ""}`;
     panel.dataset.window = options.id;
     panel.setAttribute("role", "dialog");
+    panel.style.order = String(options.order ?? 0);
 
     const title = document.createElement("h2");
     title.className = "ui-title";
@@ -193,26 +257,19 @@ export function createUi(i18n: I18n): Ui {
     };
     select(0);
 
-    // Capture phase, and stopped there: keys the window uses must not also reach the game
-    // (Space would jump, Escape would open the pause screen).
-    const onKeyDown = (event: KeyboardEvent): void => {
+    const handleKey = (event: KeyboardEvent): boolean | "pass" => {
       const used = options.onKey?.(event);
-      if (used === "pass") {
-        return;
-      }
       if (used) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        return;
+        return used;
       }
       const action = menuAction(event.code, event.shiftKey);
-      if (!action) {
-        return;
+      // A window without buttons has nothing to move through or to press: of the keys for
+      // that only Escape is its own, and the rest go on to the next window or to the game.
+      if (!action || (buttons.length === 0 && action !== "close")) {
+        return false;
       }
-      event.preventDefault();
-      event.stopImmediatePropagation();
       if (event.repeat && (action === "activate" || action === "close")) {
-        return;
+        return true;
       }
       if (action === "close") {
         close();
@@ -221,28 +278,34 @@ export function createUi(i18n: I18n): Ui {
       } else {
         select(moveSelection(selected, buttons.length, action));
       }
+      return true;
     };
-    window.addEventListener("keydown", onKeyDown, true);
 
     let closed = false;
+    const entry: OpenWindow = { id: options.id, order: options.order ?? 0, close: () => close(), selected: () => selected, handleKey };
     const close = (): void => {
       if (closed) {
         return;
       }
       closed = true;
-      window.removeEventListener("keydown", onKeyDown, true);
-      if (current?.id === options.id && current.close === close) {
-        current = undefined;
+      if (centre === entry) {
+        centre = undefined;
       }
+      sides = sides.filter((open) => open !== entry);
       panel.classList.add("leaving");
       window.setTimeout(() => panel.remove(), WINDOW_TRANSITION_MS);
       options.onClose?.();
     };
 
-    root.append(panel);
+    if (atSide) {
+      sides.push(entry);
+      sideRow.append(panel);
+    } else {
+      centre = entry;
+      root.append(panel);
+    }
     // Let the browser draw the starting state once, then remove it so the transition plays.
     requestAnimationFrame(() => panel.classList.remove("entering"));
-    current = { id: options.id, close, selected: () => selected };
     return { close };
   };
 
@@ -255,10 +318,16 @@ export function createUi(i18n: I18n): Ui {
       return tooSmall;
     },
     get openWindowId(): string | null {
-      return current?.id ?? null;
+      return openWindows()[0]?.id ?? null;
+    },
+    get centreWindowId(): string | null {
+      return centre?.id ?? null;
+    },
+    get openWindowIds(): string[] {
+      return openWindows().map((open) => open.id);
     },
     get selectedButton(): number {
-      return current?.selected() ?? -1;
+      return openWindows()[0]?.selected() ?? -1;
     },
     openWindow,
   };

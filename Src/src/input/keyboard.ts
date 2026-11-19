@@ -4,6 +4,12 @@ export type KeyboardTarget = Pick<Window, "addEventListener" | "removeEventListe
 export interface Keyboard {
   /** Codes of the keys currently held down (`KeyboardEvent.code`). */
   readonly pressed: ReadonlySet<string>;
+  /**
+   * The keys to count as down for one simulation step: those held now, and those pressed and
+   * let go again since the last call. Without the second kind a quick tap that falls between
+   * two steps (a long frame is enough) would never be seen. The set is reused by the next call.
+   */
+  takeHeld(): ReadonlySet<string>;
   /** Forgets every held key. A key that is still physically down comes back with its next repeat. */
   releaseAll(): void;
   dispose(): void;
@@ -21,15 +27,20 @@ export interface Keyboard {
  */
 export function createKeyboard(target: KeyboardTarget = window): Keyboard {
   const pressed = new Set<string>();
+  /** Keys that have gone down since the last `takeHeld`, whether or not they are still down. */
+  const tapped = new Set<string>();
+  const held = new Set<string>();
 
   const onKeyDown = (event: KeyboardEvent): void => {
     pressed.add(event.code);
+    tapped.add(event.code);
   };
   const onKeyUp = (event: KeyboardEvent): void => {
     pressed.delete(event.code);
   };
   const releaseAll = (): void => {
     pressed.clear();
+    tapped.clear();
   };
   const onContextMenu = (event: Event): void => {
     event.preventDefault();
@@ -44,6 +55,17 @@ export function createKeyboard(target: KeyboardTarget = window): Keyboard {
 
   return {
     pressed,
+    takeHeld(): ReadonlySet<string> {
+      held.clear();
+      for (const code of pressed) {
+        held.add(code);
+      }
+      for (const code of tapped) {
+        held.add(code);
+      }
+      tapped.clear();
+      return held;
+    },
     releaseAll,
     dispose(): void {
       target.removeEventListener("keydown", onKeyDown);
@@ -52,6 +74,7 @@ export function createKeyboard(target: KeyboardTarget = window): Keyboard {
       target.removeEventListener("visibilitychange", releaseAll);
       target.removeEventListener("contextmenu", onContextMenu);
       pressed.clear();
+      tapped.clear();
     },
   };
 }

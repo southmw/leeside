@@ -23,6 +23,17 @@ export const CONTAINER_SHAPES: Readonly<Record<"cabinet" | "crate", ContainerSha
   crate: { size: [0.9, 0.6, 0.6], color: 0xa58a4e },
 };
 
+/** How much darker a cabinet or crate is drawn once it has been opened (1 is unchanged). */
+export const OPENED_SHADE = 0.5;
+
+/** The lid of an opened trunk, in metres: a placeholder for a model with a boot that opens. */
+const LID_HEIGHT = 0.6;
+const LID_THICKNESS = 0.08;
+const LID_WIDTH_RATIO = 0.65;
+const LID_INSET = 0.5;
+const LID_SUNK = 0.15;
+const LID_COLOR = 0x3f4650;
+
 /** How far from a container's interaction point someone is put to use it, in metres. */
 const APPROACH_DISTANCE = 1.2;
 
@@ -35,6 +46,8 @@ export interface PlacedContainer {
   front: { x: number; z: number };
   /** The box it is drawn as and collides with. A trunk has none: the car is there already. */
   box?: PropBox;
+  /** For a trunk: the lid that stands up at the back of the car once it has been opened. Only drawn. */
+  lid?: PropBox;
 }
 
 function boxOn(
@@ -75,12 +88,22 @@ export function placeContainer(
     const [east, south] = prop.position;
     const yaw = yawFromDegrees(prop.rotation);
     // The cars' models have their back at -Z (the brake lights are there); so do the boxes.
-    const back = rotateOffset(0, -propSize(prop, set)[2] / 2, yaw);
+    const [width, height, length] = propSize(prop, set);
+    const back = rotateOffset(0, -length / 2, yaw);
+    const ground = groundAt(east, south);
+    // The lid: a board standing up over the back end, a little in from it.
+    const lidAt = rotateOffset(0, -length / 2 + LID_INSET, yaw);
     return {
       id,
       kind,
-      point: { x: east + back.x, y: groundAt(east, south), z: south + back.z },
+      point: { x: east + back.x, y: ground, z: south + back.z },
       front: rotateOffset(0, -1, yaw),
+      lid: {
+        center: { x: east + lidAt.x, y: ground + height + LID_HEIGHT / 2 - LID_SUNK, z: south + lidAt.z },
+        halfExtents: { x: (width * LID_WIDTH_RATIO) / 2, y: LID_HEIGHT / 2, z: LID_THICKNESS / 2 },
+        yaw,
+        color: LID_COLOR,
+      },
     };
   }
 

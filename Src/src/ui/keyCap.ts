@@ -9,6 +9,11 @@ export const KEY_MARK = "\uE000";
 
 /** Writes `sentence` into `node`, with a box saying `key` where the sentence has `KEY_MARK`. */
 export function setKeyText(node: HTMLElement, sentence: string, key: string): void {
+  // A sentence that names no key is plain text.
+  if (!sentence.includes(KEY_MARK)) {
+    node.textContent = sentence;
+    return;
+  }
   const [before = "", after = ""] = sentence.split(KEY_MARK);
   const box = document.createElement("span");
   box.className = "ui-key";

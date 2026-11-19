@@ -82,3 +82,42 @@ describe("createLocalInput", () => {
     expect(input.sample().moveY).toBe(1);
   });
 });
+
+describe("takeHeld", () => {
+  it("gives the keys that are down", () => {
+    const { keyboard, key } = setup();
+    key("keydown", "KeyW");
+    expect([...keyboard.takeHeld()]).toEqual(["KeyW"]);
+    expect([...keyboard.takeHeld()]).toEqual(["KeyW"]);
+    key("keyup", "KeyW");
+    expect([...keyboard.takeHeld()]).toEqual([]);
+  });
+
+  it("gives a key pressed and let go between two calls once, so a quick tap is not lost", () => {
+    const { keyboard, key } = setup();
+    key("keydown", "KeyE");
+    key("keyup", "KeyE");
+    expect([...keyboard.takeHeld()]).toEqual(["KeyE"]);
+    expect([...keyboard.takeHeld()]).toEqual([]);
+  });
+
+  it("forgets taps when every key is released", () => {
+    const { target, keyboard, key } = setup();
+    key("keydown", "KeyE");
+    key("keyup", "KeyE");
+    target.dispatchEvent(new Event("blur"));
+    expect([...keyboard.takeHeld()]).toEqual([]);
+  });
+});
+
+describe("a quick tap in local input", () => {
+  it("is part of the next step's actions and of no step after it", () => {
+    const target = new EventTarget();
+    const input = createLocalInput({ target: target as unknown as KeyboardTarget, hasFocus: () => true });
+    target.dispatchEvent(Object.assign(new Event("keydown"), { code: "KeyE" }));
+    target.dispatchEvent(Object.assign(new Event("keyup"), { code: "KeyE" }));
+    expect(input.sample().interact).toBe(true);
+    expect(input.sample().interact).toBe(false);
+    input.dispose();
+  });
+});

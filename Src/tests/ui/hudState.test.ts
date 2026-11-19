@@ -17,6 +17,7 @@ import {
   relativeBearing,
   stepDamageCue,
 } from "../../src/ui/hudState";
+import { moveListSelection } from "../../src/ui/containerPanel";
 import { ringFill } from "../../src/ui/progressRing";
 import { yawFromDegrees } from "../../src/world/building";
 
@@ -199,6 +200,11 @@ describe("interactionCue", () => {
     expect(interactionCue({ ...nothing, targetKind: "search" })).toEqual({ crosshair: "target", prompt: "search" });
   });
 
+  it("says what the container allows: open one searched before, or only that it is empty", () => {
+    expect(interactionCue({ ...nothing, targetKind: "open" })).toEqual({ crosshair: "target", prompt: "open" });
+    expect(interactionCue({ ...nothing, targetKind: "empty" })).toEqual({ crosshair: "target", prompt: "empty" });
+  });
+
   it("shows neither while a window is open or the character lies collapsed", () => {
     const hidden = { crosshair: "hidden", prompt: null };
     expect(interactionCue({ ...nothing, targetKind: "search", windowOpen: true })).toEqual(hidden);
@@ -302,5 +308,19 @@ describe("moveGridSelection", () => {
     expect(moveGridSelection(3, 6, 4, "down")).toBe(3);
     expect(moveGridSelection(1, 6, 4, "down")).toBe(5);
     expect(moveGridSelection(5, 6, 4, "right")).toBe(5);
+  });
+});
+
+describe("moveListSelection", () => {
+  it("steps down and up the list and stops at its ends", () => {
+    expect(moveListSelection(0, 3, 1)).toBe(1);
+    expect(moveListSelection(1, 3, -1)).toBe(0);
+    expect(moveListSelection(0, 3, -1)).toBe(0);
+    expect(moveListSelection(2, 3, 1)).toBe(2);
+  });
+
+  it("comes back within a list that has grown shorter", () => {
+    expect(moveListSelection(2, 2, 0)).toBe(1);
+    expect(moveListSelection(4, 0, 0)).toBe(0);
   });
 });

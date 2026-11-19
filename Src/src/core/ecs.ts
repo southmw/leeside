@@ -1,6 +1,6 @@
 import { World } from "miniplex";
 import type { Object3D } from "three";
-import type { Inventory } from "../gameplay/inventory";
+import type { Inventory, ItemStack } from "../gameplay/inventory";
 import type { VerticalState } from "../gameplay/verticalMotion";
 import type { View } from "../gameplay/view";
 import type { PlayerActions } from "../input/actions";
@@ -102,6 +102,30 @@ export interface Interactable {
   solid?: number;
 }
 
+export type ContainerKind = "trunk" | "cabinet" | "crate";
+
+/**
+ * Something to search (gameplay/loot.ts, gameplay/search.ts): whether it has been opened and
+ * what is left in it. The state outlives the entity: it is kept when a zone is taken down and
+ * handed to the entity again when the zone comes back.
+ */
+export interface Container {
+  kind: ContainerKind;
+  opened: boolean;
+  /** One entry per kind of thing; no stack limit in here. */
+  items: ItemStack[];
+}
+
+/** A player's search under way (gameplay/search.ts). */
+export interface Search {
+  /** Id of the container being searched; null when none is. */
+  target: string | null;
+  /** How long the key has been held on it. */
+  seconds: number;
+  /** Whether the interaction key was down in the last step, to tell a press from a hold. */
+  held: boolean;
+}
+
 /** What an entity could use right now, as of the latest step. */
 export interface Interaction {
   /** Id of the interactable; null when there is none in reach and in view. */
@@ -135,6 +159,10 @@ export interface Entity {
   shelterZone?: ShelterZone;
   /** What the entity carries: a player's bag (gameplay/inventory.ts). */
   inventory?: Inventory;
+  /** Makes the entity a container to search; it is an `interactable` too. */
+  container?: Container;
+  /** Kept for entities that can search (players). */
+  search?: Search;
   /** Makes the entity something to interact with; needs a `transform`. */
   interactable?: Interactable;
   /** Kept up to date for entities that can interact (players); needs a `view`. */

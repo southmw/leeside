@@ -8,7 +8,8 @@ import type { Ui, UiWindow } from "./uiRoot";
 /**
  * The bag window (UI design 7): the one place where what is in the bag is seen. Tab opens
  * and closes it, the game runs on beside it, and it follows the bag as the bag changes. It
- * stands top right, so the character and what is coming at them stay in sight.
+ * stands top right, so the character and what is coming at them stay in sight, and a
+ * container's panel can stand open next to it.
  * It changes nothing itself: throwing something out is asked for through `onDiscard`.
  */
 
@@ -23,10 +24,8 @@ const ARROWS: Readonly<Record<string, "left" | "right" | "up" | "down">> = {
   ArrowUp: "up",
   ArrowDown: "down",
 };
-/** Keys that would press a window's selected button. This window has none to press that way. */
-const UNUSED_KEYS = ["Enter", "NumpadEnter"];
-/** Jumping goes on with the bag open, like walking: the storm does not wait for the bag to be shut. */
-const JUMP_KEY = "Space";
+/** Among the windows at the side the bag stands on the right, after a container's panel. */
+const SIDE_ORDER = 1;
 
 const css = `
 #bag-window { min-width: 21em; }
@@ -53,6 +52,11 @@ const css = `
 export interface BagWindowOptions {
   /** Whether the window may be opened now (in play, the character standing). */
   canOpen(): boolean;
+  /**
+   * Whether a list stands beside the bag (a container's panel) that the up and down keys go
+   * through. Then left and right walk through all the bag's slots, one after the other.
+   */
+  listBeside(): boolean;
   /** Asks for one thing to be thrown out of a slot. */
   onDiscard(slot: number): void;
 }
@@ -165,11 +169,15 @@ export function createBagWindow(ui: Ui, i18n: I18n, options: BagWindowOptions): 
       title: i18n.t("bag.title"),
       content,
       placement: "side",
+      order: SIDE_ORDER,
       buttons: [],
       onKey: (event) => {
         const direction = ARROWS[event.code];
         if (direction) {
-          selected = moveGridSelection(selected, bag.slots.length, BAG_COLUMNS, direction);
+          // Beside a list the slots are one long row: left and right reach every one of them.
+          selected = options.listBeside()
+            ? moveGridSelection(selected, bag.slots.length, bag.slots.length, direction)
+            : moveGridSelection(selected, bag.slots.length, BAG_COLUMNS, direction);
           render();
           return true;
         }
@@ -186,10 +194,7 @@ export function createBagWindow(ui: Ui, i18n: I18n, options: BagWindowOptions): 
           }
           return true;
         }
-        if (event.code === JUMP_KEY) {
-          return "pass";
-        }
-        return UNUSED_KEYS.includes(event.code);
+        return false;
       },
       onClose: () => {
         open = undefined;
@@ -206,7 +211,8 @@ export function createBagWindow(ui: Ui, i18n: I18n, options: BagWindowOptions): 
     }
     // Tab must not walk the browser's focus through the page, in or out of play.
     event.preventDefault();
-    if (!event.repeat && !open && ui.openWindowId === null && options.canOpen()) {
+    // A window in the middle of the screen has the keys; a container's panel at the side does not mind.
+    if (!event.repeat && !open && ui.centreWindowId === null && options.canOpen()) {
       selected = 0;
       show();
     }

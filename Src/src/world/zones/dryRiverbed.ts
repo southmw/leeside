@@ -42,7 +42,17 @@ const props = [
  */
 const containers = [
   { id: "car_line_trunk", kind: "trunk", prop: "car_line" },
-  { id: "car_line_second_trunk", kind: "trunk", prop: "car_line_second" },
+  // The first container the player comes to from the start, and the one the introduction
+  // leads to: what is in it is always the same (prototype design 4.2).
+  {
+    id: "car_line_second_trunk",
+    kind: "trunk",
+    prop: "car_line_second",
+    contents: [
+      { item: "water_bottle", count: 1 },
+      { item: "cloth", count: 2 },
+    ],
+  },
   { id: "abandoned_car_trunk", kind: "trunk", prop: "abandoned_car" },
   { id: "overturned_car_trunk", kind: "trunk", prop: "overturned_car" },
   // In each house: one on the wall facing the door, 2 m north of its middle, and one on the
