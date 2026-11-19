@@ -42,6 +42,7 @@
 ToyProject/
 ├─ CLAUDE.md       작업 규칙과 결정 요약 (작업하는 쪽을 위한 문서)
 ├─ README.md       저장소 소개 (방문하는 사람을 위한 문서)
+├─ .claude/        밖에서 가져온 Claude Code 스킬. skills/는 지금 쓰는 것, skills-shelf/는 치워 둔 것 (아래 "외부 스킬")
 ├─ DOC/            설계 문서와 아이콘 원본 (게임이 쓰는 아이콘은 `Src/src/ui/icons/`에 복사해 둔다)
 │  └─ icons/       시제품용 아이콘 18종 (SVG)과 미리 보기
 └─ Src/            코드 프로젝트 전체
@@ -213,6 +214,45 @@ ToyProject/
 - **안개는 캐릭터에서부터 센다.** Three.js의 안개 셰이더 조각을 갈아 끼웠다(`render/sky.ts`의 `countHazeFromFocus`, 기술 설계서 9.2). Three.js 버전을 올릴 때 확인한다.
 - **새로 올린 것은 로딩 중에 한 번 그려 둔다.** 모델이 플레이 중에 처음 화면에 들어오면 그 순간 끊긴다. 구역이나 모델을 올린 뒤 `render/renderer.ts`의 `warmUpScene`을 부른다.
 - **성능 판단은 실측으로 한다.** 예산은 `src/debug/perfBudget.ts`에 있다. 긴 프레임의 기준은 34ms와 50ms다.
+
+## 외부 스킬
+
+밖에서 가져온 스킬 81개가 있다. 지금 쓰는 11개는 `.claude/skills/`에 있어 세션마다 목록에 올라오고, 나머지 70개는 `.claude/skills-shelf/`에 치워 두었다(목록에 올라오지 않아 컨텍스트를 쓰지 않는다). 해당하는 작업을 할 때 불러서 참고한다. 2026-11-19에 내용을 살펴보고 가져왔다. 폴더마다 LICENSE가 있다.
+
+### 지금 쓰는 것 (`.claude/skills/`)
+
+| 스킬 | 언제 쓰는가 | 출처 |
+|---|---|---|
+| `threejs-debug-profiler` | 화면이 안 나오거나 그리기, 로딩, 소리, 루프에 문제가 있을 때. 성능의 원인을 찾을 때 | majidmanzarpour/threejs-game-skills (8286774), MIT |
+| `threejs-game-ui-designer` | HUD, 창, 메뉴를 만들거나 고칠 때 | 같은 곳 |
+| `threejs-gameplay-systems` | 조작감과 반응(줍기, 피해 표시, 화면 흔들림)을 다듬을 때, 물리를 바꿀 때 | 같은 곳 |
+| `threejs-qa-release` | 스모크 테스트를 넓히거나 배포용 빌드를 점검할 때(2.27 단계 등) | 같은 곳 |
+| `threejs-aaa-graphics-builder` | 셰이더, 조명, 안개, 인스턴싱과 LOD, 그리기 예산을 다룰 때 | 같은 곳 |
+| `game-perf` | 프레임이 끊기는 코드 유형을 훑을 때(`/game-perf Src/src`). 6~10번 유형만 해당한다(1~5번은 React용) | gykim80/andrew_game_perf (d0976ee), MIT |
+| `build-game-inventory` | 가방, 상자 수색, 물건 사용을 만들 때 | MengTo/Skills (1a32b45), MIT |
+| `create-game-vfx`, `build-game-audio-feedback`, `build-game-camera-controls`, `ship-web-games` | 효과, 소리 반응, 카메라, 배포를 다룰 때 훑어보는 짧은 점검표 | 같은 곳 |
+
+### 치워 둔 것 (`.claude/skills-shelf/`)
+
+필요해지면 해당 폴더를 `.claude/skills/`로 옮긴다(`mv .claude/skills-shelf/blender-* .claude/skills/`). 옮긴 스킬은 다음 세션부터 목록에 나온다. 옮기지 않고 `SKILL.md`를 직접 읽어 참고해도 된다. 프로젝트가 그 단계에 들어가면(전투를 만들기 시작할 때 등) 사용자에게 옮기자고 먼저 말한다.
+
+| 스킬 | 언제 쓰는가 | 출처 |
+|---|---|---|
+| `design-action-combat`, `design-game-encounters`, `tune-enemy-ai`, `build-threejs-enemy-systems`, `build-game-monster-system` | 전투와 적을 만들 때(시제품에는 없다. M3 이후) | MengTo/Skills (1a32b45), MIT |
+| `blender-*` (28개) | Blender로 모델을 만들거나 고치거나 내보낼 때. `blender-core`가 입구이고 나머지로 안내한다. 웹용 GLB 내보내기는 `blender-export-pipelines`, 무게 줄이기는 `blender-game-optimization`, 끝내기 전 검사는 `blender-asset-qa` | EL4CTEO/blender-skills (9e7e04a), MIT |
+| `threejs-game-director` | Three.js 게임을 통째로 만들거나 끝낼 때 여러 `threejs-*` 스킬에 일을 나누는 입구. 이 프로젝트의 단계별 진행과 맞지 않아 치워 두었다 | majidmanzarpour/threejs-game-skills (8286774), MIT |
+| Unity 스킬 36개 (`unity-cli`, `new-unity-project`, `ui`, `optimize-web`, `build-multiplayer-game` 등) | Unity 프로젝트에서만 쓴다 | Unity-Technologies/skills (5841a34), Unity Companion License |
+
+### 쓸 때 지킬 것
+
+- **이 문서의 규칙이 스킬보다 우선한다.** 스킬은 참고 자료다. 스킬이 모바일과 터치, 새 패키지 설치, 새 프로젝트 틀 만들기를 권해도 따르지 않는다(모바일 미지원, 설치 전 확인, 설계 먼저).
+- **Unity 스킬은 LEESIDE 작업에 쓰지 않는다.** LEESIDE는 Three.js 게임이다. `ui`, `optimize-web`, `optimize-audio`, `fix-3d-physics-collisions`처럼 이름이 일반적인 것도 Unity용이므로, 이 게임의 HUD나 성능 작업에서 부르지 않는다.
+- **Unity 스킬은 커밋하지 않는다.** Unity Companion License는 Unity와 함께 쓰는 경우에만 허용하므로 `.claude/skills-shelf/.gitignore`로 저장소에서 뺐다. 다른 PC에서는 다시 받아야 한다(`npx skills add Unity-Technologies/skills`).
+- **유료 기능이 있어야 하는 스킬은 넣지 않는다.** 2026-11-19에 사용자가 정했다. 그래서 AI 에셋 생성 스킬 3종(`threejs-3d-generator`, `threejs-image-generator`, `threejs-audio-generator`. Tripo, Gemini, ElevenLabs의 키가 필요)과 Unity의 `asset-transformer-toolkit`(유료 라이선스)을 뺐다. 남은 스킬이 이 생성 스킬을 가리키면 따르지 않는다. 에셋은 CC0만 쓴다.
+- **Blender 스킬은 5.3 기준이다.** 이 PC에는 5.0이 깔려 있다(2026-11-19 확인). 스크립트가 5.2 이후의 API를 쓰는 곳이 있으므로 쓰기 전에 `blender-core`의 버전 안내를 본다. Blender에서 만든 모델도 `Src/assets-src/`에 원본을 두고 변환 스크립트로 넣는 규칙은 같다.
+- 지금 쓰는 Three.js 스킬 5개는 본문과 참고 문서만 가져왔다. 새 게임을 만드는 틀과 검사 스크립트는 가져오지 않았으므로, 스킬이 그 파일을 가리키면 이 프로젝트의 스모크 테스트와 `?bench`를 대신 쓴다.
+- `threejs-aaa-graphics-builder`의 "AAA" 기준과 점수표는 로우폴리 방향과 맞지 않는다. 기법(셰이더, 예산, 인스턴싱)만 참고한다.
+- 성능은 여전히 실측으로 판단한다. `game-perf`가 찾은 것은 후보일 뿐이고, 고치기 전후를 `?bench`로 잰다.
 
 ## 아직 정해지지 않은 것
 
