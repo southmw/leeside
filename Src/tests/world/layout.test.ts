@@ -1,7 +1,11 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { createWorld } from "../../src/core/ecs";
+import { createTransform, createWorld } from "../../src/core/ecs";
 import { CHARACTER_HEIGHT, MOVE_SPEED } from "../../src/data/tuning";
+import { createInteractionSystem } from "../../src/gameplay/interaction";
+import { createView } from "../../src/gameplay/view";
 import { CHARACTER_SKIN, initPhysics, PhysicsWorld } from "../../src/physics/physicsWorld";
+import { yawFromDegrees } from "../../src/world/building";
+import { containerApproach, placeContainer } from "../../src/world/containers";
 import { boundaryWalls } from "../../src/world/boundary";
 import { propModelFor } from "../../src/world/propModels";
 import { PROP_SHAPES, propBox, propRadius, propSize } from "../../src/world/props";
@@ -235,10 +239,12 @@ describe("the loaded zone", () => {
     const loaded = loadZone(zone, physics, scene);
     const largeRocks = scatterItems(zone, rocksEntry).filter((rock) => rock.size >= ROCK_COLLIDER_MIN_SIZE).length;
 
-    // Terrain, 7 boxes per building, one per prop, the large rocks, and 4 boundary walls.
-    expect(physics.bodyCount).toBe(1 + zone.buildings.length * 7 + zone.props.length + largeRocks + 4);
-    // Terrain, building boxes, props, and one mesh for all rocks. Boundary walls are invisible.
-    expect(scene.objects.size).toBe(1 + zone.buildings.length * 7 + zone.props.length + 1);
+    // Cabinets and crates are boxes of their own; a trunk is part of its car.
+    const boxed = zone.containers.filter((container) => container.kind !== "trunk").length;
+    // Terrain, 7 boxes per building, one per prop and boxed container, the large rocks, and 4 boundary walls.
+    expect(physics.bodyCount).toBe(1 + zone.buildings.length * 7 + zone.props.length + boxed + largeRocks + 4);
+    // Terrain, building boxes, props, boxed containers, and one mesh for all rocks. Boundary walls are invisible.
+    expect(scene.objects.size).toBe(1 + zone.buildings.length * 7 + zone.props.length + boxed + 1);
     expect(loaded.rockCount).toBeGreaterThan(1000);
 
     loaded.unload();
@@ -262,6 +268,62 @@ describe("the loaded zone", () => {
 
     loaded.unload();
     expect(world.entities).toHaveLength(0);
+    physics.dispose();
+  });
+
+  it("puts every container into the world as something to interact with and takes them out on unload", () => {
+    const physics = new PhysicsWorld();
+    const world = createWorld();
+    const loaded = loadZone(zone, physics, fakeScene(), { world });
+    const targets = [...world.with("interactable", "transform")];
+    expect(loaded.containerCount).toBe(14);
+    expect(targets.map((entity) => entity.interactable.id).sort()).toEqual(zone.containers.map((container) => container.id).sort());
+    expect(targets.every((entity) => entity.interactable.kind === "search")).toBe(true);
+    // Each knows the solid thing it is: its own box, or its car.
+    expect(targets.every((entity) => entity.interactable.solid !== undefined)).toBe(true);
+    // Each is where the ground is: a crate out of doors stands on the terrain.
+    const crate = targets.find((entity) => entity.interactable.id === "well_crate");
+    expect(crate?.transform.y).toBeCloseTo(heightAt(loaded.terrain, 406, 114));
+    loaded.unload();
+    expect(world.entities).toHaveLength(0);
+    physics.dispose();
+  });
+
+  it("lets every container be reached from in front of it, and no cabinet through the wall behind it", () => {
+    const physics = new PhysicsWorld();
+    const world = createWorld();
+    const loaded = loadZone(zone, physics, fakeScene(), { world });
+    physics.step();
+    const player = world.add({
+      transform: createTransform(0, 0, 0),
+      view: createView(0),
+      interaction: { target: null as string | null },
+    });
+    const step = createInteractionSystem(world, physics);
+    const standAt = (east: number, south: number, facing: number, ground: number): void => {
+      player.transform.x = east;
+      player.transform.y = ground + CHARACTER_HEIGHT / 2;
+      player.transform.z = south;
+      player.view.yaw = yawFromDegrees(facing);
+      step();
+    };
+    const ground = (east: number, south: number): number => heightAt(loaded.terrain, east, south);
+
+    for (const container of zone.containers) {
+      const placed = placeContainer(container, zone, ground);
+      const front = containerApproach(placed);
+      standAt(front.east, front.south, front.facing, placed.point.y);
+      expect(player.interaction.target, `${container.id} from in front`).toBe(container.id);
+
+      if (container.kind === "cabinet") {
+        // The same distance the other way is outside the wall the cabinet stands against.
+        const east = 2 * placed.point.x - front.east;
+        const south = 2 * placed.point.z - front.south;
+        standAt(east, south, front.facing + 180, placed.point.y);
+        expect(player.interaction.target, `${container.id} through its wall`).toBeNull();
+      }
+    }
+    loaded.unload();
     physics.dispose();
   });
 

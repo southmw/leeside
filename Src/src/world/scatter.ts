@@ -1,12 +1,13 @@
 import { createRandom } from "../core/random";
+import { CRATE_RADIUS } from "./containers";
 import { DEFAULT_PROP_SET, type PropSetId } from "./propModels";
 import { propRadius } from "./props";
 import type { ZoneDefinition } from "./zoneDefinition";
 
 /**
  * Scattered clutter (rocks). Where each piece lies is computed from a fixed seed, so it is
- * the same for every player and every run, and nothing lands on a building, a prop or the
- * starting point.
+ * the same for every player and every run, and nothing lands on a building, a prop, a crate
+ * or the starting point.
  */
 
 export interface ScatterItem {
@@ -25,6 +26,8 @@ export const ROCK_MAX_SIZE = 1.5;
 const EDGE_MARGIN = 3;
 const BUILDING_MARGIN = 3;
 const PROP_MARGIN = 2;
+/** Enough room to walk round a crate. Cabinets are indoors and trunks are part of a prop. */
+const CRATE_MARGIN = 1;
 const START_CLEARANCE = 6;
 /** Gives up on placing a piece after this many tries, so a crowded zone cannot hang the game. */
 const MAX_TRIES_PER_ITEM = 30;
@@ -50,6 +53,11 @@ function clearances(zone: ZoneDefinition, set: PropSetId): Clearance[] {
       z: prop.position[1],
       radius: propRadius(prop, set) + PROP_MARGIN,
     })),
+    ...zone.containers.flatMap((container) =>
+      container.kind === "crate"
+        ? [{ x: container.position[0], z: container.position[1], radius: CRATE_RADIUS + CRATE_MARGIN }]
+        : [],
+    ),
     { x: zone.spawn.position[0], z: zone.spawn.position[1], radius: START_CLEARANCE },
   ];
 }

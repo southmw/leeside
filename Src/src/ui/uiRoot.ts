@@ -72,6 +72,8 @@ export interface UiWindowOptions {
   title: string;
   text?: string;
   bars?: readonly UiBar[];
+  /** Anything else to show, between the bars and the buttons. */
+  content?: HTMLElement;
   buttons: readonly UiButton[];
   /** Called once when the window closes, however that happens. */
   onClose?(): void;
@@ -147,6 +149,9 @@ export function createUi(i18n: I18n): Ui {
     }
     for (const bar of options.bars ?? []) {
       panel.append(createBar(bar));
+    }
+    if (options.content) {
+      panel.append(options.content);
     }
 
     let selected = 0;

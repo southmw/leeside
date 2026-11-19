@@ -25,6 +25,7 @@
   "hud.damage.storm": "Storm",
   "hud.damage.cold": "Cold",
   "hud.damage.thirst": "Thirst",
+  "interact.search": "{key} Search (hold)",
 
   "weather.clear": "Clear",
   "weather.warning": "Storm approaching",
@@ -81,6 +82,7 @@
   "ui.sample.bar": "Sample bar",
   "ui.sample.count": "Pressed {count} times",
   "ui.sample.nothing": "A button that does nothing",
+  "ui.sample.ring": "Sample progress ring",
 
   "dev.title": "Development",
   "dev.open": "DEV (F2)",

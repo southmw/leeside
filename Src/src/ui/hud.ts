@@ -1,16 +1,17 @@
 import { type ClockTime, displayTime } from "../gameplay/clock";
 import type { TemperatureStage } from "../gameplay/temperature";
 import type { I18n } from "../locales/i18n";
-import { type CompassPosition, compassPosition, type HudAlerts } from "./hudState";
+import { type CompassPosition, compassPosition, type HudAlerts, type InteractionCue } from "./hudState";
 import { createIcon, type IconName, setIcon } from "./icons";
+import { createProgressRing } from "./progressRing";
 import type { Ui } from "./uiRoot";
 
 /**
  * What is on screen during play (UI design 5): the compass and the storm warning at the top,
  * the day and time top right (with a word under it from dusk on: colour alone is not to be
  * relied on, UI design 1, rule 4), health, body temperature and thirst bottom left, and the
- * "sheltered" sign bottom right. Colours bleed in from the edges of the screen when the
- * player is in trouble. What to show is decided in hudState.ts; this file only draws it.
+ * "sheltered" sign bottom right, and in the middle a dot with, under it, what the key E would
+ * do here. Colours bleed in from the edges of the screen when the player is in trouble. What to show is decided in hudState.ts; this file only draws it.
  */
 
 const css = `
@@ -98,6 +99,27 @@ const css = `
 #hud-shelter[hidden] { display: none; }
 /* In a storm being sheltered is what matters most on screen. */
 #hud-shelter.storm { color: #1b1a17; background: #d9c79a; border-color: #d9c79a; }
+/* The middle of the screen: a dot, the ring that fills round it, and the prompt under it. */
+#hud-aim { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+#hud-aim[hidden] { display: none; }
+#hud-aim .hud-dot {
+  position: absolute; left: -0.15em; top: -0.15em; width: 0.3em; height: 0.3em; border-radius: 50%;
+  background: #e8dcc0; opacity: 0.5; box-shadow: 0 0 0.2em rgba(0, 0, 0, 0.8);
+  transition: transform 0.15s, opacity 0.15s;
+}
+#hud-aim.target .hud-dot { opacity: 1; transform: scale(1.6); }
+#hud-aim .ui-ring { position: absolute; left: -1.1em; top: -1.1em; width: 2.2em; height: 2.2em; color: #f0c060; }
+#hud-aim .ui-ring[hidden] { display: none; }
+#hud-prompt {
+  position: absolute; left: 0; top: 1.9em; transform: translateX(-50%); white-space: pre;
+  display: flex; align-items: center; padding: 0.3em 0.75em; border-radius: 0.25em;
+  font-weight: 700; background: rgba(20, 19, 16, 0.6); text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.75);
+}
+#hud-prompt[hidden] { display: none; }
+#hud-prompt .hud-key {
+  min-width: 1.5em; padding: 0 0.3em; box-sizing: border-box; text-align: center; line-height: 1.5;
+  color: #1b1a17; background: #e8dcc0; border-radius: 0.2em;
+}
 /* Colours from the edges of the whole window, not just the 16:9 area the HUD keeps to. */
 .hud-edge { position: fixed; inset: 0; opacity: 0; transition: opacity 0.6s; }
 .hud-edge.shown { opacity: 1; }
@@ -123,6 +145,9 @@ const COMPASS_REACH = 45;
 
 const EDGES = ["storm", "cold", "danger"] as const;
 
+/** Stands for the key in a prompt's sentence until the key's box is put in its place. Not a character any text uses. */
+const KEY_MARK = "\uE000";
+
 export interface Hud {
   /** Shows the HUD (during play) or hides it (title, measurements). */
   setVisible(visible: boolean): void;
@@ -143,6 +168,11 @@ export interface Hud {
   setCompass(heading: number, shelterBearing: number): CompassPosition;
   /** Shows the warnings and effects the player's situation calls for (hudState.ts). */
   setAlerts(alerts: HudAlerts): void;
+  /**
+   * Shows the dot in the middle and the prompt under it (hudState.ts). `key` is what the
+   * interaction key is called; `progress` (0 to 1) fills the ring round the dot.
+   */
+  setInteraction(cue: InteractionCue, key: string, progress: number): void;
 }
 
 export function createHud(ui: Ui, i18n: I18n): Hud {
@@ -245,7 +275,15 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
 
   const edges = EDGES.map((name) => ({ name, node: make("div", `hud-edge-${name}`, "hud-edge") }));
 
-  root.append(...edges.map((edge) => edge.node), clock, top, vitals, shelter);
+  // The middle: the dot, the ring round it and the prompt under it.
+  const aim = make("div", "hud-aim");
+  const ring = createProgressRing();
+  const prompt = make("div", "hud-prompt");
+  prompt.hidden = true;
+  const promptKey = make("span", "", "hud-key");
+  aim.append(ring.element, make("div", "", "hud-dot"), prompt);
+
+  root.append(...edges.map((edge) => edge.node), clock, top, vitals, shelter, aim);
   // Under the title and windows, which are added to the root later or sit above by their own rules.
   ui.root.prepend(root);
 
@@ -271,6 +309,18 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   let stage: TemperatureStage = "comfortable";
   let stormKind: "warning" | "storm" | null = null;
   let damageCause: HudAlerts["damage"] = null;
+  let promptKind: InteractionCue["prompt"] = null;
+  let promptKeyLabel = "";
+  // The key has a place in the sentence that differs from language to language. The sentence
+  // is asked for with a mark where the key goes, and the key's box is put there.
+  const renderPrompt = (): void => {
+    if (!promptKind) {
+      return;
+    }
+    const [before = "", after = ""] = i18n.t(`interact.${promptKind}`, { key: KEY_MARK }).split(KEY_MARK);
+    promptKey.textContent = promptKeyLabel;
+    prompt.replaceChildren(before, promptKey, after);
+  };
   // Everything whose words do not change from frame to frame, written again when the language does.
   const renderWords = (): void => {
     shelterText.textContent = i18n.t("hud.sheltered");
@@ -289,6 +339,7 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
     if (damageCause) {
       damageText.textContent = i18n.t(`hud.damage.${damageCause}`);
     }
+    renderPrompt();
   };
   renderWords();
   i18n.onChange(renderClock);
@@ -345,6 +396,17 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
       arrowLeft.hidden = at.beyond !== -1;
       arrowRight.hidden = at.beyond !== 1;
       return at;
+    },
+    setInteraction(cue, key, progress): void {
+      aim.hidden = cue.crosshair === "hidden";
+      aim.classList.toggle("target", cue.crosshair === "target");
+      if (cue.prompt !== promptKind || key !== promptKeyLabel) {
+        promptKind = cue.prompt;
+        promptKeyLabel = key;
+        prompt.hidden = promptKind === null;
+        renderPrompt();
+      }
+      ring.set(cue.crosshair === "hidden" ? 0 : progress);
     },
     setAlerts(alerts): void {
       const kind = alerts.storm?.kind ?? null;

@@ -31,15 +31,15 @@ export function yawFromDegrees(degreesClockwise: number): number {
 }
 
 /** Rotates a point given relative to a building (x: east, z: south, before rotation) into world offsets. */
-function rotate(localX: number, localZ: number, yaw: number): { x: number; z: number } {
+export function rotateOffset(localX: number, localZ: number, yaw: number): { x: number; z: number } {
   const sin = Math.sin(yaw);
   const cos = Math.cos(yaw);
   return { x: localX * cos + localZ * sin, z: -localX * sin + localZ * cos };
 }
 
-/** The reverse of `rotate`: a world offset from the building's centre, in the building's own axes. */
+/** The reverse of `rotateOffset`: a world offset from the building's centre, in the building's own axes. */
 function unrotate(worldX: number, worldZ: number, yaw: number): { x: number; z: number } {
-  return rotate(worldX, worldZ, -yaw);
+  return rotateOffset(worldX, worldZ, -yaw);
 }
 
 /**
@@ -63,7 +63,7 @@ export function buildingBoxes(building: ZoneBuilding, groundHeight: number): Bui
     bottom: number,
     top: number,
   ): void => {
-    const offset = rotate(localX, localZ, yaw);
+    const offset = rotateOffset(localX, localZ, yaw);
     boxes.push({
       kind,
       center: { x: east + offset.x, y: groundHeight + (bottom + top) / 2, z: south + offset.z },

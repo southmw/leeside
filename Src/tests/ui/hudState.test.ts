@@ -8,9 +8,12 @@ import {
   headingOf,
   hudAlerts,
   type HudSituation,
+  interactionCue,
+  keyLabel,
   relativeBearing,
   stepDamageCue,
 } from "../../src/ui/hudState";
+import { ringFill } from "../../src/ui/progressRing";
 import { yawFromDegrees } from "../../src/world/building";
 
 describe("headingOf", () => {
@@ -178,5 +181,50 @@ describe("damage cue", () => {
     const cue = createDamageCue(40);
     expect(stepDamageCue(cue, 100, 0.1)).toBe(false);
     expect(stepDamageCue(cue, 100, 0.1)).toBe(false);
+  });
+});
+
+describe("interactionCue", () => {
+  const nothing = { targetKind: null, windowOpen: false, dead: false } as const;
+
+  it("shows a faint dot and no prompt without a target", () => {
+    expect(interactionCue(nothing)).toEqual({ crosshair: "idle", prompt: null });
+  });
+
+  it("marks the dot out and says what can be done when there is a target", () => {
+    expect(interactionCue({ ...nothing, targetKind: "search" })).toEqual({ crosshair: "target", prompt: "search" });
+  });
+
+  it("shows neither while a window is open or the character lies collapsed", () => {
+    const hidden = { crosshair: "hidden", prompt: null };
+    expect(interactionCue({ ...nothing, targetKind: "search", windowOpen: true })).toEqual(hidden);
+    expect(interactionCue({ ...nothing, targetKind: "search", dead: true })).toEqual(hidden);
+    expect(interactionCue({ ...nothing, windowOpen: true })).toEqual(hidden);
+  });
+});
+
+describe("keyLabel", () => {
+  it("names letter and digit keys by their character", () => {
+    expect(keyLabel("KeyE")).toBe("E");
+    expect(keyLabel("Digit1")).toBe("1");
+  });
+
+  it("leaves other keys as they are", () => {
+    expect(keyLabel("Space")).toBe("Space");
+    expect(keyLabel("")).toBe("");
+  });
+});
+
+describe("ringFill", () => {
+  it("is the fraction of the ring's hundred units", () => {
+    expect(ringFill(0)).toBe(0);
+    expect(ringFill(0.5)).toBe(50);
+    expect(ringFill(1)).toBe(100);
+  });
+
+  it("stays within the ring", () => {
+    expect(ringFill(-1)).toBe(0);
+    expect(ringFill(3)).toBe(100);
+    expect(ringFill(Number.NaN)).toBe(0);
   });
 });

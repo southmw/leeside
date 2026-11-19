@@ -3,9 +3,9 @@ import { z } from "zod";
 /**
  * The format of a zone definition and its validator.
  *
- * A zone is described by data: terrain, where the player starts, buildings, props, exits and
- * scattered clutter. Terrain and buildings are fixed; what the zone contains (containers and
- * so on) is added to this format by the steps that introduce it.
+ * A zone is described by data: terrain, where the player starts, buildings, props, exits,
+ * scattered clutter and the containers to search. Terrain and buildings are fixed. Where the
+ * containers are is fixed too; what is in them is drawn when a game starts.
  *
  * Positions are `[east, south]` in metres from the zone's north-west corner, the way the
  * design documents write them. In the world that is `[x, z]`: east is +X and north is -Z.
@@ -82,6 +82,32 @@ const exitSchema = z
   })
   .strict();
 
+export const CONTAINER_KINDS = ["trunk", "cabinet", "crate"] as const;
+/** Kinds of prop that have a trunk to search. */
+const PROPS_WITH_TRUNK: readonly string[] = ["car", "overturned_car"];
+/** A cabinet keeps at least this far from the ends of its wall, in metres, so it fits inside. */
+const CABINET_END_MARGIN = 1;
+
+/**
+ * Something to search (prototype design 5.2). Where it is depends on its kind: a trunk is the
+ * back of a car, a cabinet stands against a wall inside a building, a crate stands by itself.
+ */
+const containerSchema = z.discriminatedUnion("kind", [
+  z.object({ id: idSchema, kind: z.literal("trunk"), /** Id of the car it belongs to. */ prop: idSchema }).strict(),
+  z
+    .object({
+      id: idSchema,
+      kind: z.literal("cabinet"),
+      building: idSchema,
+      /** The wall it stands against, before the building's rotation. */
+      wall: z.enum(DOOR_SIDES),
+      /** Metres along that wall from its middle: towards the east on the north and south walls, towards the south on the others. */
+      offset: z.number(),
+    })
+    .strict(),
+  z.object({ id: idSchema, kind: z.literal("crate"), position: positionSchema, rotation: rotationSchema.default(0) }).strict(),
+]);
+
 export const SCATTER_KINDS = ["rock"] as const;
 
 const scatterSchema = z
@@ -107,6 +133,7 @@ export const zoneDefinitionSchema = z
     props: z.array(propSchema).default([]),
     exits: z.array(exitSchema).default([]),
     scatter: z.array(scatterSchema).default([]),
+    containers: z.array(containerSchema).default([]),
   })
   .strict()
   .superRefine((zone, context) => {
@@ -127,7 +154,7 @@ export const zoneDefinitionSchema = z
 
     // Ids must be unique across the whole zone, so anything in it can be named by id alone.
     const seen = new Map<string, string>();
-    for (const list of ["buildings", "props", "exits", "scatter"] as const) {
+    for (const list of ["buildings", "props", "exits", "scatter", "containers"] as const) {
       zone[list].forEach((item, index) => {
         const firstUse = seen.get(item.id);
         if (firstUse) {
@@ -149,6 +176,31 @@ export const zoneDefinitionSchema = z
       }
     });
 
+    zone.containers.forEach((container, index) => {
+      if (container.kind === "trunk") {
+        const prop = zone.props.find((candidate) => candidate.id === container.prop);
+        if (!prop) {
+          issue(["containers", index, "prop"], `no prop with id "${container.prop}"`);
+        } else if (!PROPS_WITH_TRUNK.includes(prop.kind)) {
+          issue(["containers", index, "prop"], `a ${prop.kind} has no trunk`);
+        }
+      } else if (container.kind === "cabinet") {
+        const building = zone.buildings.find((candidate) => candidate.id === container.building);
+        if (!building) {
+          issue(["containers", index, "building"], `no building with id "${container.building}"`);
+          return;
+        }
+        if (container.wall === building.door.side) {
+          issue(["containers", index, "wall"], `is the wall with the doorway`);
+        }
+        const [width, depth] = building.size;
+        const wallLength = container.wall === "north" || container.wall === "south" ? width : depth;
+        if (Math.abs(container.offset) > wallLength / 2 - CABINET_END_MARGIN) {
+          issue(["containers", index, "offset"], `is beyond the end of a wall ${wallLength} m long (keep ${CABINET_END_MARGIN} m from its ends)`);
+        }
+      }
+    });
+
     zone.exits.forEach((exit, index) => {
       if (!exit.blocked && (!exit.to || !exit.entry)) {
         issue(["exits", index], `an exit that is not blocked needs both "to" and "entry"`);
@@ -160,6 +212,7 @@ export type ZoneDefinition = z.infer<typeof zoneDefinitionSchema>;
 export type ZoneBuilding = ZoneDefinition["buildings"][number];
 export type ZoneProp = ZoneDefinition["props"][number];
 export type ZoneExit = ZoneDefinition["exits"][number];
+export type ZoneContainer = ZoneDefinition["containers"][number];
 
 export type ZoneParseResult =
   | { ok: true; zone: ZoneDefinition }

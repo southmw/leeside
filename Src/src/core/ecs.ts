@@ -83,6 +83,30 @@ export interface Shelter {
   zone: string | null;
 }
 
+/** What using an interaction target does. Searching a container is the prototype's only one. */
+export type InteractionKind = "search";
+
+/**
+ * Something a character can use when near and looking its way (gameplay/interaction.ts). The
+ * spot to be near is the entity's `transform`, whose `y` is the ground or floor it stands on.
+ */
+export interface Interactable {
+  /** Id from the zone definition. */
+  id: string;
+  kind: InteractionKind;
+  /**
+   * Handle (PhysicsWorld) of the solid thing this is: a cabinet's or crate's own box, a
+   * trunk's car. It does not count as being in the way of itself. Unset if it has no body.
+   */
+  solid?: number;
+}
+
+/** What an entity could use right now, as of the latest step. */
+export interface Interaction {
+  /** Id of the interactable; null when there is none in reach and in view. */
+  target: string | null;
+}
+
 export interface Entity {
   transform?: Transform;
   renderable?: Renderable;
@@ -103,6 +127,10 @@ export interface Entity {
   shelter?: Shelter;
   /** Makes the entity a place of shelter; needs a `transform`. */
   shelterZone?: ShelterZone;
+  /** Makes the entity something to interact with; needs a `transform`. */
+  interactable?: Interactable;
+  /** Kept up to date for entities that can interact (players); needs a `view`. */
+  interaction?: Interaction;
   /** Marks the entity controlled from this machine's devices. */
   localPlayer?: true;
 }

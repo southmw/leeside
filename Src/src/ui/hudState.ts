@@ -1,4 +1,4 @@
-import type { DamageCause } from "../core/ecs";
+import type { DamageCause, InteractionKind } from "../core/ecs";
 import { DANGER_HEALTH, LOW_THIRST } from "../data/tuning";
 import type { TemperatureStage } from "../gameplay/temperature";
 import type { WeatherPhase } from "../gameplay/weather";
@@ -117,6 +117,38 @@ export function hudAlerts(situation: HudSituation): HudAlerts {
     shelterMarked: storm !== null,
     damage: situation.hurtBy,
   };
+}
+
+/** What the middle of the screen has to go by. */
+export interface InteractionSituation {
+  /** What the player's interaction target lets them do, or null without a target. */
+  targetKind: InteractionKind | null;
+  /** Whether a window is open; its keys are not the game's then. */
+  windowOpen: boolean;
+  /** Whether the character lies collapsed. */
+  dead: boolean;
+}
+
+export interface InteractionCue {
+  /** The dot in the middle of the screen: not shown, shown faintly, or marked out because there is a target. */
+  crosshair: "hidden" | "idle" | "target";
+  /** Which prompt to show under the dot, or null for none. */
+  prompt: InteractionKind | null;
+}
+
+/** The dot and the prompt in the middle of the screen (UI design 5). */
+export function interactionCue(situation: InteractionSituation): InteractionCue {
+  if (situation.windowOpen || situation.dead) {
+    return { crosshair: "hidden", prompt: null };
+  }
+  return situation.targetKind
+    ? { crosshair: "target", prompt: situation.targetKind }
+    : { crosshair: "idle", prompt: null };
+}
+
+/** What to call a key on screen, from its `KeyboardEvent.code`: "KeyE" is "E", "Digit1" is "1". */
+export function keyLabel(code: string): string {
+  return /^(?:Key|Digit)(.)$/.exec(code)?.[1] ?? code;
 }
 
 /** Remembers health from step to step, to tell when it is being taken. */

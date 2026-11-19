@@ -6,8 +6,8 @@ import { DRY_RIVERBED_SAMPLES, DRY_RIVERBED_SIZE, generateDryRiverbedHeights } f
  * The zone is 720 m across; at 12 m/s that is one minute from edge to edge.
  *
  * Positions are [east, south] from the north-west corner, exactly as in the design document.
- * Sizes, door sides and rotations are placeholders. Containers and the spots where the storm
- * uncovers things are added by the plan steps that introduce them.
+ * Sizes, door sides and rotations are placeholders. The spots where the storm uncovers things
+ * are added by the plan step that introduces them.
  */
 const buildings = [
   // House A, west of the river. Its door faces the river, where the player comes from.
@@ -36,6 +36,30 @@ const props = [
   { id: "east_exit_rubble", kind: "barrier", position: [711, 188], rotation: 90 },
 ];
 
+/**
+ * The fourteen containers (prototype design 5.2): four trunks, two cabinets in each house,
+ * four crates out of doors. What is in them is decided when a game starts (step 2.14).
+ */
+const containers = [
+  { id: "car_line_trunk", kind: "trunk", prop: "car_line" },
+  { id: "car_line_second_trunk", kind: "trunk", prop: "car_line_second" },
+  { id: "abandoned_car_trunk", kind: "trunk", prop: "abandoned_car" },
+  { id: "overturned_car_trunk", kind: "trunk", prop: "overturned_car" },
+  // In each house: one on the wall facing the door, 2 m north of its middle, and one on the
+  // south wall, 2 m from its middle away from the door. Far enough apart to be told apart.
+  { id: "house_a_cabinet_back", kind: "cabinet", building: "house_a", wall: "west", offset: -2 },
+  { id: "house_a_cabinet_side", kind: "cabinet", building: "house_a", wall: "south", offset: -2 },
+  { id: "house_b_cabinet_back", kind: "cabinet", building: "house_b", wall: "east", offset: -2 },
+  { id: "house_b_cabinet_side", kind: "cabinet", building: "house_b", wall: "south", offset: 2 },
+  { id: "house_c_cabinet_back", kind: "cabinet", building: "house_c", wall: "west", offset: -2 },
+  { id: "house_c_cabinet_side", kind: "cabinet", building: "house_c", wall: "south", offset: -2 },
+  // Beside the overturned car, clear of both its ends.
+  { id: "overturned_car_crate", kind: "crate", position: [247, 566], rotation: 40 },
+  { id: "camp_crate_north", kind: "crate", position: [209, 147], rotation: 20 },
+  { id: "camp_crate_south", kind: "crate", position: [203, 155], rotation: 110 },
+  { id: "well_crate", kind: "crate", position: [406, 114], rotation: 350 },
+];
+
 const exits = [
   // The shelter's entrance is in house A's basement.
   { id: "to_shelter", position: [281, 281], to: "shelter", entry: "from_riverbed" },
@@ -62,6 +86,7 @@ const definition = {
   props,
   exits,
   scatter: [{ id: "rocks", kind: "rock", count: 1100, seed: 20261116 }],
+  containers,
 };
 
 /** Validates and returns the zone. Throws with every problem listed if the definition is wrong. */

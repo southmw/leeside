@@ -25,6 +25,7 @@
   "hud.damage.storm": "폭풍",
   "hud.damage.cold": "추위",
   "hud.damage.thirst": "갈증",
+  "interact.search": "{key} 수색 (누르고 있기)",
 
   "weather.clear": "평상시",
   "weather.warning": "폭풍 예고",
@@ -81,6 +82,7 @@
   "ui.sample.bar": "견본 막대",
   "ui.sample.count": "{count}번 눌렀습니다",
   "ui.sample.nothing": "아무 일도 하지 않는 버튼",
+  "ui.sample.ring": "견본 진행 고리",
 
   "dev.title": "개발 패널",
   "dev.open": "개발 (F2)",

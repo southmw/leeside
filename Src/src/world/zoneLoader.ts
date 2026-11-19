@@ -1,5 +1,5 @@
 import type { InstancedMesh, Mesh, Object3D } from "three";
-import type { Entity, GameWorld } from "../core/ecs";
+import { createTransform, type Entity, type GameWorld } from "../core/ecs";
 import type { PhysicsWorld } from "../physics/physicsWorld";
 import { createBuildingBoxMesh } from "../render/buildingMesh";
 import { createPropMesh, createRockMesh, ROCK_HEIGHT_RATIO, type RockInstance } from "../render/propMesh";
@@ -7,6 +7,7 @@ import type { SceneLike } from "../render/renderSync";
 import { createTerrainMesh } from "../render/terrainMesh";
 import { boundaryWalls } from "./boundary";
 import { buildingBoxes, buildingShelterZone } from "./building";
+import { placeContainer } from "./containers";
 import { DEFAULT_PROP_SET, type PropSetId } from "./propModels";
 import { type PropBox, propBox } from "./props";
 import { scatterItems } from "./scatter";
@@ -29,6 +30,8 @@ export interface LoadedZone {
   readonly rocksModelled: boolean;
   /** How many shelter zones the zone put into the ECS world. */
   readonly shelterZoneCount: number;
+  /** How many containers the zone has. */
+  readonly containerCount: number;
   /**
    * Takes everything the zone added out of the physics world and the scene again and frees
    * the GPU resources. Zone changes rely on this to not leak.
@@ -37,7 +40,7 @@ export interface LoadedZone {
 }
 
 export interface ZoneLoadOptions {
-  /** The ECS world the zone's entities (shelter zones) go into. Without it none are made. */
+  /** The ECS world the zone's entities (shelter zones, containers) go into. Without it none are made. */
   world?: GameWorld;
   /** The set of models the props' sizes are taken from (world/propModels.ts). */
   propSet?: PropSetId;
@@ -56,8 +59,8 @@ export interface ZoneLoadOptions {
 }
 
 /**
- * Builds a zone from its definition: terrain, buildings, props, scattered rocks and the
- * invisible walls along its edges. Pictures and colliders are made from the same shapes.
+ * Builds a zone from its definition: terrain, buildings, props, containers, scattered rocks
+ * and the invisible walls along its edges. Pictures and colliders are made from the same shapes.
  */
 export function loadZone(
   definition: ZoneDefinition,
@@ -72,6 +75,8 @@ export function loadZone(
   const rockMeshes: InstancedMesh[] = [];
   const entities: Entity[] = [];
   const propSet = options.propSet ?? DEFAULT_PROP_SET;
+  let shelterZoneCount = 0;
+  const propBodies = new Map<string, number>();
   const show = (mesh: Mesh): void => {
     meshes.push(mesh);
     scene.add(mesh);
@@ -93,18 +98,42 @@ export function loadZone(
     const shelter = buildingShelterZone(building, groundHeight);
     if (shelter && options.world) {
       entities.push(options.world.add(shelter));
+      shelterZoneCount += 1;
     }
   }
 
   for (const prop of definition.props) {
     const box = propBox(prop, heightAt(terrain, prop.position[0], prop.position[1]), propSet);
-    bodies.push(physics.addStaticBox(box.center, box.halfExtents, 0, box.yaw));
+    const body = physics.addStaticBox(box.center, box.halfExtents, 0, box.yaw);
+    bodies.push(body);
+    propBodies.set(prop.id, body);
     const model = options.propModel?.(prop, box);
     if (model) {
       models.push(model);
       scene.add(model);
     } else {
       show(createPropMesh(box));
+    }
+  }
+
+  // Containers: cabinets and crates are boxes of their own; a trunk is the back of its car.
+  // Each is an entity, so that players can find it (gameplay/interaction.ts).
+  for (const container of definition.containers) {
+    const placed = placeContainer(container, definition, (east, south) => heightAt(terrain, east, south), propSet);
+    // The solid thing a container is: its own box, or for a trunk its car.
+    let solid = container.kind === "trunk" ? propBodies.get(container.prop) : undefined;
+    if (placed.box) {
+      solid = physics.addStaticBox(placed.box.center, placed.box.halfExtents, 0, placed.box.yaw);
+      bodies.push(solid);
+      show(createPropMesh(placed.box));
+    }
+    if (options.world) {
+      entities.push(
+        options.world.add({
+          transform: createTransform(placed.point.x, placed.point.y, placed.point.z),
+          interactable: { id: placed.id, kind: "search", ...(solid === undefined ? {} : { solid }) },
+        }),
+      );
     }
   }
 
@@ -149,7 +178,8 @@ export function loadZone(
     rockCount: rocks.length,
     propModelCount: models.length,
     rocksModelled: rockMeshes.length > 0,
-    shelterZoneCount: entities.length,
+    shelterZoneCount,
+    containerCount: definition.containers.length,
     unload(): void {
       for (const entity of entities) {
         options.world?.remove(entity);

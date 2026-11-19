@@ -1,3 +1,5 @@
+import { containerApproach, placeContainer } from "./containers";
+import { DEFAULT_PROP_SET, type PropSetId } from "./propModels";
 import type { ZoneDefinition } from "./zoneDefinition";
 
 /**
@@ -50,7 +52,7 @@ export function resolveStart(zone: ZoneDefinition, at?: string | null, face?: st
 
 /** A place worth jumping to while developing: where to stand and which way to look. */
 export interface ZonePlace extends StartPoint {
-  /** The id of the building or prop the place looks at, or "start". */
+  /** The id of the building, prop or container the place looks at, or "start". */
   id: string;
 }
 
@@ -59,10 +61,11 @@ const PROP_VIEW_DISTANCE = 10;
 const BUILDING_VIEW_DISTANCE = 16;
 
 /**
- * The zone's start point and a spot a little south of every building and prop, looking north
- * at it. Spots are kept inside the zone.
+ * The zone's start point, a spot a little south of every building and prop, looking north
+ * at it, and a spot within reach of every container, facing it. Spots are kept inside the
+ * zone. Where a trunk is depends on the size of its car, and so on the set of models.
  */
-export function zonePlaces(zone: ZoneDefinition): ZonePlace[] {
+export function zonePlaces(zone: ZoneDefinition, set: PropSetId = DEFAULT_PROP_SET): ZonePlace[] {
   const south = (value: number): number => Math.min(value, zone.size - 1);
   return [
     { id: "start", east: zone.spawn.position[0], south: zone.spawn.position[1], facing: zone.spawn.facing },
@@ -77,6 +80,10 @@ export function zonePlaces(zone: ZoneDefinition): ZonePlace[] {
       east: prop.position[0],
       south: south(prop.position[1] + PROP_VIEW_DISTANCE),
       facing: 0,
+    })),
+    ...zone.containers.map((container) => ({
+      id: container.id,
+      ...containerApproach(placeContainer(container, zone, () => 0, set)),
     })),
   ];
 }

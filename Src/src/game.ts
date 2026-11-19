@@ -1,5 +1,5 @@
 import { Group } from "three";
-import { createCharacter, createTransform, createWorld } from "./core/ecs";
+import { createCharacter, createTransform, createWorld, type InteractionKind } from "./core/ecs";
 import { startGameLoop } from "./core/gameLoop";
 import { createRandom } from "./core/random";
 import { createGameAudio } from "./audio/audio";
@@ -35,6 +35,7 @@ import {
 import { advanceClock, createClock, parseTimeOfDay, readClock, setHour, startNextDay } from "./gameplay/clock";
 import { createDeathScreen } from "./ui/deathScreen";
 import { createExposureSystem, createHealth, isDead } from "./gameplay/health";
+import { createInteractionSystem } from "./gameplay/interaction";
 import { createTemperature, createTemperatureSystem, temperatureStage } from "./gameplay/temperature";
 import { createThirst, createThirstSystem } from "./gameplay/thirst";
 import { createLookSystem } from "./gameplay/lookSystem";
@@ -42,7 +43,7 @@ import { createMovementSystem } from "./gameplay/movementSystem";
 import { createShelterSystem } from "./gameplay/shelter";
 import { createView, previewLook } from "./gameplay/view";
 import { callStorm, calmWeather, createWeather, readWeather, stormOfDay, type WeatherReading } from "./gameplay/weather";
-import { createEmptyActions } from "./input/actions";
+import { createEmptyActions, DEFAULT_KEY_BINDINGS } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
 import { createLocalInput } from "./input/localInput";
 import { createMouse } from "./input/mouse";
@@ -57,7 +58,7 @@ import { createCamera, createRenderer, fitToWindow, warmUpScene } from "./render
 import { createRenderSync } from "./render/renderSync";
 import { createBenchPanel } from "./ui/benchPanel";
 import { createHud } from "./ui/hud";
-import { bearingTo, createDamageCue, headingOf, hudAlerts, stepDamageCue } from "./ui/hudState";
+import { bearingTo, createDamageCue, headingOf, hudAlerts, interactionCue, keyLabel, stepDamageCue } from "./ui/hudState";
 import { createLookHint } from "./ui/lookHint";
 import type { Ui } from "./ui/uiRoot";
 import { characterById, CHARACTERS } from "./render/characterCatalog";
@@ -228,6 +229,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.zone.propModels = built.propModelCount;
     debug.zone.rockModels = built.rocksModelled;
     debug.zone.propSet = set;
+    debug.zone.containers = built.containerCount;
     return built;
   };
   let zone = await buildZone(propSetId(startParams.get("props")));
@@ -291,6 +293,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     character: createCharacter(startYaw),
     view: createView(startYaw, START_PITCH),
     shelter: { zone: null },
+    interaction: { target: null },
     // `?health=10` starts hurt, for seeing what happens at zero without waiting.
     health: createHealth(numberParam(startParams.get("health"), 1, MAX_HEALTH, MAX_HEALTH)),
     // `?temperature=-90` starts chilled, for seeing the cold without standing out a night.
@@ -454,6 +457,27 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.player.thirst = player.thirst.value;
   };
   showThirst();
+  // What the player could use right now: the container they stand by and look towards.
+  const interactionSystem = createInteractionSystem(world, physics);
+  const interactables = world.with("interactable");
+  const interactKey = keyLabel(DEFAULT_KEY_BINDINGS.interact[0] ?? "");
+  const showInteraction = (): void => {
+    const target = player.interaction.target;
+    let targetKind: InteractionKind | null = null;
+    for (const { interactable } of interactables) {
+      if (interactable.id === target) {
+        targetKind = interactable.kind;
+      }
+    }
+    const cue = interactionCue({ targetKind, windowOpen: ui.openWindowId !== null, dead: isDead(player.health) });
+    // The ring fills while the key is held, from step 2.14 on.
+    hud.setInteraction(cue, interactKey, 0);
+    debug.player.interaction = target;
+    debug.zone.interactables = interactables.size;
+    debug.hud.crosshair = cue.crosshair;
+    debug.hud.prompt = cue.prompt;
+  };
+  showInteraction();
   // Warnings and effects: what the player's situation calls for, worked out each step.
   const damageCue = createDamageCue(player.health.current);
   const showAlerts = (dt: number): void => {
@@ -663,7 +687,11 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           debug.shelterZonesShown = shown;
         },
         places: zonePlaces(zoneDefinition),
-        goTo: (place) => teleport(place.east, place.south, place.facing),
+        // Where a trunk is depends on the set of models in use, so the place is worked out afresh.
+        goTo: (place) => {
+          const now = zonePlaces(zoneDefinition, propSetId(debug.zone.propSet)).find((candidate) => candidate.id === place.id) ?? place;
+          teleport(now.east, now.south, now.facing);
+        },
       });
     });
   }
@@ -691,6 +719,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       movementSystem(dt);
       physicsSystem.update();
       shelterSystem();
+      // Behind the title and during a measurement there is nobody to use anything.
+      if (playing && !bench) {
+        interactionSystem();
+      } else {
+        player.interaction.target = null;
+      }
       // Time stands still behind the title and during a measurement.
       if (playing && !bench) {
         advanceClock(clock, dt);
@@ -718,6 +752,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       showHealth();
       showTemperature();
       showThirst();
+      showInteraction();
       showAlerts(dt);
       if (playing && !bench) {
         soundFootsteps(dt);

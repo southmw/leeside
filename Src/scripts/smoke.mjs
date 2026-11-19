@@ -1077,6 +1077,88 @@ try {
     const boxed = await page.evaluate(() => ({ ...window.__game.zone }));
     check("?props=boxes draws props and rocks as plain shapes", boxed.propModels === 0 && boxed.rockModels === false, `${boxed.propModels} models`);
 
+    // Interaction: standing by a container and looking its way makes it the target, and the
+    // middle of the screen says what E would do. The spot is in front of the crate by the well.
+    const interactionNow = () =>
+      page.evaluate(() => ({
+        target: window.__game.player.interaction,
+        crosshair: window.__game.hud.crosshair,
+        prompt: window.__game.hud.prompt,
+        inside: window.__game.player.inside,
+        containers: window.__game.zone.containers,
+        interactables: window.__game.zone.interactables,
+        promptShown: !document.querySelector("#hud-prompt").hidden && !document.querySelector("#hud-aim").hidden,
+        promptText: document.querySelector("#hud-prompt").textContent,
+        keyText: document.querySelector("#hud-prompt .hud-key")?.textContent ?? "",
+        ringShown: !document.querySelector("#hud-aim .ui-ring").hidden,
+      }));
+    const settle = async () => {
+      const tick = await page.evaluate(() => window.__game.tick);
+      await page.waitForFunction((from) => window.__game.tick > from + 3, tick, { timeout: 10_000 });
+    };
+    const interactionAt = async (query) => {
+      await page.goto(gameUrl(query), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+      await settle();
+      return interactionNow();
+    };
+    const facingCrate = await interactionAt("lang=en&at=406.26,115.48&face=350");
+    check("the zone has its 14 containers, each something to interact with", facingCrate.containers === 14 && facingCrate.interactables === 14, `${facingCrate.containers} containers, ${facingCrate.interactables} targets`);
+    check(
+      "standing by a crate and looking at it makes it the target",
+      facingCrate.target === "well_crate" && facingCrate.crosshair === "target" && facingCrate.prompt === "search",
+      `target ${facingCrate.target}, crosshair ${facingCrate.crosshair}`,
+    );
+    check(
+      "the prompt under the dot names the key and what it does",
+      facingCrate.promptShown && facingCrate.keyText === "E" && facingCrate.promptText === "E Search (hold)" && !facingCrate.ringShown,
+      `"${facingCrate.promptText}", key "${facingCrate.keyText}"`,
+    );
+    await page.screenshot({ path: join(outDir, "interaction.png") });
+    // Holding E does nothing yet (searching comes with step 2.14).
+    await page.keyboard.down("KeyE");
+    await settle();
+    const holdingE = await page.evaluate(() => ({ interact: window.__game.input.interact, window: window.__game.ui.window }));
+    await page.keyboard.up("KeyE");
+    check("E is read but opens nothing yet", holdingE.interact === true && holdingE.window === null);
+    // A window takes the keys, so the dot and the prompt go.
+    await page.keyboard.press("F4");
+    await page.waitForFunction(() => window.__game.ui.window === "sample", undefined, { timeout: 5_000 }).catch(() => {});
+    await settle();
+    const behindWindow = await interactionNow();
+    await page.keyboard.press("F4");
+    check("the dot and the prompt are hidden while a window is open", behindWindow.crosshair === "hidden" && !behindWindow.promptShown, `crosshair ${behindWindow.crosshair}`);
+    // Walking away loses the target.
+    await page.keyboard.down("KeyS");
+    await page.waitForFunction(() => window.__game.player.interaction === null, undefined, { timeout: 20_000 }).catch(() => {});
+    await page.keyboard.up("KeyS");
+    const walkedAway = await interactionNow();
+    check("walking away loses the target and the prompt", walkedAway.target === null && walkedAway.crosshair === "idle" && !walkedAway.promptShown, `target ${walkedAway.target}`);
+    const backToCrate = await interactionAt("at=406.26,115.48&face=170");
+    check("with the back turned to the crate there is no target", backToCrate.target === null && backToCrate.crosshair === "idle" && !backToCrate.promptShown, `target ${backToCrate.target}`);
+    // Outside house A's west wall, a step from the cabinet that stands against its inside.
+    const throughWall = await interactionAt("at=275.4,279&face=90");
+    check("a cabinet is not reached through the wall from outside", throughWall.target === null && throughWall.inside === null && !throughWall.promptShown, `target ${throughWall.target}`);
+    const promptKorean = await interactionAt("lang=ko&at=406.26,115.48&face=350");
+    check("the prompt is in Korean too", promptKorean.promptText === "E 수색 (누르고 있기)" && promptKorean.keyText === "E", `"${promptKorean.promptText}"`);
+    // The development panel goes to a spot in front of any container: a trunk and a cabinet.
+    await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    await page.keyboard.press("F2");
+    await page.locator("#dev-place-car_line_trunk").click();
+    await settle();
+    const atTrunk = await interactionNow();
+    await page.locator("#dev-place-house_a_cabinet_back").click();
+    await settle();
+    const atCabinet = await interactionNow();
+    await page.keyboard.press("F2");
+    check("the panel goes to a car's trunk, which is then the target", atTrunk.target === "car_line_trunk", `target ${atTrunk.target}`);
+    check(
+      "the panel goes to a cabinet inside house A, which is then the target",
+      atCabinet.target === "house_a_cabinet_back" && atCabinet.inside === "house_a",
+      `target ${atCabinet.target}, inside ${atCabinet.inside}`,
+    );
+    await page.screenshot({ path: join(outDir, "interaction-cabinet.png") });
+
     // A phone gets an explanation instead of the game, and nothing is loaded for it.
     const phone = await browser.newPage({
       viewport: { width: 390, height: 844 },
@@ -1116,6 +1198,7 @@ try {
     await waitForUi(() => window.__game.ui.window === "sample");
     const opened = await uiNow();
     check("F4 opens the sample window", opened.window === "sample" && opened.selectedButton === 0 && (await sampleWindow.isVisible()));
+    check("the sample window shows the progress ring", await sampleWindow.locator("#sample-ring svg").isVisible());
 
     // Arrow keys move the selection and wrap round; the window has three buttons.
     // Read from the screen itself: the debug object is only refreshed once per frame.

@@ -74,6 +74,8 @@ export interface GameDebug {
     temperatureStage: "comfortable" | "cold" | "hypothermia";
     /** Thirst: 100 (none) down to 0 (parched). */
     thirst: number;
+    /** Id of the container (or other target) the player could use right now; null when there is none. */
+    interaction: string | null;
     /** What is drawn for the character: the model, or the capsule if the model could not be loaded. */
     model: "capsule" | "model";
     /** Id of the character model in the catalog (render/characterCatalog.ts). */
@@ -93,6 +95,9 @@ export interface GameDebug {
     rockModels: boolean;
     propSet: string;
     rocks: number;
+    /** How many containers the zone has, and how many targets for interaction are in the world. */
+    containers: number;
+    interactables: number;
   };
   /** The local player's view in radians, and whether a mouse button is held so that mouse movement turns it. */
   view: { yaw: number; pitch: number; looking: boolean };
@@ -153,6 +158,9 @@ export interface GameDebug {
     blinking: string[];
     damage: string | null;
     compass: { heading: number; shelterOffset: number; shelterBeyond: number };
+    /** The dot in the middle of the screen, and the prompt under it (what the target lets the player do; null for none). */
+    crosshair: "hidden" | "idle" | "target";
+    prompt: string | null;
   };
   /** Whether the shelter zones are drawn as boxes (development panel). */
   shelterZonesShown: boolean;
@@ -183,8 +191,8 @@ export function installDebugApi(language: Language): GameDebug {
     simSeconds: 0,
     entityCount: 0,
     bodyCount: 0,
-    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, shelter: null, health: 0, dead: false, deaths: 0, temperature: 0, temperatureStage: "comfortable", thirst: 0, model: "capsule", character: "", animation: "none" },
-    zone: { id: "", nameKey: "", buildings: 0, shelterZones: 0, props: 0, propModels: 0, rockModels: false, propSet: "", rocks: 0 },
+    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, shelter: null, health: 0, dead: false, deaths: 0, temperature: 0, temperatureStage: "comfortable", thirst: 0, interaction: null, model: "capsule", character: "", animation: "none" },
+    zone: { id: "", nameKey: "", buildings: 0, shelterZones: 0, props: 0, propModels: 0, rockModels: false, propSet: "", rocks: 0, containers: 0, interactables: 0 },
     view: { yaw: 0, pitch: 0, looking: false },
     bench: { state: "off", progress: 0, summary: null, withinBudget: null },
     ui: { scale: 1, tooSmall: false, window: null, selectedButton: -1 },
@@ -192,7 +200,7 @@ export function installDebugApi(language: Language): GameDebug {
     weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0, wallDistance: 0, wallOpacity: 0 },
     sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0, visibility: 0 },
     audio: { state: "off", muted: false, windVolume: 0, windCutoffHz: 0, indoors: false, footsteps: 0 },
-    hud: { storm: "none", stormRemaining: 0, edges: [], blinking: [], damage: null, compass: { heading: 0, shelterOffset: 0, shelterBeyond: 0 } },
+    hud: { storm: "none", stormRemaining: 0, edges: [], blinking: [], damage: null, compass: { heading: 0, shelterOffset: 0, shelterBeyond: 0 }, crosshair: "hidden", prompt: null },
     shelterZonesShown: false,
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },

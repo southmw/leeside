@@ -156,3 +156,14 @@ export const FOOTSTEP_VOLUME = 0.25;
 export const FOOTSTEP_STRIDE = 2.5;
 /** Overall volume until the settings screen exists (step 2.22); its default there. */
 export const DEFAULT_VOLUME = 0.8;
+
+/**
+ * Interaction (prototype design 3.5). A target can be used from this far away (metres,
+ * measured level from the character's centre), while the view points within this many degrees
+ * of it and its base is at most this far above or below the character's feet.
+ */
+export const INTERACT_DISTANCE = 2;
+export const INTERACT_ANGLE_DEGREES = 60;
+export const INTERACT_HEIGHT = 1.5;
+/** Nearer than this (metres) the direction no longer counts: standing on a target, there is none. */
+export const INTERACT_NEAR_DISTANCE = 0.3;

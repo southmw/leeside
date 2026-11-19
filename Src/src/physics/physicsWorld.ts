@@ -268,6 +268,25 @@ export class PhysicsWorld {
     return hit ? hit.time_of_impact : undefined;
   }
 
+  /**
+   * The handle of the first body on the straight line from `origin` to `target`, or undefined
+   * if nothing is in the way. `ignoreBody` is left out of the test (whoever is looking, for
+   * example). Sees the world as of the last step.
+   */
+  firstBodyBetween(origin: Vec3, target: Vec3, ignoreBody?: number): number | undefined {
+    const dx = target.x - origin.x;
+    const dy = target.y - origin.y;
+    const dz = target.z - origin.z;
+    const distance = Math.hypot(dx, dy, dz);
+    if (!(distance > 0)) {
+      return undefined;
+    }
+    const ignored = ignoreBody === undefined ? undefined : (this.world.getRigidBody(ignoreBody) ?? undefined);
+    const ray = new RAPIER.Ray(origin, { x: dx / distance, y: dy / distance, z: dz / distance });
+    const hit = this.world.castRay(ray, distance, true, undefined, undefined, undefined, ignored);
+    return hit?.collider.parent()?.handle;
+  }
+
   /** Whether a sphere at `center` touches anything, leaving out `ignoreBody`. Sees the world as of the last step. */
   overlapsSphere(center: Vec3, radius: number, ignoreBody?: number): boolean {
     const ignored = ignoreBody === undefined ? undefined : (this.world.getRigidBody(ignoreBody) ?? undefined);

@@ -248,7 +248,7 @@ describe("zonePlaces", () => {
   });
 
   it("has a place for every building and prop, south of it and looking north", () => {
-    expect(places).toHaveLength(1 + zone.buildings.length + zone.props.length);
+    expect(places).toHaveLength(1 + zone.buildings.length + zone.props.length + zone.containers.length);
     for (const target of [...zone.buildings, ...zone.props]) {
       const place = places.find((candidate) => candidate.id === target.id);
       expect(place?.east).toBe(target.position[0]);
