@@ -1,5 +1,6 @@
 import { World } from "miniplex";
 import type { Object3D } from "three";
+import type { ItemId } from "../data/items";
 import type { Inventory, ItemStack } from "../gameplay/inventory";
 import type { VerticalState } from "../gameplay/verticalMotion";
 import type { View } from "../gameplay/view";
@@ -84,8 +85,8 @@ export interface Shelter {
   zone: string | null;
 }
 
-/** What using an interaction target does. Searching a container is the prototype's only one. */
-export type InteractionKind = "search";
+/** What using an interaction target does: searching a container, or picking up what lies on the ground. */
+export type InteractionKind = "search" | "pickup";
 
 /**
  * Something a character can use when near and looking its way (gameplay/interaction.ts). The
@@ -114,6 +115,25 @@ export interface Container {
   opened: boolean;
   /** One entry per kind of thing; no stack limit in here. */
   items: ItemStack[];
+}
+
+/**
+ * Things lying on the ground where someone threw them out (prototype design 4.7). One entry
+ * per kind of thing, no stack limit. The entity is an `interactable` too, and goes when the
+ * last thing is picked up.
+ */
+export interface Pile {
+  items: ItemStack[];
+}
+
+/**
+ * A player's quick slots (prototype design 4.5, gameplay/quickSlots.ts). A slot names a kind
+ * of item, or nothing; the things themselves stay in the bag.
+ */
+export interface QuickSlots {
+  slots: Array<ItemId | null>;
+  /** Whether each slot's key was down in the last step, to tell a press from a hold. */
+  held: boolean[];
 }
 
 /** A player's search under way (gameplay/search.ts). */
@@ -161,8 +181,12 @@ export interface Entity {
   inventory?: Inventory;
   /** Makes the entity a container to search; it is an `interactable` too. */
   container?: Container;
+  /** Makes the entity a pile of things on the ground; it is an `interactable` too. */
+  pile?: Pile;
   /** Kept for entities that can search (players). */
   search?: Search;
+  /** A player's quick slots. */
+  quickSlots?: QuickSlots;
   /** Makes the entity something to interact with; needs a `transform`. */
   interactable?: Interactable;
   /** Kept up to date for entities that can interact (players); needs a `view`. */

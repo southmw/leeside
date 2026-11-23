@@ -51,8 +51,10 @@ describe("actionsFromKeys", () => {
     const actions = actionsFromKeys(keys("Space", "KeyE", "Digit1", "Digit2"));
     expect(actions.jump).toBe(true);
     expect(actions.interact).toBe(true);
-    expect(actions.useWater).toBe(true);
-    expect(actions.useBandage).toBe(true);
+    expect(actions.quick1).toBe(true);
+    expect(actions.quick2).toBe(true);
+    expect(actions.quick3).toBe(false);
+    expect(actionsFromKeys(keys("Digit3", "Digit4"))).toMatchObject({ quick1: false, quick3: true, quick4: true });
   });
 
   it("ignores keys that are not bound", () => {

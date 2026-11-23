@@ -33,6 +33,11 @@ export function hurt(health: Health, amount: number, cause?: DamageCause): void 
   }
 }
 
+/** Gives back `amount` of health, up to the most the entity can have. */
+export function heal(health: Health, amount: number): void {
+  health.current = Math.min(health.current + Math.max(amount, 0), health.max);
+}
+
 export function isDead(health: Health): boolean {
   return health.current <= 0;
 }

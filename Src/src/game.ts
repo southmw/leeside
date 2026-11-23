@@ -34,6 +34,9 @@ import {
   MOVE_SPEED,
 } from "./data/tuning";
 import { isItemId, ITEM_IDS } from "./data/items";
+import { useRefusal } from "./gameplay/itemUse";
+import { clearQuickSlots, createQuickSlots, createQuickUseSystem } from "./gameplay/quickSlots";
+import { createPileMesh } from "./render/pileMesh";
 import { advanceClock, createClock, parseTimeOfDay, readClock, setHour, startNextDay } from "./gameplay/clock";
 import { createDeathScreen } from "./ui/deathScreen";
 import { createCommandSystem } from "./gameplay/commands";
@@ -49,7 +52,7 @@ import { createMovementSystem } from "./gameplay/movementSystem";
 import { createShelterSystem } from "./gameplay/shelter";
 import { createView, previewLook } from "./gameplay/view";
 import { callStorm, calmWeather, createWeather, readWeather, stormOfDay, type WeatherReading } from "./gameplay/weather";
-import { createEmptyActions, DEFAULT_KEY_BINDINGS } from "./input/actions";
+import { createEmptyActions, DEFAULT_KEY_BINDINGS, QUICK_ACTIONS } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
 import { createLocalInput } from "./input/localInput";
 import { createMouse } from "./input/mouse";
@@ -66,7 +69,7 @@ import { createBagWindow } from "./ui/bagWindow";
 import { createBenchPanel } from "./ui/benchPanel";
 import { type ContainerView, createContainerPanel } from "./ui/containerPanel";
 import { createHud } from "./ui/hud";
-import { bagView, bearingTo, createDamageCue, headingOf, hudAlerts, interactionCue, keyLabel, type PromptKind, stepDamageCue } from "./ui/hudState";
+import { bagView, bearingTo, createDamageCue, headingOf, hudAlerts, interactionCue, keyLabel, type PromptKind, quickBarView, stepDamageCue } from "./ui/hudState";
 import { createLookHint } from "./ui/lookHint";
 import type { Ui } from "./ui/uiRoot";
 import { characterById, CHARACTERS } from "./render/characterCatalog";
@@ -118,6 +121,10 @@ const LOOT_SEED_SALT = 0x9e3779b9;
 
 /** What the key that opens the bag window is called on screen. */
 const BAG_KEY_LABEL = "Tab";
+
+/** How far down the ground is looked for under someone who throws a thing out, and how thick the probe is. Metres. */
+const DROP_PROBE_DISTANCE = 50;
+const DROP_PROBE_RADIUS = 0.1;
 
 /** The id of the player on this machine, by which commands name them. */
 const LOCAL_PLAYER_ID = "player_1";
@@ -336,6 +343,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     id: LOCAL_PLAYER_ID,
     localPlayer: true,
     inventory: createInventory(),
+    // No item is on a quick slot until the player puts one there.
+    quickSlots: createQuickSlots(),
     input: createEmptyActions(),
     character: createCharacter(startYaw),
     view: createView(startYaw, START_PITCH),
@@ -514,9 +523,44 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   };
   showThirst();
   // Whatever changes the bag asks for it with a command, carried out in the next step.
-  const commands = createCommandSystem(world);
+  const commands = createCommandSystem(world, {
+    // What is thrown out lands on whatever is under the character, also when it is thrown out in mid-air.
+    floorUnder: (actor) => {
+      if (!actor.transform || !actor.body) {
+        return undefined;
+      }
+      const fall = physics.sweepSphere(actor.transform, { x: 0, y: -1, z: 0 }, DROP_PROBE_DISTANCE, DROP_PROBE_RADIUS, actor.body.handle);
+      return fall === undefined ? undefined : actor.transform.y - fall - DROP_PROBE_RADIUS;
+    },
+  });
+  // What lies on the ground: thrown out of a bag, to be picked up again. The piles are the
+  // game's, not the zone's, so they are still there when the zone is put up again.
+  const piles = world.with("pile", "interactable", "transform");
+  const showPiles = (): void => {
+    for (const entity of piles) {
+      // A pile made by a command has no picture yet.
+      if (!entity.renderable) {
+        world.addComponent(entity, "renderable", { object: createPileMesh() });
+      }
+    }
+    debug.piles = [...piles].map((entity) => ({
+      id: entity.interactable.id,
+      x: entity.transform.x,
+      y: entity.transform.y,
+      z: entity.transform.z,
+      items: entity.pile.items.map((stack) => `${stack.item} ${stack.count}`),
+    }));
+  };
+  const clearPiles = (): void => {
+    for (const entity of [...piles]) {
+      world.remove(entity);
+    }
+    showPiles();
+  };
+  showPiles();
   const runCommands = (): void => {
-    for (const result of commands.run()) {
+    const results = commands.run();
+    for (const result of results) {
       // Something did not fit: the bag sign says so.
       if (result.reason === "bag_full") {
         hud.bagRefused();
@@ -524,8 +568,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       debug.commands.done += 1;
       debug.commands.refused += result.ok ? 0 : 1;
       debug.commands.last = { type: result.command.type, ok: result.ok, moved: result.moved, reason: result.reason ?? null };
-      // A container the local player has just opened shows what is in it, if anything.
       const { command } = result;
+      // A quick slot's key answers on the slot itself: used, or not.
+      if (command.type === "useQuickSlot" && command.actor === LOCAL_PLAYER_ID) {
+        hud.quickSlotPressed(command.slot, result.ok);
+      }
+      // A container the local player has just opened shows what is in it, if anything.
       if (result.ok && command.type === "openContainer" && command.actor === LOCAL_PLAYER_ID) {
         const view = containerView(command.container);
         if (view && view.items.length > 0) {
@@ -533,6 +581,10 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         }
       }
       showContainerStates();
+    }
+    // Only a command makes a pile or takes one away.
+    if (results.length > 0) {
+      showPiles();
     }
   };
   // The panel of an opened container: what is in it, and taking it.
@@ -576,13 +628,22 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     canOpen: () => playing && !bench && !isDead(player.health),
     listBeside: () => containerPanel.openId !== null,
     onDiscard: (slot) => commands.push({ type: "discardItem", actor: LOCAL_PLAYER_ID, slot, count: 1 }),
+    onUse: (item) => commands.push({ type: "useItem", actor: LOCAL_PLAYER_ID, item }),
+    onAssign: (slot, item) => commands.push({ type: "assignQuickSlot", actor: LOCAL_PLAYER_ID, slot, item }),
   });
+  const quickKeys = QUICK_ACTIONS.map((action) => keyLabel(DEFAULT_KEY_BINDINGS[action][0] ?? ""));
+  const quickUseSystem = createQuickUseSystem(world, (command) => commands.push(command));
   const showBag = (): void => {
     const view = bagView(player.inventory);
     hud.setBag(view, BAG_KEY_LABEL);
-    bagWindow.update(view);
+    // The window dims what using would waste; the same judgement the command will make.
+    const usable = ITEM_IDS.filter((item) => useRefusal(player, item) === null);
+    bagWindow.update(view, { quick: player.quickSlots.slots, usable });
+    const quick = quickBarView(player.quickSlots.slots, player.inventory, { health: player.health.current, thirst: player.thirst.value });
+    hud.setQuickSlots(quick, quickKeys);
     debug.player.bag = view.slots;
     debug.player.bagFull = view.full;
+    debug.player.quickSlots = quick;
   };
   showBag();
   // What the player could use right now: the container they stand by and look towards.
@@ -597,6 +658,13 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     const targetState = target === null ? undefined : containerStates.get(target);
     if (targetState) {
       targetKind = ({ closed: "search", stocked: "open", empty: "empty" } as const)[containerState(targetState)];
+    } else if (target !== null) {
+      // Not a container: something lying on the ground.
+      for (const entity of piles) {
+        if (entity.interactable.id === target) {
+          targetKind = "pickup";
+        }
+      }
     }
     // The bag window does not hide the prompt: a container can be searched with the bag open.
     const windowOpen = ui.centreWindowId !== null || containerPanel.openId !== null;
@@ -710,6 +778,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     player.view.pitch = START_PITCH;
     restore();
     fillStartBag();
+    clearQuickSlots(player.quickSlots);
+    clearPiles();
     Object.assign(player.input, createEmptyActions());
     Object.assign(clock, newClock());
     delete weather.called;
@@ -840,9 +910,10 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           }
         },
         emptyBag: () => {
+          // Gone, not laid on the ground: emptying the bag is for starting a check afresh.
           player.inventory.slots.forEach((slot, index) => {
             if (slot) {
-              commands.push({ type: "discardItem", actor: LOCAL_PLAYER_ID, slot: index, count: slot.count });
+              commands.push({ type: "destroyItem", actor: LOCAL_PLAYER_ID, slot: index, count: slot.count });
             }
           });
         },
@@ -899,6 +970,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       if (playing && !bench) {
         interactionSystem();
         searchSystem(dt);
+        quickUseSystem();
       } else {
         player.interaction.target = null;
         Object.assign(player.search, createSearch());

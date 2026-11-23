@@ -1,7 +1,7 @@
 import type { DamageCause } from "../core/ecs";
-import type { ItemId } from "../data/items";
+import { type ItemDefinition, type ItemId, ITEMS } from "../data/items";
 import { DANGER_HEALTH, LOW_THIRST } from "../data/tuning";
-import { type Inventory, isFull, usedSlots } from "../gameplay/inventory";
+import { countOf, type Inventory, isFull, usedSlots } from "../gameplay/inventory";
 import type { TemperatureStage } from "../gameplay/temperature";
 import type { WeatherPhase } from "../gameplay/weather";
 
@@ -123,9 +123,9 @@ export function hudAlerts(situation: HudSituation): HudAlerts {
 
 /**
  * What the prompt under the dot can say: hold to search a container, press to open one
- * already searched, or only that it is empty.
+ * already searched, only that it is empty, or press to pick up what lies on the ground.
  */
-export type PromptKind = "search" | "open" | "empty";
+export type PromptKind = "search" | "open" | "empty" | "pickup";
 
 /** What the middle of the screen has to go by. */
 export interface InteractionSituation {
@@ -180,6 +180,31 @@ export function bagView(inventory: Inventory): BagView {
     full: isFull(inventory),
     total: inventory.slots.reduce((sum, slot) => sum + (slot?.count ?? 0), 0),
   };
+}
+
+/** A quick slot as the screen draws it; null for a slot with nothing on it. */
+export type QuickSlotView = {
+  item: ItemId;
+  /** How many of it the bag holds, all stacks together. Never zero in play: the last one gone frees the slot. */
+  count: number;
+  /** Whether the slot calls for attention: the player is running low on what it restores, and has some. */
+  urgent: boolean;
+} | null;
+
+/**
+ * The quick slots for drawing (UI design 5). A slot stands out when thirst is low and it
+ * holds water, or health is low and it holds bandages.
+ */
+export function quickBarView(slots: ReadonlyArray<ItemId | null>, inventory: Inventory, vitals: { health: number; thirst: number }): QuickSlotView[] {
+  return slots.map((item) => {
+    if (!item) {
+      return null;
+    }
+    const definition: ItemDefinition = ITEMS[item];
+    const count = countOf(inventory, item);
+    const low = definition.use?.restores === "thirst" ? vitals.thirst <= LOW_THIRST : definition.use?.restores === "health" && vitals.health <= DANGER_HEALTH;
+    return { item, count, urgent: low && count > 0 };
+  });
 }
 
 /** Whether two views of the bag show the same thing. */

@@ -174,6 +174,13 @@ export const MATERIAL_STACK = 5;
 export const CONSUMABLE_STACK = 3;
 /** What a bandage gives back (prototype design 4.1). */
 export const BANDAGE_HEALTH = 30;
+/** Quick slots (prototype design 4.5): how many there are, on the keys 1 upwards. */
+export const QUICK_SLOTS = 4;
+/**
+ * Things thrown out (prototype design 4.7) join a pile lying within this many metres of where
+ * they land, rather than starting a pile of their own.
+ */
+export const PILE_MERGE_DISTANCE = 1;
 
 /** Searching a container for the first time: how long E is held, in seconds (prototype design 3.4). */
 export const SEARCH_SECONDS = 1.5;

@@ -79,6 +79,8 @@ export interface GameDebug {
     /** The bag: what is in each slot (null for an empty one), and whether no slot is empty. */
     bag: Array<{ item: string; count: number } | null>;
     bagFull: boolean;
+    /** The quick slots: what is on each (null for none), how many of it the bag holds, and whether the slot is marked out. */
+    quickSlots: Array<{ item: string; count: number; urgent: boolean } | null>;
     /** The search under way: the container being searched (null if none) and how far along it is, 0 to 1. */
     search: { target: string | null; progress: number };
     /** What is drawn for the character: the model, or the capsule if the model could not be loaded. */
@@ -178,6 +180,8 @@ export interface GameDebug {
    * `panel` is the id of the container whose panel is open, or null; `seed` decided the contents.
    */
   containers: { byId: Record<string, { opened: boolean; items: string[] }>; panel: string | null; seed: number };
+  /** What lies on the ground, thrown out of a bag: each pile's id, where it is, and what is on it ("scrap 2"). */
+  piles: Array<{ id: string; x: number; y: number; z: number; items: string[] }>;
   /** Whether the shelter zones are drawn as boxes (development panel). */
   shelterZonesShown: boolean;
   /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
@@ -207,7 +211,7 @@ export function installDebugApi(language: Language): GameDebug {
     simSeconds: 0,
     entityCount: 0,
     bodyCount: 0,
-    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, shelter: null, health: 0, dead: false, deaths: 0, temperature: 0, temperatureStage: "comfortable", thirst: 0, interaction: null, bag: [], bagFull: false, search: { target: null, progress: 0 }, model: "capsule", character: "", animation: "none" },
+    player: { x: 0, y: 0, z: 0, grounded: false, groundHeight: 0, inside: null, shelter: null, health: 0, dead: false, deaths: 0, temperature: 0, temperatureStage: "comfortable", thirst: 0, interaction: null, bag: [], bagFull: false, quickSlots: [], search: { target: null, progress: 0 }, model: "capsule", character: "", animation: "none" },
     zone: { id: "", nameKey: "", buildings: 0, shelterZones: 0, props: 0, propModels: 0, rockModels: false, propSet: "", rocks: 0, containers: 0, interactables: 0 },
     view: { yaw: 0, pitch: 0, looking: false },
     bench: { state: "off", progress: 0, summary: null, withinBudget: null },
@@ -219,6 +223,7 @@ export function installDebugApi(language: Language): GameDebug {
     hud: { storm: "none", stormRemaining: 0, edges: [], blinking: [], damage: null, compass: { heading: 0, shelterOffset: 0, shelterBeyond: 0 }, crosshair: "hidden", prompt: null },
     commands: { done: 0, refused: 0, last: null },
     containers: { byId: {}, panel: null, seed: 0 },
+    piles: [],
     shelterZonesShown: false,
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },

@@ -1,7 +1,10 @@
-import type { GameWorld } from "../core/ecs";
+import { createTransform, type Entity, type GameWorld } from "../core/ecs";
 import { isItemId, type ItemId } from "../data/items";
-import { INTERACT_DISTANCE } from "../data/tuning";
-import { addItems, type Inventory, removeFromSlot } from "./inventory";
+import { CHARACTER_HEIGHT, INTERACT_DISTANCE, PILE_MERGE_DISTANCE } from "../data/tuning";
+import { addItems, countOf, type Inventory, removeFromSlot } from "./inventory";
+import { useItem, type UseRefusal } from "./itemUse";
+import { addToPile, createPile, nearestWithin, takeFromPile } from "./piles";
+import { assignQuickSlot, releaseQuickSlot } from "./quickSlots";
 
 /**
  * Commands: the one way anything outside the simulation changes the world (technical design
@@ -9,8 +12,8 @@ import { addItems, type Inventory, removeFromSlot } from "./inventory";
  * is worked through inside the fixed step, in order. In multiplayer the same data is what
  * goes over the network, and the host is the one who works through it.
  *
- * So far the commands are about the bag and the containers. Using an item (step 2.15) joins
- * them here.
+ * The commands are about the bag, the containers, using things and the quick slots, and what
+ * lies on the ground.
  */
 
 /**
@@ -22,8 +25,18 @@ export const CONTAINER_REACH = INTERACT_DISTANCE + 0.5;
 export type Command =
   /** Puts items into the actor's bag out of nowhere. For development and tests. */
   | { type: "giveItem"; actor: string; item: ItemId; count: number }
-  /** Throws things out of one slot of the actor's bag. They are gone (until step 2.15 lays them on the ground). */
+  /** Throws things out of one slot of the actor's bag. They land on a pile at the actor's feet. */
   | { type: "discardItem"; actor: string; slot: number; count: number }
+  /** Takes things out of one slot of the actor's bag and out of the world. For development. */
+  | { type: "destroyItem"; actor: string; slot: number; count: number }
+  /** Uses one of an item out of the actor's bag. */
+  | { type: "useItem"; actor: string; item: ItemId }
+  /** Uses one of whatever is on a quick slot of the actor's. */
+  | { type: "useQuickSlot"; actor: string; slot: number }
+  /** The slot's number pressed with `item` chosen: puts it on the slot, takes it off, or swaps two slots. */
+  | { type: "assignQuickSlot"; actor: string; slot: number; item: ItemId }
+  /** Moves what lies on a pile into the actor's bag, as far as it fits. */
+  | { type: "pickUp"; actor: string; pile: string }
   /** Opens a container (a search has been completed, or it was open already). */
   | { type: "openContainer"; actor: string; container: string }
   /** Moves one entry of an open container into the actor's bag, as far as it fits. */
@@ -40,7 +53,15 @@ export type CommandRefusal =
   | "unknown_container"
   | "out_of_reach"
   | "not_open"
-  | "nothing_there";
+  | "nothing_there"
+  /** The actor is nowhere, so there is no ground to put anything on. */
+  | "nowhere"
+  | "no_quick_slots"
+  /** No such quick slot, or nothing on it. */
+  | "empty_quick_slot"
+  /** Not an item for quick slots. */
+  | "not_assignable"
+  | UseRefusal;
 
 export interface CommandResult {
   command: Command;
@@ -58,9 +79,45 @@ export interface CommandSystem {
   run(): CommandResult[];
 }
 
-export function createCommandSystem(world: GameWorld): CommandSystem {
+export interface CommandOptions {
+  /**
+   * The height of the ground or floor under an actor, where what they throw out comes to
+   * lie. Without it that is the height of the actor's feet.
+   */
+  floorUnder?(actor: Entity): number | undefined;
+}
+
+export function createCommandSystem(world: GameWorld, options: CommandOptions = {}): CommandSystem {
   const actors = world.with("id");
   const containers = world.with("container", "interactable", "transform");
+  const piles = world.with("pile", "interactable", "transform");
+  // Piles are numbered as they are made, so the same commands always give the same names.
+  let pilesMade = 0;
+
+  /** Lays things at an actor's feet: on a pile that lies there already, or on a new one. */
+  const drop = (actor: Entity, item: ItemId, count: number): void => {
+    const at = actor.transform;
+    if (!at) {
+      return;
+    }
+    // A character's position is its capsule's centre.
+    const floor = options.floorUnder?.(actor) ?? at.y - (actor.character ? CHARACTER_HEIGHT / 2 : 0);
+    const spots = [];
+    for (const entity of piles) {
+      spots.push({ x: entity.transform.x, y: entity.transform.y, z: entity.transform.z, pile: entity.pile });
+    }
+    let pile = nearestWithin(spots, { x: at.x, y: floor, z: at.z }, PILE_MERGE_DISTANCE)?.pile;
+    if (!pile) {
+      pile = createPile();
+      pilesMade += 1;
+      world.add({
+        transform: createTransform(at.x, floor, at.z, at.rotationY),
+        interactable: { id: `pile_${pilesMade}`, kind: "pickup" },
+        pile,
+      });
+    }
+    addToPile(pile, item, count);
+  };
 
   /** Moves entry `index` of a container into a bag, as far as it fits. Returns how many went. */
   const take = (items: Array<{ item: ItemId; count: number }>, index: number, bag: Inventory): number => {
@@ -74,6 +131,15 @@ export function createCommandSystem(world: GameWorld): CommandSystem {
       items.splice(index, 1);
     }
     return moved;
+  };
+  /**
+   * A quick slot is for something the actor has. When the last of an item leaves the bag,
+   * used or thrown out alike, its slot is free again.
+   */
+  const freeSlotIfGone = (actor: Entity, item: ItemId): void => {
+    if (actor.quickSlots && actor.inventory && countOf(actor.inventory, item) === 0) {
+      releaseQuickSlot(actor.quickSlots, item);
+    }
   };
   let queue: Command[] = [];
 
@@ -100,9 +166,72 @@ export function createCommandSystem(world: GameWorld): CommandSystem {
       const moved = addItems(bag, command.item, command.count);
       return moved > 0 ? { command, ok: true, moved } : refuse("bag_full");
     }
-    if (command.type === "discardItem") {
+    if (command.type === "discardItem" || command.type === "destroyItem") {
+      if (command.type === "discardItem" && !actor.transform) {
+        return refuse("nowhere");
+      }
       const taken = removeFromSlot(bag, command.slot, command.count);
-      return taken ? { command, ok: true, moved: taken.count } : refuse("empty_slot");
+      if (!taken) {
+        return refuse("empty_slot");
+      }
+      if (command.type === "discardItem") {
+        drop(actor, taken.item, taken.count);
+      }
+      freeSlotIfGone(actor, taken.item);
+      return { command, ok: true, moved: taken.count };
+    }
+    if (command.type === "useItem" || command.type === "useQuickSlot") {
+      let item: ItemId | null;
+      if (command.type === "useItem") {
+        item = isItemId(command.item) ? command.item : null;
+        if (!item) {
+          return refuse("unknown_item");
+        }
+      } else {
+        if (!actor.quickSlots) {
+          return refuse("no_quick_slots");
+        }
+        item = (Number.isInteger(command.slot) ? actor.quickSlots.slots[command.slot] : null) ?? null;
+        if (!item) {
+          return refuse("empty_quick_slot");
+        }
+      }
+      const refusal = useItem({ inventory: bag, health: actor.health, thirst: actor.thirst }, item);
+      if (refusal) {
+        return refuse(refusal);
+      }
+      freeSlotIfGone(actor, item);
+      return { command, ok: true, moved: 1 };
+    }
+    if (command.type === "assignQuickSlot") {
+      if (!actor.quickSlots) {
+        return refuse("no_quick_slots");
+      }
+      if (!isItemId(command.item)) {
+        return refuse("unknown_item");
+      }
+      return assignQuickSlot(actor.quickSlots, command.slot, command.item) ? { command, ok: true, moved: 0 } : refuse("not_assignable");
+    }
+    if (command.type === "pickUp") {
+      let lying;
+      for (const candidate of piles) {
+        if (candidate.interactable.id === command.pile) {
+          lying = candidate;
+        }
+      }
+      // Someone else may have picked it up in the meantime.
+      if (!lying) {
+        return refuse("nothing_there");
+      }
+      const from = actor.transform;
+      if (!from || Math.hypot(from.x - lying.transform.x, from.z - lying.transform.z) > CONTAINER_REACH) {
+        return refuse("out_of_reach");
+      }
+      const picked = takeFromPile(lying.pile, bag);
+      if (lying.pile.items.length === 0) {
+        world.remove(lying);
+      }
+      return picked > 0 ? { command, ok: true, moved: picked } : refuse("bag_full");
     }
 
     // The rest are about a container, which the actor has to be standing at.

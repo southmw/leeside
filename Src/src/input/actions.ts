@@ -16,9 +16,15 @@ export interface PlayerActions {
   lookY: number;
   jump: boolean;
   interact: boolean;
-  useWater: boolean;
-  useBandage: boolean;
+  /** The keys of the quick slots (prototype design 4.5). */
+  quick1: boolean;
+  quick2: boolean;
+  quick3: boolean;
+  quick4: boolean;
 }
+
+/** The quick slots' actions, in the order of the slots. */
+export const QUICK_ACTIONS = ["quick1", "quick2", "quick3", "quick4"] as const;
 
 export type ButtonAction =
   | "moveForward"
@@ -27,8 +33,7 @@ export type ButtonAction =
   | "moveRight"
   | "jump"
   | "interact"
-  | "useWater"
-  | "useBandage";
+  | (typeof QUICK_ACTIONS)[number];
 
 /** Maps each action to the keys that trigger it, as `KeyboardEvent.code` values. */
 export type KeyBindings = Readonly<Record<ButtonAction, readonly string[]>>;
@@ -41,8 +46,10 @@ export const DEFAULT_KEY_BINDINGS: KeyBindings = {
   moveRight: ["KeyD"],
   jump: ["Space"],
   interact: ["KeyE"],
-  useWater: ["Digit1"],
-  useBandage: ["Digit2"],
+  quick1: ["Digit1"],
+  quick2: ["Digit2"],
+  quick3: ["Digit3"],
+  quick4: ["Digit4"],
 };
 
 export function createEmptyActions(): PlayerActions {
@@ -53,8 +60,10 @@ export function createEmptyActions(): PlayerActions {
     lookY: 0,
     jump: false,
     interact: false,
-    useWater: false,
-    useBandage: false,
+    quick1: false,
+    quick2: false,
+    quick3: false,
+    quick4: false,
   };
 }
 
@@ -99,7 +108,9 @@ export function actionsFromKeys(
     lookY: 0,
     jump: isDown("jump"),
     interact: isDown("interact"),
-    useWater: isDown("useWater"),
-    useBandage: isDown("useBandage"),
+    quick1: isDown("quick1"),
+    quick2: isDown("quick2"),
+    quick3: isDown("quick3"),
+    quick4: isDown("quick4"),
   };
 }

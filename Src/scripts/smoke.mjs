@@ -1560,6 +1560,195 @@ try {
 
     }
 
+    {
+    // Using things: the quick slots start empty, the bag window puts an item on one, the
+    // number keys then use it, and the window's own Use does the same. `?health` and
+    // `?thirst` start with something to restore.
+    const useNow = () =>
+      page.evaluate(() => ({
+        bag: window.__game.player.bag.map((slot) => (slot ? `${slot.item} ${slot.count}` : "-")),
+        quick: window.__game.player.quickSlots.map((slot) => (slot ? `${slot.item} ${slot.count}` : "-")),
+        urgent: window.__game.player.quickSlots.map((slot) => slot?.urgent ?? false),
+        health: window.__game.player.health,
+        thirst: window.__game.player.thirst,
+        last: window.__game.commands.last,
+        done: window.__game.commands.done,
+        hudSlots: [...document.querySelectorAll("#hud-quick .hud-quick-slot")].map((slot) =>
+          slot.classList.contains("empty") ? "-" : `${slot.querySelector(".hud-quick-name").textContent} ${slot.querySelector(".hud-quick-count").textContent}`,
+        ),
+        hudKeys: [...document.querySelectorAll("#hud-quick .ui-key")].map((key) => key.textContent).join(""),
+        hudUrgent: [...document.querySelectorAll("#hud-quick .hud-quick-slot")].map((slot) => slot.classList.contains("urgent")),
+        badges: [...document.querySelectorAll("#bag-window .bag-slot")].map((slot) => slot.querySelector(".bag-slot-quick").textContent || "-"),
+        selected: [...document.querySelectorAll("#bag-window .bag-slot")].findIndex((slot) => slot.classList.contains("selected")),
+        quickText: document.querySelector("#bag-window .bag-quick")?.textContent ?? "",
+        note: document.querySelector("#bag-window .bag-note")?.textContent ?? "",
+        useText: document.querySelector("#bag-use")?.textContent ?? "",
+        useDisabled: document.querySelector("#bag-use")?.disabled ?? null,
+        hint: document.querySelector("#bag-window .bag-hint")?.textContent ?? "",
+        window: window.__game.ui.window,
+      }));
+    /** Presses a key and waits for the command it gives rise to. */
+    const pressForCommand = async (key) => {
+      const done = await page.evaluate(() => window.__game.commands.done);
+      await page.keyboard.press(key);
+      await page.waitForFunction((before) => window.__game.commands.done > before, done, { timeout: 10_000 }).catch(() => {});
+      await settle();
+      return useNow();
+    };
+    const openPage = async (query) => {
+      await page.goto(gameUrl(query), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+      await settle();
+    };
+    const tab = async (shouldOpen) => {
+      await page.keyboard.press("Tab");
+      await page.waitForFunction((open) => (window.__game.ui.window === "bag") === open, shouldOpen, { timeout: 5_000 }).catch(() => {});
+      await settle();
+    };
+    await openPage("lang=en&bag=water_bottle:2,bandage,scrap:2&health=50&thirst=50");
+    const atFirst = await useNow();
+    check(
+      "the four quick slots start with nothing on them and show only their keys",
+      atFirst.quick.join() === "-,-,-,-" && atFirst.hudSlots.join() === "-,-,-,-" && atFirst.hudKeys === "1234",
+      `${atFirst.hudSlots.join()} keys ${atFirst.hudKeys}`,
+    );
+    const pressedEmpty = await pressForCommand("Digit1");
+    check("a key of a slot with nothing on it uses nothing", pressedEmpty.last?.reason === "empty_quick_slot" && pressedEmpty.bag.join() === atFirst.bag.join(), JSON.stringify(pressedEmpty.last));
+    // In the bag window a number puts the chosen item on that slot.
+    await tab(true);
+    const windowOpen = await useNow();
+    check("the bag window offers Use on Enter for a thing that can be used", windowOpen.useText === "Enter Use" && windowOpen.useDisabled === false && windowOpen.hint.startsWith("1-4"), `"${windowOpen.useText}", "${windowOpen.hint}"`);
+    const waterOnOne = await pressForCommand("Digit1");
+    check(
+      "a number in the bag window puts the chosen item on that quick slot",
+      waterOnOne.quick.join() === "water_bottle 2,-,-,-" && waterOnOne.hudSlots[0] === "Water 2" && waterOnOne.badges[0] === "1" && waterOnOne.quickText === "Quick slot 1" && waterOnOne.bag.join() === atFirst.bag.join(),
+      `${waterOnOne.quick.join()} / hud ${waterOnOne.hudSlots.join()} / badge ${waterOnOne.badges[0]}`,
+    );
+    await page.keyboard.press("ArrowRight");
+    await pressForCommand("Digit2");
+    const swapped = await pressForCommand("Digit1");
+    check("an item put where another is changes places with it", swapped.quick.join() === "bandage 1,water_bottle 2,-,-" && swapped.badges.slice(0, 2).join() === "2,1", swapped.quick.join());
+    const cleared = await pressForCommand("Digit1");
+    const backOn = await pressForCommand("Digit1");
+    check("the same number again takes the item off its slot", cleared.quick.join() === "-,water_bottle 2,-,-" && cleared.quickText === "" && backOn.quick.join() === "bandage 1,water_bottle 2,-,-", cleared.quick.join());
+    // A repair material goes on no slot, and cannot be used.
+    await page.keyboard.press("ArrowRight");
+    const onScrap = await useNow();
+    await page.keyboard.press("Digit3");
+    await settle();
+    const scrapRefused = await useNow();
+    check(
+      "a repair material cannot be used or put on a quick slot, and the window says so",
+      onScrap.selected === 2 && onScrap.useDisabled === true && onScrap.note.includes("shelter") && scrapRefused.note === "Only things you can use go on a quick slot." && scrapRefused.quick.join() === backOn.quick.join() && scrapRefused.done === backOn.done,
+      `"${onScrap.note}" -> "${scrapRefused.note}"`,
+    );
+    await page.screenshot({ path: join(outDir, "bag-quick.png") });
+    // Enter uses the chosen thing.
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    const drank = await pressForCommand("Enter");
+    check(
+      "Enter in the bag window drinks the water: one fewer, thirst up by 40",
+      drank.last?.type === "useItem" && drank.last.ok && drank.bag[0] === "water_bottle 1" && drank.thirst > 85 && drank.thirst <= 90 && drank.hudSlots[1] === "Water 1" && drank.window === "bag",
+      `thirst ${drank.thirst.toFixed(1)}, ${drank.bag[0]}`,
+    );
+    await tab(false);
+    // In play the number keys use what is on the slots.
+    const drankAgain = await pressForCommand("Digit2");
+    check(
+      "the slot's key uses the item; with the last one used the slot is empty again",
+      drankAgain.last?.type === "useQuickSlot" && drankAgain.last.ok && drankAgain.thirst > 99 && drankAgain.bag[0] === "-" && drankAgain.quick[1] === "-" && drankAgain.hudSlots[1] === "-",
+      `thirst ${drankAgain.thirst.toFixed(1)}, slot ${drankAgain.hudSlots[1]}`,
+    );
+    const noneLeft = await pressForCommand("Digit2");
+    const bandaged = await pressForCommand("Digit1");
+    check("the key of the emptied slot does nothing", noneLeft.last?.reason === "empty_quick_slot" && noneLeft.thirst <= drankAgain.thirst, JSON.stringify(noneLeft.last));
+    check("a bandage gives 30 health back, and its slot empties too", bandaged.last?.ok === true && bandaged.health === 80 && bandaged.quick.join() === "-,-,-,-", `health ${bandaged.health}, ${bandaged.quick.join()}`);
+    // Found again, things are put on slots again; with nothing to restore one is not wasted.
+    await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    await page.keyboard.press("F2");
+    await page.locator("#dev-bag-give-bandage").click();
+    await page.locator("#dev-bag-give-water_bottle").click();
+    await page.locator("#dev-health-full").click();
+    await page.locator("#dev-thirst-20").click();
+    await page.waitForFunction((before) => window.__game.commands.done >= before + 2, bandaged.done, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.press("F2");
+    await settle();
+    // The bandage went into the first slot of the bag and the water into the second.
+    await tab(true);
+    await pressForCommand("Digit1");
+    await page.keyboard.press("ArrowRight");
+    await pressForCommand("Digit2");
+    await tab(false);
+    const found = await useNow();
+    check(
+      "found and put on slots again, they show the count; low on water, the water's slot is marked out",
+      found.quick.join() === "bandage 1,water_bottle 1,-,-" && found.hudSlots.slice(0, 2).join() === "Bandage 1,Water 1" && found.urgent[1] === true && found.hudUrgent[1] === true && found.hudUrgent[0] === false,
+      `${found.quick.join()}, urgent ${found.urgent.join()}`,
+    );
+    await page.screenshot({ path: join(outDir, "quick-slots.png") });
+    const wasted = await pressForCommand("Digit1");
+    check("at full health a bandage is not used up", wasted.last?.reason === "nothing_to_restore" && wasted.quick[0] === "bandage 1" && wasted.health === 100, JSON.stringify(wasted.last));
+    // With the bag open the numbers assign; they do not use.
+    await tab(true);
+    const assignedNotUsed = await pressForCommand("Digit4");
+    await tab(false);
+    check("with the bag window open a number key does not use anything", assignedNotUsed.last?.type === "assignQuickSlot" && assignedNotUsed.bag.join() === wasted.bag.join(), JSON.stringify(assignedNotUsed.last));
+    // Thrown out to the last one, an item leaves its slot just as when it is used up.
+    await tab(true);
+    const thrownOut = await pressForCommand("KeyX");
+    await tab(false);
+    check("the last of an item thrown out leaves its quick slot empty too", thrownOut.last?.type === "discardItem" && assignedNotUsed.quick.join() === "-,water_bottle 1,-,bandage 1" && thrownOut.quick.join() === "-,water_bottle 1,-,-", `${assignedNotUsed.quick.join()} -> ${thrownOut.quick.join()}`);
+
+    // Things thrown out lie at the player's feet in one pile and are picked up again with E.
+    const pilesNow = () =>
+      page.evaluate(() => ({
+        bag: window.__game.player.bag.map((slot) => (slot ? `${slot.item} ${slot.count}` : "-")),
+        piles: window.__game.piles.map((pile) => ({ ...pile, items: [...pile.items] })),
+        target: window.__game.player.interaction,
+        prompt: window.__game.hud.prompt,
+        promptText: document.querySelector("#hud-prompt").textContent,
+        x: window.__game.player.x,
+        z: window.__game.player.z,
+        ground: window.__game.player.groundHeight,
+        entities: window.__game.entityCount,
+        last: window.__game.commands.last,
+      }));
+    await openPage("lang=ko&bag=scrap:2,cloth:1");
+    const beforeDrop = await pilesNow();
+    await tab(true);
+    await pressForCommand("KeyX");
+    const dropped = await pilesNow();
+    const pile = dropped.piles[0];
+    check(
+      "a thing thrown out lies in a pile at the player's feet, on the ground",
+      dropped.piles.length === 1 && pile.items.join() === "scrap 1" && Math.hypot(pile.x - dropped.x, pile.z - dropped.z) < 0.1 && Math.abs(pile.y - dropped.ground) < 0.15 && dropped.bag[0] === "scrap 1" && dropped.entities === beforeDrop.entities + 1,
+      pile ? `${pile.items.join()} at height ${pile.y.toFixed(2)}, ground ${dropped.ground.toFixed(2)}` : "no pile",
+    );
+    check("the pile is the target, and the prompt offers to pick it up", pile && dropped.target === pile.id && dropped.prompt === "pickup" && dropped.promptText === "E 줍기", `target ${dropped.target}, "${dropped.promptText}"`);
+    await pressForCommand("KeyX");
+    await page.keyboard.press("ArrowRight");
+    await pressForCommand("KeyX");
+    const droppedMore = await pilesNow();
+    check("more thrown out in the same place joins the same pile", droppedMore.piles.length === 1 && droppedMore.piles[0].items.join() === "scrap 2,cloth 1" && droppedMore.bag.every((slot) => slot === "-"), droppedMore.piles[0]?.items.join());
+    await tab(false);
+    await page.screenshot({ path: join(outDir, "pile.png") });
+    const pickedUp = await pressForCommand("KeyE");
+    const afterPickUp = await pilesNow();
+    check(
+      "E picks the pile up again: everything is back in the bag and the pile is gone",
+      afterPickUp.last?.type === "pickUp" && afterPickUp.last.moved === 3 && afterPickUp.piles.length === 0 && pickedUp.bag.slice(0, 2).join() === "scrap 2,cloth 1" && afterPickUp.target === null && afterPickUp.prompt === null && afterPickUp.entities === beforeDrop.entities,
+      `${pickedUp.bag.slice(0, 3).join(" | ")}, piles ${afterPickUp.piles.length}`,
+    );
+    // The development panel's Empty leaves nothing lying about.
+    await page.keyboard.press("F2");
+    await page.locator("#dev-bag-empty").click();
+    await page.waitForFunction(() => window.__game.player.bag.every((slot) => slot === null), undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.press("F2");
+    const emptiedOut = await pilesNow();
+    check("the panel's Empty leaves no pile behind", emptiedOut.piles.length === 0 && emptiedOut.bag.every((slot) => slot === "-"));
+    }
+
     // A phone gets an explanation instead of the game, and nothing is loaded for it.
     const phone = await browser.newPage({
       viewport: { width: 390, height: 844 },

@@ -137,6 +137,32 @@ describe("stepSearch on a container already opened", () => {
   });
 });
 
+describe("stepSearch on a pile on the ground", () => {
+  const pile = { id: "pile_1", state: "pile" } as const;
+
+  it("picks it up at once on a press, also while walking", () => {
+    expect(stepSearch(createSearch(), holding({ target: pile }), TICK)).toBe("pile_1");
+    expect(stepSearch(createSearch(), holding({ target: pile, moving: true }), TICK)).toBe("pile_1");
+  });
+
+  it("picks it up once per press", () => {
+    const search = createSearch();
+    stepSearch(search, holding({ target: pile }), TICK);
+    expect(hold(search, 2, holding({ target: pile })).opened).toBeNull();
+  });
+
+  it("does not start a search with the key still held when a container comes into reach next", () => {
+    const search = createSearch();
+    stepSearch(search, holding({ target: pile }), TICK);
+    expect(hold(search, 3).opened).toBeNull();
+    expect(searchProgress(search)).toBe(0);
+  });
+
+  it("is left alone by someone who has collapsed", () => {
+    expect(stepSearch(createSearch(), holding({ target: pile, dead: true }), TICK)).toBeNull();
+  });
+});
+
 describe("createSearchSystem", () => {
   const setUp = () => {
     const world = createWorld();
@@ -167,6 +193,19 @@ describe("createSearchSystem", () => {
     expect(pushed).toEqual([]);
     run(1);
     expect(pushed).toEqual([{ type: "openContainer", actor: "player_1", container: "crate" }]);
+  });
+
+  it("asks for a pile to be picked up on a press", () => {
+    const world = createWorld();
+    world.add({ transform: createTransform(0, 0, 0), interactable: { id: "pile_1", kind: "pickup" }, pile: { items: [{ item: "tape", count: 1 }] } });
+    const player = world.add({ id: "player_1", input: createEmptyActions(), interaction: { target: "pile_1" as string | null }, search: createSearch() });
+    const pushed: Command[] = [];
+    const step = createSearchSystem(world, (command) => pushed.push(command));
+    step(TICK);
+    player.input.interact = true;
+    step(TICK);
+    step(TICK);
+    expect(pushed).toEqual([{ type: "pickUp", actor: "player_1", pile: "pile_1" }]);
   });
 
   it("counts walking, jumping and being in the air as moving", () => {

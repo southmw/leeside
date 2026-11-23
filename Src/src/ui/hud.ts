@@ -1,7 +1,8 @@
 import { type ClockTime, displayTime } from "../gameplay/clock";
 import type { TemperatureStage } from "../gameplay/temperature";
 import type { I18n } from "../locales/i18n";
-import { type BagView, type CompassPosition, compassPosition, type HudAlerts, type InteractionCue } from "./hudState";
+import { ITEMS } from "../data/items";
+import { type BagView, type CompassPosition, compassPosition, type HudAlerts, type InteractionCue, type QuickSlotView } from "./hudState";
 import { createIcon, type IconName, setIcon } from "./icons";
 import { KEY_MARK, setKeyText } from "./keyCap";
 import { createProgressRing } from "./progressRing";
@@ -11,8 +12,8 @@ import type { Ui } from "./uiRoot";
  * What is on screen during play (UI design 5): the compass and the storm warning at the top,
  * the day and time top right (with a word under it from dusk on: colour alone is not to be
  * relied on, UI design 1, rule 4), health, body temperature and thirst bottom left, and the
- * "sheltered" sign bottom right, how full the bag is above it, and in the middle a dot with, under it, what the key E would
- * do here. Colours bleed in from the edges of the screen when the player is in trouble. What to show is decided in hudState.ts; this file only draws it.
+ * "sheltered" sign bottom right, how full the bag is above it, the quick slots bottom centre,
+ * and in the middle a dot with, under it, what the key E would do here. Colours bleed in from the edges of the screen when the player is in trouble. What to show is decided in hudState.ts; this file only draws it.
  */
 
 const css = `
@@ -114,6 +115,27 @@ const css = `
 #hud-bag.shake { animation: hud-bag-shake 0.3s linear; }
 /* No empty slot left: orange, the colour of warnings. */
 #hud-bag.full { color: #ffb45e; border-color: #ff8a2a; }
+/* The quick slots: what the keys 1 to 4 use out of the bag. They hold nothing themselves. */
+@keyframes hud-quick-used { 0% { background: rgba(232, 220, 192, 0.6); } 100% { background: rgba(20, 19, 16, 0.55); } }
+#hud-quick { position: absolute; left: 50%; bottom: 1em; transform: translateX(-50%); display: flex; gap: 0.4em; }
+.hud-quick-slot {
+  position: relative; width: 4.3em; height: 4.3em; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: #e8dcc0; background: rgba(20, 19, 16, 0.55);
+  border: 0.1em solid rgba(232, 220, 192, 0.3); border-radius: 0.25em;
+  text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.75);
+}
+.hud-quick-slot .ui-key { position: absolute; top: 0.25em; left: 0.3em; font-size: 0.7em; }
+.hud-quick-slot .ui-icon { width: 1.9em; height: 1.9em; margin-top: 0.5em; }
+.hud-quick-name { font-size: 0.75em; white-space: nowrap; }
+.hud-quick-count { position: absolute; top: 0.05em; right: 0.4em; font-weight: 700; }
+/* Nothing on the slot: only its key, on a darker square. */
+.hud-quick-slot.empty { background: rgba(20, 19, 16, 0.3); border-color: rgba(232, 220, 192, 0.15); }
+.hud-quick-slot.empty > :not(.ui-key) { display: none; }
+.hud-quick-slot.empty .ui-key { opacity: 0.5; }
+.hud-quick-slot.urgent { border-color: #f0c060; animation: hud-blink 1s infinite; }
+.hud-quick-slot.used { animation: hud-quick-used 0.4s ease-out; }
+.hud-quick-slot.refused { animation: hud-bag-shake 0.3s linear; }
 /* The middle of the screen: a dot, the ring that fills round it, and the prompt under it. */
 #hud-aim { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
 #hud-aim[hidden] { display: none; }
@@ -181,6 +203,10 @@ export interface Hud {
   setBag(bag: BagView, key: string): void;
   /** Shakes the bag sign: something did not go in. */
   bagRefused(): void;
+  /** Shows the quick slots (hudState.ts); `keys` is what each slot's key is called. */
+  setQuickSlots(slots: readonly QuickSlotView[], keys: readonly string[]): void;
+  /** Answers a quick slot's key: the slot lights up if something was used, and shakes if not. */
+  quickSlotPressed(index: number, used: boolean): void;
   /**
    * Shows the dot in the middle and the prompt under it (hudState.ts). `key` is what the
    * interaction key is called; `progress` (0 to 1) fills the ring round the dot.
@@ -300,7 +326,11 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   const bagText = make("span");
   bag.append(createIcon("bag"), bagText);
 
-  root.append(...edges.map((edge) => edge.node), clock, top, vitals, shelter, bag, aim);
+  // The quick slots: made as the game says how many there are.
+  const quick = make("div", "hud-quick");
+  const quickSlots: Array<{ node: HTMLElement; key: HTMLElement; icon: HTMLElement; name: HTMLElement; count: HTMLElement }> = [];
+
+  root.append(...edges.map((edge) => edge.node), clock, top, vitals, shelter, bag, quick, aim);
   // Under the title and windows, which are added to the root later or sit above by their own rules.
   ui.root.prepend(root);
 
@@ -352,6 +382,41 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
       bagTotal = view.total;
     }
   };
+  let latestQuick: { slots: readonly QuickSlotView[]; keys: readonly string[] } | undefined;
+  let quickShown = "";
+  const renderQuick = (slots: readonly QuickSlotView[], keys: readonly string[]): void => {
+    latestQuick = { slots, keys };
+    const shown = `${i18n.language}|${keys.join()}|${slots.map((slot) => (slot ? `${slot.item}:${slot.count}:${slot.urgent}` : "-")).join()}`;
+    if (shown === quickShown) {
+      return;
+    }
+    quickShown = shown;
+    while (quickSlots.length < slots.length) {
+      const node = make("div", "", "hud-quick-slot");
+      const key = make("span", "", "ui-key");
+      const icon = createIcon("bag");
+      const name = make("span", "", "hud-quick-name");
+      const count = make("span", "", "hud-quick-count");
+      node.append(key, icon, name, count);
+      quick.append(node);
+      quickSlots.push({ node, key, icon, name, count });
+    }
+    slots.forEach((slot, index) => {
+      const drawn = quickSlots[index];
+      if (!drawn) {
+        return;
+      }
+      drawn.key.textContent = keys[index] ?? "";
+      drawn.node.classList.toggle("empty", slot === null);
+      drawn.node.classList.toggle("urgent", slot !== null && slot.urgent);
+      drawn.node.dataset.item = slot?.item ?? "";
+      if (slot) {
+        setIcon(drawn.icon, ITEMS[slot.item].icon);
+        drawn.name.textContent = i18n.t(ITEMS[slot.item].shortNameKey);
+        drawn.count.textContent = String(slot.count);
+      }
+    });
+  };
   let promptKind: InteractionCue["prompt"] = null;
   let promptKeyLabel = "";
   // The key has a place in the sentence that differs from language to language. The sentence
@@ -383,6 +448,9 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
     renderPrompt();
     if (latestBag) {
       renderBag(latestBag.view, latestBag.key);
+    }
+    if (latestQuick) {
+      renderQuick(latestQuick.slots, latestQuick.keys);
     }
   };
   renderWords();
@@ -446,6 +514,19 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
     },
     bagRefused(): void {
       animateBag("shake");
+    },
+    setQuickSlots(slots, keys): void {
+      renderQuick(slots, keys);
+    },
+    quickSlotPressed(index, used): void {
+      const node = quickSlots[index]?.node;
+      if (!node) {
+        return;
+      }
+      node.classList.remove("used", "refused");
+      // Reading the size makes the browser take note of the removal, so adding starts afresh.
+      void node.offsetWidth;
+      node.classList.add(used ? "used" : "refused");
     },
     setInteraction(cue, key, progress): void {
       aim.hidden = cue.crosshair === "hidden";

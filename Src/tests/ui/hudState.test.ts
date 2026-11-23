@@ -14,6 +14,7 @@ import {
   type HudSituation,
   interactionCue,
   keyLabel,
+  quickBarView,
   relativeBearing,
   stepDamageCue,
 } from "../../src/ui/hudState";
@@ -203,6 +204,7 @@ describe("interactionCue", () => {
   it("says what the container allows: open one searched before, or only that it is empty", () => {
     expect(interactionCue({ ...nothing, targetKind: "open" })).toEqual({ crosshair: "target", prompt: "open" });
     expect(interactionCue({ ...nothing, targetKind: "empty" })).toEqual({ crosshair: "target", prompt: "empty" });
+    expect(interactionCue({ ...nothing, targetKind: "pickup" })).toEqual({ crosshair: "target", prompt: "pickup" });
   });
 
   it("shows neither while a window is open or the character lies collapsed", () => {
@@ -264,6 +266,41 @@ describe("bagView", () => {
     const view = bagView(bag);
     addItems(bag, "tape", 2);
     expect(view.slots[0]).toEqual({ item: "tape", count: 1 });
+  });
+});
+
+describe("quickBarView", () => {
+  const well = { health: 100, thirst: 100 };
+
+  it("shows nothing on slots that have nothing on them", () => {
+    expect(quickBarView([null, null, null, null], createInventory(), well)).toEqual([null, null, null, null]);
+  });
+
+  it("counts an item over all the bag's stacks of it", () => {
+    const bag = createInventory();
+    addItems(bag, "water_bottle", 3);
+    addItems(bag, "scrap", 2);
+    addItems(bag, "water_bottle", 2);
+    expect(quickBarView(["water_bottle", null, "bandage", null], bag, well)).toEqual([
+      { item: "water_bottle", count: 5, urgent: false },
+      null,
+      { item: "bandage", count: 0, urgent: false },
+      null,
+    ]);
+  });
+
+  it("marks out the water when thirst is low, and the bandages when health is", () => {
+    const bag = createInventory();
+    addItems(bag, "water_bottle", 1);
+    addItems(bag, "bandage", 1);
+    const slots = ["water_bottle", "bandage"] as const;
+    expect(quickBarView(slots, bag, { health: 100, thirst: LOW_THIRST }).map((slot) => slot?.urgent)).toEqual([true, false]);
+    expect(quickBarView(slots, bag, { health: DANGER_HEALTH, thirst: 100 }).map((slot) => slot?.urgent)).toEqual([false, true]);
+    expect(quickBarView(slots, bag, { health: DANGER_HEALTH + 1, thirst: LOW_THIRST + 1 }).map((slot) => slot?.urgent)).toEqual([false, false]);
+  });
+
+  it("marks out nothing there is none of", () => {
+    expect(quickBarView(["water_bottle"], createInventory(), { health: 5, thirst: 0 })).toEqual([{ item: "water_bottle", count: 0, urgent: false }]);
   });
 });
 

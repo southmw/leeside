@@ -50,6 +50,15 @@ export const ITEMS = {
   },
 } as const satisfies Record<ItemId, ItemDefinition>;
 
+/**
+ * Whether an item can be put on a quick slot (prototype design 4.5): only what a key press
+ * can do something with. That is the things that are used up; weapons will join them.
+ */
+export function isQuickSlotItem(item: ItemId): boolean {
+  const definition: ItemDefinition = ITEMS[item];
+  return definition.use !== undefined;
+}
+
 export function isItemId(value: unknown): value is ItemId {
   return typeof value === "string" && (ITEM_IDS as readonly string[]).includes(value);
 }

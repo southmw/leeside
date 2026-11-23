@@ -1,3 +1,4 @@
+import { QUICK_ACTIONS } from "../input/actions";
 import type { I18n } from "../locales/i18n";
 import type { GameDebug } from "./debugApi";
 import { GRAPH_GUIDES_MS, GRAPH_SCALE_MS, graphBar, type FrameLevel } from "./frameGraph";
@@ -240,8 +241,7 @@ export function createDebugOverlay(
             [
               input.jump && t("debug.button.jump"),
               input.interact && t("debug.button.interact"),
-              input.useWater && t("debug.button.water"),
-              input.useBandage && t("debug.button.bandage"),
+              ...QUICK_ACTIONS.map((action, index) => input[action] && t("debug.button.quick", { slot: index + 1 })),
             ]
               .filter(Boolean)
               .join(" ") || "-",
