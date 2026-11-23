@@ -29,6 +29,8 @@ export interface GameAudio {
   /** Plays one footstep at `volume` (0 to 1) times its own. Nothing is heard until sound is playing. */
   playFootstep(step: FootstepSound, volume: number): void;
   setMuted(muted: boolean): void;
+  /** Sets the overall volume, 0 to 1 (the setting). Eased, like muting. */
+  setVolume(volume: number): void;
 }
 
 const WIND_URL = "sounds/wind.wav";
@@ -47,7 +49,8 @@ const LIMITER_THRESHOLD_DB = -3;
 const UNLOCK_EVENTS = ["pointerdown", "keydown"] as const;
 
 /** `baseUrl` is where the site's files are served from; `volume` is the overall volume, 0 to 1. */
-export function createGameAudio(baseUrl: string, volume: number, muted = false): GameAudio {
+export function createGameAudio(baseUrl: string, startVolume: number, muted = false): GameAudio {
+  let volume = startVolume;
   let context: AudioContext | undefined;
   let master: GainNode | undefined;
   let windGain: GainNode | undefined;
@@ -198,6 +201,12 @@ export function createGameAudio(baseUrl: string, volume: number, muted = false):
       source.connect(gain);
       gain.connect(master);
       source.start();
+    },
+    setVolume(value: number): void {
+      volume = Math.min(Math.max(value, 0), 1);
+      if (context && master && !isMuted) {
+        master.gain.setTargetAtTime(volume, context.currentTime, MUTE_EASE_SECONDS);
+      }
     },
     setMuted(value: boolean): void {
       isMuted = value;

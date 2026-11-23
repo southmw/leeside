@@ -264,7 +264,6 @@
   "title.character": "Character",
   "title.controls": "WASD Move  -  Hold mouse button to look  -  Space Jump",
   "title.settings": "Settings",
-  "title.settings_pending": "Settings are not available yet.",
   "title.version": "Prototype v{version}",
   "title.desktop_only": "Desktop browser only",
   "title.unsupported_mobile": "This game can be played in a desktop browser, with a keyboard and a mouse.",

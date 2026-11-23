@@ -24,6 +24,11 @@ export interface LocalInputOptions {
   mouse?: Mouse;
   /** Radians of turn per pixel of mouse movement. */
   sensitivity?: number;
+  /**
+   * The player's settings for looking, asked for each time: a factor on the sensitivity, and
+   * whether moving the mouse up looks down. Without it the factor is 1 and nothing is inverted.
+   */
+  look?: () => { sensitivity: number; invertY: boolean };
 }
 
 /**
@@ -36,6 +41,12 @@ export function createLocalInput(options: LocalInputOptions = {}): LocalInput {
   const keyboard = createKeyboard(options.target);
   const { mouse } = options;
   const sensitivity = options.sensitivity ?? MOUSE_SENSITIVITY;
+  /** Mouse movement in pixels as a turn of the view in radians. */
+  const turn = (movement: { x: number; y: number }): { lookX: number; lookY: number } => {
+    const look = options.look?.() ?? { sensitivity: 1, invertY: false };
+    const scale = sensitivity * look.sensitivity;
+    return { lookX: movement.x * scale, lookY: movement.y * scale * (look.invertY ? -1 : 1) };
+  };
   return {
     sample(): PlayerActions {
       // Without focus the page receives no key events, so whatever is held cannot be trusted.
@@ -45,15 +56,12 @@ export function createLocalInput(options: LocalInputOptions = {}): LocalInput {
       // Keys tapped between two steps count for this one, so a quick press is never lost.
       const actions = actionsFromKeys(keyboard.takeHeld(), bindings);
       if (mouse) {
-        const movement = mouse.takeMovement();
-        actions.lookX = movement.x * sensitivity;
-        actions.lookY = movement.y * sensitivity;
+        Object.assign(actions, turn(mouse.takeMovement()));
       }
       return actions;
     },
     pendingLook() {
-      const movement = mouse?.peekMovement() ?? { x: 0, y: 0 };
-      return { lookX: movement.x * sensitivity, lookY: movement.y * sensitivity };
+      return turn(mouse?.peekMovement() ?? { x: 0, y: 0 });
     },
     dispose: () => keyboard.dispose(),
   };

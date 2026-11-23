@@ -71,6 +71,9 @@ const css = `
 #hud-storm .hud-storm-fill { height: 100%; background: #ff8a2a; }
 #hud-storm.storm { color: #ffd9d2; background: rgba(120, 28, 20, 0.85); border-color: #e0513f; justify-content: center; }
 #hud-storm.storm .hud-storm-track { display: none; }
+/* The frame rate, for those who ask for it in the settings. */
+#hud-fps { position: absolute; left: 1.25em; top: 1em; font-size: 0.875em; font-weight: 700; opacity: 0.85; text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.75); }
+#hud-fps[hidden] { display: none; }
 #hud-vitals {
   position: absolute; left: 1.25em; bottom: 1em; width: 15em;
   text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.75);
@@ -206,6 +209,8 @@ export interface Hud {
   setCompass(heading: number, shelterBearing: number | null, bagBearing?: number | null): CompassPosition;
   /** Shows the warnings and effects the player's situation calls for (hudState.ts). */
   setAlerts(alerts: HudAlerts): void;
+  /** Shows the frame rate in a corner (the setting), or hides it with null. */
+  setFps(fps: number | null): void;
   /** Shows how full the bag is (hudState.ts); `key` is what the key that opens the bag window is called. */
   setBag(bag: BagView, key: string): void;
   /** Shakes the bag sign: something did not go in. */
@@ -346,7 +351,11 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   const quick = make("div", "hud-quick");
   const quickSlots: Array<{ node: HTMLElement; key: HTMLElement; icon: HTMLElement; name: HTMLElement; count: HTMLElement }> = [];
 
-  root.append(...edges.map((edge) => edge.node), clock, top, vitals, shelter, bag, quick, aim);
+  const fps = make("div", "hud-fps");
+  fps.hidden = true;
+  let fpsShown: number | null = null;
+
+  root.append(...edges.map((edge) => edge.node), clock, top, vitals, shelter, bag, quick, aim, fps);
   // Under the title and windows, which are added to the root later or sit above by their own rules.
   ui.root.prepend(root);
 
@@ -488,6 +497,16 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
     update(next): void {
       latest = next;
       renderClock();
+    },
+    setFps(value): void {
+      const rounded = value === null ? null : Math.round(value);
+      if (rounded !== fpsShown) {
+        fpsShown = rounded;
+        fps.hidden = rounded === null;
+        if (rounded !== null) {
+          fps.textContent = i18n.t("hud.fps", { fps: rounded });
+        }
+      }
     },
     setHealth(current, max): void {
       setAmount(healthBar, current, max);

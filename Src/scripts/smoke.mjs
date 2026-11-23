@@ -572,13 +572,13 @@ try {
     );
 
     await page.locator("#title-settings").click();
-    const settingsNotice = page.locator('[data-window="settings-pending"]');
-    const noticeShown = await settingsNotice.isVisible();
-    // Enter must close the notice here, not start the game underneath it.
+    const settingsWindow = page.locator('[data-window="settings"]');
+    const settingsShown = await settingsWindow.isVisible();
+    // Enter must close the settings here (Back is the first button), not start the game underneath.
     await page.keyboard.press("Enter");
     await page.waitForTimeout(300);
-    const phaseAfterNotice = await page.evaluate(() => window.__game.phase);
-    check("the settings button opens a notice, and Enter closes it without starting", noticeShown && phaseAfterNotice === "title");
+    const phaseAfterSettings = await page.evaluate(() => ({ phase: window.__game.phase, window: window.__game.ui.window }));
+    check("the settings button opens the settings, and Enter closes them without starting", settingsShown && phaseAfterSettings.phase === "title" && phaseAfterSettings.window === null);
 
     await page.locator("#title-start").click();
     await page.waitForFunction(() => window.__game.phase === "playing", undefined, { timeout: 5_000 }).catch(() => {});
@@ -605,6 +605,8 @@ try {
     await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     check("?character picks a character for one visit", (await characterNow()) === "shaun", await characterNow());
     await page.evaluate(() => window.localStorage.removeItem("leeside.character"));
+    // The title's language switch is a setting now, and kept: the checks that follow start without it.
+    await page.evaluate(() => window.localStorage.removeItem("leeside.settings"));
 
     // The development panel does on screen what the start conditions do in the address.
     await page.goto(gameUrl(), { waitUntil: "load" });
@@ -2292,8 +2294,9 @@ try {
         yaw: window.__game.view.yaw,
         phase: window.__game.phase,
         veil: document.querySelector("#pause-veil").classList.contains("shown"),
-        title: document.querySelector(".ui-window .ui-title")?.textContent ?? "",
-        buttons: [...document.querySelectorAll(".ui-window > .ui-button")].map((button) => button.textContent),
+        // A window that has made way for another lingers for a moment while it fades: not that one.
+        title: document.querySelector(".ui-window:not(.leaving) .ui-title")?.textContent ?? "",
+        buttons: [...document.querySelectorAll(".ui-window:not(.leaving) > .ui-button")].map((button) => button.textContent),
         controls: [...document.querySelectorAll("#controls-list > span:not(.controls-keys)")].map((row) => row.textContent),
         keys: [...document.querySelectorAll("#controls-list .controls-keys")].map((row) => [...row.querySelectorAll(".ui-key")].map((key) => key.textContent).join("")),
         day: window.__game.clock.day,
@@ -2314,7 +2317,7 @@ try {
     const stillPaused = await pauseNow();
     check(
       "Escape pauses: the picture dims and the menu offers to resume, the controls and starting over",
-      !running.paused && justPaused.paused && justPaused.window === "pause" && justPaused.veil && justPaused.title === "Paused" && justPaused.buttons.join() === "Resume,Controls,Start over",
+      !running.paused && justPaused.paused && justPaused.window === "pause" && justPaused.veil && justPaused.title === "Paused" && justPaused.buttons.join() === "Resume,Settings,Controls,Start over",
       `"${justPaused.title}": ${justPaused.buttons.join(", ")}`,
     );
     check(
@@ -2323,7 +2326,8 @@ try {
       `tick ${justPaused.tick} -> ${stillPaused.tick}, hour ${justPaused.hour.toFixed(3)} -> ${stillPaused.hour.toFixed(3)}`,
     );
     await page.screenshot({ path: join(outDir, "pause.png") });
-    // Controls, and back with Escape.
+    // Controls (the third button), and back with Escape.
+    await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__game.ui.window === "controls", undefined, { timeout: 5_000 }).catch(() => {});
@@ -2383,6 +2387,124 @@ try {
     await page.keyboard.press("Escape");
     await page.waitForTimeout(300);
     check("Escape does not pause behind the title", !(await pauseNow()).paused);
+    }
+
+    {
+    // Settings: reached from the title and from the pause screen, applied at once, kept by the browser.
+    const settingsNow = () =>
+      page.evaluate(() => ({
+        settings: { ...window.__game.settings },
+        window: window.__game.ui.window,
+        language: window.__game.language,
+        title: document.querySelector('[data-window="settings"] .ui-title')?.textContent ?? "",
+        rows: [...document.querySelectorAll("#settings .settings-name")].map((row) => row.textContent),
+        headings: [...document.querySelectorAll("#settings .settings-heading")].map((row) => row.textContent),
+        chosen: [...document.querySelectorAll("#settings .settings-choice .ui-button.selected")].map((button) => button.textContent),
+        values: [...document.querySelectorAll("#settings .settings-value")].map((value) => value.textContent),
+        buttons: [...document.querySelectorAll('[data-window="settings"] > .ui-button')].map((button) => button.textContent),
+        fps: document.querySelector("#hud-fps") && !document.querySelector("#hud-fps").hidden ? document.querySelector("#hud-fps").textContent : null,
+        stored: window.localStorage.getItem("leeside.settings"),
+        paused: window.__game.paused,
+        phase: window.__game.phase,
+      }));
+    const slide = (id, value) =>
+      page.evaluate(
+        ([slider, to]) => {
+          // A page that is being replaced lingers for a moment while it fades: not that one.
+          const input = document.querySelector(`.ui-window:not(.leaving) ${slider}`);
+          input.value = String(to);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        },
+        [id, value],
+      );
+    try {
+      await page.goto(`${url}?lang=en`, { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.evaluate(() => window.localStorage.removeItem("leeside.settings"));
+      await page.goto(url, { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.locator("#title-settings").click();
+      await page.waitForFunction(() => window.__game.ui.window === "settings", undefined, { timeout: 5_000 }).catch(() => {});
+      const opened = await settingsNow();
+      check(
+        "the settings show every item of the design with its default",
+        opened.title === "Settings" && opened.headings.join() === "Controls,Sound,Display,Other" && opened.rows.join() === "Mouse sensitivity,Invert Y,Master volume,Graphics quality,Fullscreen,Show FPS,Language" &&
+          opened.chosen.join() === "Off,High,Off,Off,English" && opened.values.join() === "1.00,80%" && opened.buttons.join() === "Back,Reset to defaults",
+        `${opened.rows.length} rows, chosen ${opened.chosen.join()}, values ${opened.values.join()}`,
+      );
+      await page.screenshot({ path: join(outDir, "settings.png") });
+      // Language: at once, on the settings page itself and on the title behind it; and kept.
+      await page.locator(".ui-window:not(.leaving) #settings-language-1").click();
+      await page.waitForTimeout(200);
+      await page.waitForFunction(() => window.__game.language === "ko", undefined, { timeout: 5_000 }).catch(() => {});
+      await page.waitForTimeout(200);
+      const korean = await settingsNow();
+      const titleKorean = await page.locator("#title-screen").innerText();
+      check("choosing a language changes the screen text at once", korean.language === "ko" && korean.title === "설정" && korean.rows[0] === "마우스 감도" && korean.chosen.includes("한국어") && titleKorean.includes("시작"), `"${korean.title}", "${korean.rows[0]}"`);
+      await page.screenshot({ path: join(outDir, "settings-ko.png") });
+      await page.goto(url, { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      const afterReload = await settingsNow();
+      check("the choice is still there after the page is loaded again", afterReload.language === "ko" && afterReload.settings.language === "ko", `language ${afterReload.language}`);
+      // In the game: from the pause screen. Each change is applied at once.
+      await page.goto(gameUrl(""), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+      await settle();
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => window.__game.ui.window === "pause", undefined, { timeout: 5_000 }).catch(() => {});
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => window.__game.ui.window === "settings", undefined, { timeout: 5_000 }).catch(() => {});
+      const fromPause = await settingsNow();
+      await page.locator(".ui-window:not(.leaving) #settings-fps-1").click();
+      await page.waitForTimeout(200);
+      await page.locator(".ui-window:not(.leaving) #settings-quality-0").click();
+      await page.waitForTimeout(200);
+      await page.locator(".ui-window:not(.leaving) #settings-invert-1").click();
+      await page.waitForTimeout(200);
+      await slide("#settings-sensitivity", 2);
+      await slide("#settings-volume", 0.5);
+      await page.waitForTimeout(200);
+      const changed = await settingsNow();
+      check(
+        "from the pause screen the settings open too, and each change reaches the game at once",
+        fromPause.window === "settings" && fromPause.paused && changed.settings.showFps === true && changed.settings.quality === "low" && changed.settings.invertY === true && changed.settings.mouseSensitivity === 2 && changed.settings.volume === 0.5 && changed.values.join() === "2.00,50%" && changed.window === "settings",
+        JSON.stringify(changed.settings),
+      );
+      // Back goes to the pause screen, and from there to the game, where the frame rate shows.
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => window.__game.ui.window === "pause", undefined, { timeout: 5_000 }).catch(() => {});
+      const backAtPause = await settingsNow();
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !window.__game.paused, undefined, { timeout: 5_000 }).catch(() => {});
+      await page.waitForFunction(() => document.querySelector("#hud-fps") && !document.querySelector("#hud-fps").hidden, undefined, { timeout: 5_000 }).catch(() => {});
+      const playing = await settingsNow();
+      check("Back returns to the pause screen, and in play the frame rate is shown in the corner", backAtPause.window === "pause" && backAtPause.paused && !playing.paused && /^\d+ FPS$/.test(playing.fps ?? ""), `"${playing.fps}"`);
+      await page.screenshot({ path: join(outDir, "fps.png") });
+      // Kept across a reload; and Reset puts everything back, the language included.
+      await page.goto(gameUrl(""), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+      const kept = await settingsNow();
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => window.__game.ui.window === "pause", undefined, { timeout: 5_000 }).catch(() => {});
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => window.__game.ui.window === "settings", undefined, { timeout: 5_000 }).catch(() => {});
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => window.__game.language === "en", undefined, { timeout: 5_000 }).catch(() => {});
+      await page.waitForTimeout(200);
+      const reset = await settingsNow();
+      check(
+        "the settings are kept across a reload, and Reset to defaults puts everything back, the language too",
+        kept.settings.quality === "low" && kept.settings.mouseSensitivity === 2 && kept.settings.language === "ko" && kept.language === "ko" &&
+          reset.settings.quality === "high" && reset.settings.mouseSensitivity === 1 && reset.settings.volume === 0.8 && !reset.settings.showFps && reset.settings.language === null && reset.language === "en" && reset.title === "Settings" && reset.fps === null,
+        `kept ${JSON.stringify(kept.settings)} / reset ${JSON.stringify(reset.settings)}`,
+      );
+    } finally {
+      // Whatever happened above, the checks that follow start from the defaults.
+      await page.evaluate(() => window.localStorage.removeItem("leeside.settings")).catch(() => {});
+    }
     }
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.

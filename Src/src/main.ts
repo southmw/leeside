@@ -1,9 +1,11 @@
 import { version } from "../package.json";
 import { advanceStartFlow, initialStartFlow, type StartFlowEvent } from "./app/startFlow";
 import { checkSupport } from "./app/support";
+import { createSettingsStore, type SettingsStorage } from "./app/settings";
 import { createI18n, detectLanguage } from "./locales/i18n";
 import { chooseCharacter } from "./render/characterCatalog";
 import { createTitleScreen, type TitleScreen } from "./ui/titleScreen";
+import { createSettingsScreen } from "./ui/settingsScreen";
 import { createUi } from "./ui/uiRoot";
 
 /**
@@ -21,7 +23,20 @@ const LOADING_STEPS = 1 + GAME_LOADING_STEPS;
 // Start conditions come from the URL, e.g. `?lang=ko`.
 const startParams = new URLSearchParams(window.location.search);
 
-const i18n = createI18n(detectLanguage({ query: startParams.get("lang"), browser: navigator.languages }));
+// The settings are kept in the browser. Storage can be unavailable (private windows, blocked
+// site data); they then last for the visit.
+function browserStorage(): SettingsStorage | undefined {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
+const settings = createSettingsStore(browserStorage());
+
+// The language: `?lang` for this visit, else the one chosen in the settings, else the browser's.
+const i18n = createI18n(detectLanguage({ query: startParams.get("lang") ?? settings.get().language, browser: navigator.languages }));
+settings.onChange((now) => i18n.setLanguage(now.language ?? detectLanguage({ browser: navigator.languages })));
 document.documentElement.lang = i18n.language;
 i18n.onChange((language) => {
   document.documentElement.lang = language;
@@ -48,6 +63,13 @@ function storeCharacter(id: string): void {
 let character = chooseCharacter(startParams.get("character"), storedCharacter());
 
 const ui = createUi(i18n);
+const settingsScreen = createSettingsScreen(ui, i18n, settings, {
+  fullscreen: {
+    isOn: () => document.fullscreenElement !== null,
+    // The browser may refuse (it wants a click first, or does not allow it at all); then nothing changes.
+    set: (on) => void (on ? document.documentElement.requestFullscreen() : document.exitFullscreen()).catch(() => {}),
+  },
+});
 const withoutTitle = startParams.has("skipTitle") || startParams.has("bench");
 
 let flow = initialStartFlow(LOADING_STEPS);
@@ -60,6 +82,8 @@ const showTitle = (): TitleScreen =>
     version: version.split(".").slice(0, 2).join("."),
     character,
     onStart: () => dispatch({ type: "start" }),
+    onSettings: () => settingsScreen.open(() => {}),
+    onLanguage: (language) => settings.set({ language }),
     onCharacter: (id) => {
       character = id;
       storeCharacter(id);
@@ -103,6 +127,8 @@ if (unsupported && !withoutTitle) {
       ui,
       startParams,
       character,
+      settings,
+      openSettings: (onBack) => settingsScreen.open(onBack),
       onProgress: () => dispatch({ type: "step_done" }),
       onQuit: () => dispatch({ type: "quit" }),
     });

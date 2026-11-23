@@ -45,6 +45,10 @@ export interface TitleScreenOptions {
   character: string;
   /** Called when START is pressed while the game is ready. */
   onStart(): void;
+  /** Called when the settings button is pressed. */
+  onSettings(): void;
+  /** Called when a language is chosen. Whoever is called changes the language (and remembers it). */
+  onLanguage(language: Language): void;
   /** Called when the player picks another character. */
   onCharacter(id: string): void;
 }
@@ -100,15 +104,7 @@ export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOption
     return node;
   };
 
-  const openSettings = (): void => {
-    // The settings screen itself arrives in plan step 2.22.
-    const notice = ui.openWindow({
-      id: "settings-pending",
-      title: t("title.settings"),
-      text: t("title.settings_pending"),
-      buttons: [{ label: t("ui.close"), onActivate: () => notice.close() }],
-    });
-  };
+  const openSettings = (): void => options.onSettings();
 
   const render = (): void => {
     const unsupported = state.phase === "unsupported";
@@ -151,7 +147,7 @@ export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOption
     const languages = element("div", "title-languages");
     for (const language of LANGUAGES) {
       languages.append(
-        button(`title-language-${language}`, t(`language.${language}`), () => i18n.setLanguage(language), language === i18n.language),
+        button(`title-language-${language}`, t(`language.${language}`), () => options.onLanguage(language), language === i18n.language),
       );
     }
     const topRight = element("div", "title-corner top-right");

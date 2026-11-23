@@ -14,9 +14,12 @@ export function createCamera(): PerspectiveCamera {
   return new PerspectiveCamera(CAMERA_FOV, 1, 0.1, 1000);
 }
 
-/** Matches the renderer and camera to the current window size. */
-export function fitToWindow(renderer: WebGLRenderer, camera: PerspectiveCamera): void {
-  const viewport = computeViewport(window.innerWidth, window.innerHeight, window.devicePixelRatio);
+/**
+ * Matches the renderer and camera to the current window size. `maxPixelRatio` caps how many
+ * device pixels are drawn per CSS pixel (the quality setting); without it the usual cap holds.
+ */
+export function fitToWindow(renderer: WebGLRenderer, camera: PerspectiveCamera, maxPixelRatio?: number): void {
+  const viewport = computeViewport(window.innerWidth, window.innerHeight, window.devicePixelRatio, maxPixelRatio);
   renderer.setPixelRatio(viewport.pixelRatio);
   // `false` leaves the canvas CSS size alone; the stylesheet keeps it filling the window.
   renderer.setSize(viewport.width, viewport.height, false);

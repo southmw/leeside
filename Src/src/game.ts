@@ -24,7 +24,6 @@ import {
   CAMERA_SHOULDER_OFFSET,
   CHARACTER_HEIGHT,
   CHARACTER_RADIUS,
-  DEFAULT_VOLUME,
   FOOTSTEP_STRIDE,
   FOOTSTEP_VOLUME,
   INTERACT_DISTANCE,
@@ -41,6 +40,7 @@ import { revealAfterStorm, shortfall, stormJustPassed } from "./gameplay/reveal"
 import { createRepair, deliverMaterials, isRepairDone, REPAIR_MATERIALS, repairRows, resetRepair } from "./gameplay/repair";
 import { createTallyScreen } from "./ui/tallyScreen";
 import { canPause, shouldPauseOnLeave, simulationRuns } from "./app/pause";
+import { QUALITY_PRESETS, type Settings, type SettingsStore } from "./app/settings";
 import { createPauseScreen } from "./ui/pauseScreen";
 import { clearQuickSlots, createQuickSlots, createQuickUseSystem } from "./gameplay/quickSlots";
 import { createPileMesh } from "./render/pileMesh";
@@ -102,8 +102,8 @@ import { createZoneVeil } from "./ui/zoneVeil";
 const BENCH_SECONDS = 60;
 const BENCH_CAMERA_HEIGHT = 6;
 const BENCH_LOOK_AHEAD = 40;
-/** The budget results are judged against, until the quality setting exists (step 2.22). */
-const BENCH_QUALITY = "high";
+/** How often the frame rate shown in the corner (a setting) is brought up to date, in seconds. */
+const FPS_REFRESH_SECONDS = 0.5;
 
 /** The fastest the clock can be made to run with `?timescale` and the development panel. */
 const MAX_TIME_SCALE = 600;
@@ -167,6 +167,10 @@ export interface GameContext {
   startParams: URLSearchParams;
   /** Id of the character to start with (render/characterCatalog.ts). */
   character: string;
+  /** The player's settings (app/settings.ts). The game applies them and follows their changes. */
+  settings: SettingsStore;
+  /** Opens the settings screen; `onBack` is called when the player leaves it. */
+  openSettings(onBack: () => void): void;
   /** Called as each part of loading finishes. */
   onProgress(step: LoadingStep): void;
   /**
@@ -215,7 +219,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   let devLog: DevLog | undefined;
   if (import.meta.env.DEV) {
     void import("./debug/debugOverlay").then(({ createDebugOverlay }) => {
-      overlay = createDebugOverlay(debug, i18n, frameStats);
+      overlay = createDebugOverlay(debug, i18n, frameStats, context.settings.get().quality);
     });
     void import("./ui/sampleWindow").then(({ installSampleWindow }) => {
       installSampleWindow(ui, i18n);
@@ -466,7 +470,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
 
   // The wind is heard from START on (browsers allow no sound before a click). `?mute` starts
   // without sound, for working on the game with something else playing.
-  const audio = createGameAudio(import.meta.env.BASE_URL, DEFAULT_VOLUME, startParams.has("mute"));
+  const audio = createGameAudio(import.meta.env.BASE_URL, context.settings.get().volume, startParams.has("mute"));
   const showAudio = (): void => {
     const indoors = player.shelter.zone !== null;
     const mix = windMix(latestWeather.intensity, latestWeather.approach, indoors);
@@ -538,7 +542,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   let titleSeconds = 0;
   // How far the camera has gone over to its view of a fallen character, 0 to 1.
   let deathView = 0;
-  const localInput = createLocalInput({ mouse });
+  // The settings (prototype design 7) are applied when the game starts and whenever one changes.
+  let settingsNow: Settings = context.settings.get();
+  const localInput = createLocalInput({ mouse, look: () => ({ sensitivity: settingsNow.mouseSensitivity, invertY: settingsNow.invertY }) });
   const inputSystem = createInputSystem(world, localInput);
   const lookSystem = createLookSystem(world);
   // `?speed=8` tries a different walking speed (m/s) without changing the tuning file.
@@ -867,8 +873,25 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   const cameraSweep: Sweep = (origin, direction, maxDistance) =>
     physics.sweepSphere(origin, direction, maxDistance, CAMERA_COLLISION_RADIUS, player.body.handle);
 
-  fitToWindow(renderer, camera);
-  window.addEventListener("resize", () => fitToWindow(renderer, camera));
+  const fit = (): void => fitToWindow(renderer, camera, QUALITY_PRESETS[settingsNow.quality].maxPixelRatio);
+  fit();
+  window.addEventListener("resize", fit);
+  const applySettings = (now: Settings): void => {
+    const qualityChanged = now.quality !== settingsNow.quality;
+    settingsNow = now;
+    audio.setVolume(now.volume);
+    stormParticles.setShare(QUALITY_PRESETS[now.quality].particleShare);
+    if (qualityChanged) {
+      fit();
+    }
+    if (!now.showFps) {
+      hud.setFps(null);
+    }
+    debug.settings = { ...now };
+  };
+  applySettings(settingsNow);
+  context.settings.onChange(applySettings);
+  let fpsSeconds = FPS_REFRESH_SECONDS;
 
   // Everything is drawn once now, so nothing stutters when it first comes into view in play.
   warmUpScene(renderer, scene, camera);
@@ -1138,6 +1161,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   // attention. Nothing in the game moves on until the player comes back from the pause screen.
   let paused = false;
   const pauseScreen = createPauseScreen(ui, i18n, {
+    openSettings: context.openSettings,
     onResume: () => {
       paused = false;
       debug.paused = false;
@@ -1373,6 +1397,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       frameStats.add(frameMs);
       overlay?.update(nowMs);
       devLog?.update(nowMs);
+      // The frame rate in the corner, for those who asked for it: a figure that can be read, not one that flickers.
+      fpsSeconds += lastFrameSeconds;
+      if (settingsNow.showFps && fpsSeconds >= FPS_REFRESH_SECONDS) {
+        fpsSeconds = 0;
+        hud.setFps(frameStats.snapshot().fps);
+      }
     },
     update(dt) {
       // Paused, nothing moves on: no input, no clock, no weather, no harm.
@@ -1569,14 +1599,14 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         if (bench.recorder.done) {
           bench.reported = true;
           const summary = bench.recorder.summary();
-          const verdict = judge(summary, PERF_BUDGETS[BENCH_QUALITY]);
+          const verdict = judge(summary, PERF_BUDGETS[settingsNow.quality]);
           debug.bench.state = "done";
           debug.bench.summary = summary;
           debug.bench.withinBudget = isWithinBudget(verdict);
           bench.panel.showResult({
             rows: benchRows(summary, verdict),
             withinBudget: isWithinBudget(verdict),
-            qualityKey: `quality.${BENCH_QUALITY}`,
+            qualityKey: `quality.${settingsNow.quality}`,
             device: readDevice(renderer),
             buffer: `${canvas.width} x ${canvas.height}`,
           });

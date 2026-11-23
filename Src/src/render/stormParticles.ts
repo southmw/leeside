@@ -67,6 +67,8 @@ export interface StormParticles {
    * of the picture in pixels with `fovDegrees` the camera's field of view.
    */
   update(intensity: number, seconds: number, dust: Rgb, viewportHeight: number, fovDegrees: number): void;
+  /** Draws only this share of the grains, 0 to 1 (the quality setting). */
+  setShare(share: number): void;
 }
 
 export function createStormParticles(): StormParticles {
@@ -113,6 +115,9 @@ export function createStormParticles(): StormParticles {
 
   return {
     object,
+    setShare(share): void {
+      geometry.setDrawRange(0, Math.round(GRAIN_COUNT * Math.min(Math.max(share, 0), 1)));
+    },
     update(intensity, seconds, dust, viewportHeight, fovDegrees): void {
       object.visible = intensity > 0.01;
       if (!object.visible) {

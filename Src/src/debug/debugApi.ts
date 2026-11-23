@@ -42,6 +42,8 @@ export interface GameDebug {
   ready: boolean;
   /** Whether the title screen is up, the player is in control, or a performance measurement is running. */
   phase: "title" | "playing" | "bench";
+  /** The player's settings as the game has applied them (app/settings.ts). */
+  settings: { mouseSensitivity: number; invertY: boolean; volume: number; quality: "low" | "high"; showFps: boolean; language: Language | null };
   /** Whether the game is paused: the simulation stands still and the pause screen is up. */
   paused: boolean;
   /** Number of frames rendered so far. */
@@ -223,6 +225,7 @@ export function installDebugApi(language: Language): GameDebug {
     ready: false,
     phase: "title",
     paused: false,
+    settings: { mouseSensitivity: 1, invertY: false, volume: 0.8, quality: "high", showFps: false, language: null },
     frame: 0,
     tick: 0,
     simSeconds: 0,
