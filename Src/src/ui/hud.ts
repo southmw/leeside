@@ -53,6 +53,10 @@ const css = `
   font-size: 1.05em; transition: color 0.3s;
 }
 #hud-compass-shelter[hidden] { display: none; }
+/* Where the bag a death left behind lies. */
+#hud-compass-bag { position: absolute; top: 0.15em; width: 3em; margin-left: -1.5em; text-align: center; white-space: nowrap; font-size: 1.05em; color: #ff9d4d; }
+#hud-compass-bag[hidden] { display: none; }
+#hud-compass-bag .hud-arrow { font-size: 0.8em; font-weight: 700; }
 #hud-compass-shelter .hud-arrow { font-size: 0.8em; font-weight: 700; }
 #hud-compass-shelter.marked { color: #f0c060; font-size: 1.3em; top: 0; animation: hud-blink 1s infinite; }
 /* The storm warning: orange while it comes, red once it is here. */
@@ -196,9 +200,10 @@ export interface Hud {
   /**
    * Turns the compass to `heading` and puts the shelter's mark at `shelterBearing` (both in
    * degrees clockwise from north). Returns where the mark ended up. With null for the
-   * bearing there is no mark: the player is in the shelter.
+   * bearing there is no mark: the player is in the shelter. `bagBearing` puts a second mark
+   * where the bag a death left behind lies; null (or left out) for none.
    */
-  setCompass(heading: number, shelterBearing: number | null): CompassPosition;
+  setCompass(heading: number, shelterBearing: number | null, bagBearing?: number | null): CompassPosition;
   /** Shows the warnings and effects the player's situation calls for (hudState.ts). */
   setAlerts(alerts: HudAlerts): void;
   /** Shows how full the bag is (hudState.ts); `key` is what the key that opens the bag window is called. */
@@ -257,6 +262,14 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   arrowRight.textContent = "›";
   shelterMark.append(arrowLeft, createIcon("shelter"), arrowRight);
   compass.append(shelterMark);
+  const bagMark = make("div", "hud-compass-bag");
+  bagMark.hidden = true;
+  const bagArrowLeft = make("span", "", "hud-arrow");
+  bagArrowLeft.textContent = "‹";
+  const bagArrowRight = make("span", "", "hud-arrow");
+  bagArrowRight.textContent = "›";
+  bagMark.append(bagArrowLeft, createIcon("marker-bag"), bagArrowRight);
+  compass.append(bagMark);
   const storm = make("div", "hud-storm");
   storm.hidden = true;
   const stormIcon = createIcon("warning");
@@ -501,7 +514,14 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
       }
       shelter.classList.toggle("storm", inStorm);
     },
-    setCompass(heading, shelterBearing): CompassPosition {
+    setCompass(heading, shelterBearing, bagBearing = null): CompassPosition {
+      bagMark.hidden = bagBearing === null;
+      if (bagBearing !== null) {
+        const bagAt = compassPosition(heading, bagBearing);
+        bagMark.style.left = along(bagAt.offset);
+        bagArrowLeft.hidden = bagAt.beyond !== -1;
+        bagArrowRight.hidden = bagAt.beyond !== 1;
+      }
       for (const point of points) {
         const at = compassPosition(heading, point.bearing);
         // The points of the compass simply leave the strip; only the shelter is held at its end.

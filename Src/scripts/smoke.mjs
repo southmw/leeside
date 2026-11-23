@@ -828,6 +828,7 @@ try {
     const deathState = () =>
       page.evaluate(() => ({
         ...window.__game.player,
+        zone: window.__game.zone.id,
         day: window.__game.clock.day,
         phase: window.__game.phase,
         window: window.__game.ui.window,
@@ -855,16 +856,15 @@ try {
       asked.window === "death" && asked.veil && askedText.includes("Continue") && askedText.includes("Quit to title"),
       askedText.replace(/\s+/g, " "),
     );
-    // Continue (the button chosen at first): the next morning at the shelter's entrance in
-    // house A, in full health.
+    // Continue (the button chosen at first): the next morning in the shelter, in full health.
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => !window.__game.player.dead, undefined, { timeout: 10_000 }).catch(() => {});
     await page.waitForTimeout(300);
     const went = await deathState();
     check(
-      "continuing starts again at the shelter's entrance the next morning",
-      !went.dead && went.deaths === 1 && went.health === 100 && went.day === 2 && went.shelter === "house_a" &&
-        Math.abs(went.x - 281) < 1 && Math.abs(went.z - 281) < 1 && went.window === null && !went.veil && went.animation !== "death" && went.phase === "playing",
+      "continuing starts again in the shelter the next morning",
+      !went.dead && went.deaths === 1 && went.health === 100 && went.day === 2 && went.zone === "shelter" && went.shelter === "shelter" &&
+        Math.abs(went.x - 8) < 1 && Math.abs(went.z - 10) < 1 && went.window === null && !went.veil && went.animation !== "death" && went.phase === "playing",
       `died ${went.deaths}, health ${went.health}, day ${went.day}, in ${went.shelter} at ${went.x.toFixed(0)}, ${went.z.toFixed(0)}, ${went.animation}`,
     );
     // Quit (the second button): the title comes back over a game put back to its beginning,
@@ -883,7 +883,7 @@ try {
     check(
       "quitting goes to the title screen with the game back at its beginning",
       quit.phase === "title" && (await page.locator("#title-start").count()) === 1 && !quitHud && !quit.dead && quit.deaths === 0 && quit.health === 100 &&
-        quit.day === 1 && Math.abs(quit.x - 360) < 1 && Math.abs(quit.z - 600) < 1 && quit.window === null && !quit.veil,
+        quit.day === 1 && quit.zone === "dry_riverbed" && Math.abs(quit.x - 360) < 1 && Math.abs(quit.z - 600) < 1 && quit.window === null && !quit.veil,
       `${quit.phase}, day ${quit.day}, health ${quit.health}, at ${quit.x.toFixed(0)}, ${quit.z.toFixed(0)}`,
     );
     await page.locator("#title-start").click();
@@ -2166,6 +2166,110 @@ try {
     const cameUp = await revealNow();
     check("a storm that passes while one is in the shelter leaves its things in the riverbed all the same", inShelter.after.zone === "shelter" && inShelter.after.piles.length === 0 && inShelter.after.reveals.last.join() === first.after.reveals.last.join() && cameUp.piles.length === 4, `${inShelter.after.piles.length} in the shelter, ${cameUp.piles.length} outside`);
     await page.screenshot({ path: join(outDir, "reveal.png") });
+    }
+
+    {
+    // Dying leaves the bag where the character fell; it is fetched again, and lost to a second death.
+    const bagNowDead = () =>
+      page.evaluate(() => ({
+        bag: window.__game.player.bag.map((slot) => (slot ? `${slot.item} ${slot.count}` : "-")),
+        quick: window.__game.player.quickSlots.map((slot) => slot?.item ?? "-"),
+        dropped: window.__game.droppedBag && { ...window.__game.droppedBag, items: [...window.__game.droppedBag.items] },
+        zone: window.__game.zone.id,
+        x: window.__game.player.x,
+        z: window.__game.player.z,
+        day: window.__game.clock.day,
+        health: window.__game.player.health,
+        window: window.__game.ui.window,
+        notes: [...document.querySelectorAll("#death-notes [data-note]")].map((note) => note.textContent),
+        bagShown: window.__game.hud.compass.bagShown,
+        markHidden: document.querySelector("#hud-compass-bag").hidden,
+        target: window.__game.player.interaction,
+        promptText: document.querySelector("#hud-prompt").textContent,
+        repair: { ...window.__game.repair },
+        tally: window.__game.tally,
+        piles: window.__game.piles.map((pile) => pile.id),
+      }));
+    const dieAndAsk = async () => {
+      await page.keyboard.press("F2");
+      await page.locator("#dev-health-zero").click();
+      await page.keyboard.press("F2");
+      await page.waitForFunction(() => window.__game.ui.window === "death", undefined, { timeout: 30_000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      return bagNowDead();
+    };
+    const goOn = async () => {
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => !window.__game.player.dead, undefined, { timeout: 10_000 }).catch(() => {});
+      await settle();
+      return bagNowDead();
+    };
+    await page.goto(gameUrl("lang=en&seed=1&at=360,600&face=0&bag=scrap:3,water_bottle:1"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+    await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    // The water is on a quick slot, which the death clears.
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Digit1");
+    await page.waitForFunction(() => window.__game.player.quickSlots[0] !== null, undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.press("Tab");
+    const fellWith = await dieAndAsk();
+    check("the death window says the bag stays where one fell", fellWith.notes.join() === "Your bag stays where you fell. Go back there to recover it.", fellWith.notes.join(" | "));
+    await page.screenshot({ path: join(outDir, "death-bag.png") });
+    const woke = await goOn();
+    check(
+      "going on leaves the bag where the character fell and wakes in the shelter, with nothing carried and nothing on a quick slot",
+      woke.zone === "shelter" && woke.day === 2 && woke.health === 100 && woke.bag.every((slot) => slot === "-") && woke.quick.join() === "-,-,-,-" && woke.tally === null && woke.window === null &&
+        woke.dropped?.zone === "dry_riverbed" && woke.dropped.items.join() === "scrap 3,water_bottle 1" && Math.abs(woke.dropped.x - 360) < 0.5 && Math.abs(woke.dropped.z - 600) < 0.5 && !woke.bagShown && woke.markHidden,
+      `${woke.zone}, day ${woke.day}, dropped ${woke.dropped?.items.join()} in ${woke.dropped?.zone}`,
+    );
+    // Outside, the compass marks the bag; at it, E gives everything back.
+    await page.keyboard.press("F2");
+    await page.locator("#dev-zone-dry_riverbed").click();
+    await page.waitForFunction(() => window.__game.zone.id === "dry_riverbed", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.press("F2");
+    await settle();
+    const outside = await bagNowDead();
+    await page.screenshot({ path: join(outDir, "dropped-bag.png") });
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction(() => window.__game.hud.prompt === "pickup_bag", undefined, { timeout: 15_000 }).catch(() => {});
+    await page.keyboard.up("KeyW");
+    await settle();
+    const atBag = await bagNowDead();
+    await page.keyboard.press("KeyE");
+    await page.waitForFunction(() => window.__game.droppedBag === null, undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const recovered = await bagNowDead();
+    check("outside, the compass marks where the bag lies", outside.bagShown && !outside.markHidden && outside.piles.includes("dropped_bag_1"), `shown ${outside.bagShown}`);
+    check(
+      "at the bag E gives everything back, and the bag and its mark are gone",
+      atBag.promptText === "E Recover your bag" && atBag.target === "dropped_bag_1" && recovered.bag.slice(0, 2).join() === "scrap 3,water_bottle 1" && recovered.dropped === null && !recovered.bagShown && recovered.markHidden,
+      `"${atBag.promptText}", bag ${recovered.bag.slice(0, 2).join(" | ")}`,
+    );
+    // A second death before the first bag is fetched: the first is lost. What is in the door stays.
+    await page.goto(gameUrl("lang=ko&seed=1&at=360,600&face=0&bag=scrap:2"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+    await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    await page.keyboard.press("F2");
+    await page.locator("#dev-repair-almost").click();
+    await page.keyboard.press("F2");
+    await dieAndAsk();
+    const firstBag = await goOn();
+    await page.keyboard.press("F2");
+    await page.locator("#dev-bag-give-tape").click();
+    await page.waitForFunction(() => window.__game.player.bag[0]?.item === "tape", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.press("F2");
+    const secondAsk = await dieAndAsk();
+    const secondBag = await goOn();
+    check(
+      "a second death loses the bag left by the first, and the window says so beforehand",
+      firstBag.dropped?.zone === "dry_riverbed" && secondAsk.notes.join("|") === "가방은 쓰러진 자리에 남습니다. 가서 주우면 되찾습니다.|전에 떨어뜨린 가방은 사라집니다." && secondBag.dropped?.zone === "shelter" && secondBag.dropped.items.join() === "tape 1" && secondBag.day === 3,
+      `${firstBag.dropped?.items.join()} in ${firstBag.dropped?.zone} -> ${secondBag.dropped?.items.join()} in ${secondBag.dropped?.zone}`,
+    );
+    check("what has gone into the door is not lost by dying", secondBag.repair.scrap === 14 && secondBag.repair.cloth === 7 && secondBag.repair.tape === 2, JSON.stringify(secondBag.repair));
+    const emptyAsk = await dieAndAsk();
+    const third = await goOn();
+    check("dying with nothing in the bag leaves nothing, says nothing of a bag to fetch, and still loses the earlier one", emptyAsk.notes.join() === "전에 떨어뜨린 가방은 사라집니다." && third.dropped === null && third.piles.length === 0, `"${emptyAsk.notes.join("|")}", dropped ${JSON.stringify(third.dropped)}`);
     }
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.

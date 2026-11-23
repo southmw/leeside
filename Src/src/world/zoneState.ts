@@ -17,6 +17,8 @@ export interface PileState {
   z: number;
   rotationY: number;
   items: ItemStack[];
+  /** Whether it is the bag a death left behind. */
+  dropped?: boolean;
 }
 
 export interface ZoneState {
@@ -53,7 +55,15 @@ export function takePiles(world: GameWorld): PileState[] {
   const taken: PileState[] = [];
   for (const entity of [...world.with("pile", "interactable", "transform")]) {
     const { x, y, z, rotationY } = entity.transform;
-    taken.push({ id: entity.interactable.id, x, y, z, rotationY, items: entity.pile.items.map((stack) => ({ ...stack })) });
+    taken.push({
+      id: entity.interactable.id,
+      x,
+      y,
+      z,
+      rotationY,
+      items: entity.pile.items.map((stack) => ({ ...stack })),
+      ...(entity.pile.dropped ? { dropped: true } : {}),
+    });
     world.remove(entity);
   }
   return taken;
@@ -65,7 +75,27 @@ export function putPiles(world: GameWorld, piles: readonly PileState[]): void {
     world.add({
       transform: createTransform(pile.x, pile.y, pile.z, pile.rotationY),
       interactable: { id: pile.id, kind: "pickup" },
-      pile: { items: pile.items.map((stack) => ({ ...stack })) },
+      pile: { items: pile.items.map((stack) => ({ ...stack })), ...(pile.dropped ? { dropped: true as const } : {}) },
     });
   }
+}
+
+/** Takes the bag a death left behind out of the world, if it is there. Returns whether one was. */
+export function removeDroppedBag(world: GameWorld): boolean {
+  let found = false;
+  for (const entity of [...world.with("pile")]) {
+    if (entity.pile.dropped) {
+      world.remove(entity);
+      found = true;
+    }
+  }
+  return found;
+}
+
+/** Strikes the bag a death left behind from the piles written down for a zone. Returns whether one was there. */
+export function forgetDroppedBag(state: ZoneState): boolean {
+  const kept = state.piles.filter((pile) => !pile.dropped);
+  const found = kept.length !== state.piles.length;
+  state.piles = kept;
+  return found;
 }

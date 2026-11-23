@@ -133,6 +133,8 @@ export interface Container {
  */
 export interface Pile {
   items: ItemStack[];
+  /** Set on the bag a death left behind (prototype design 2.4): there is one at most, and nothing thrown out joins it. */
+  dropped?: true;
 }
 
 /**

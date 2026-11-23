@@ -45,6 +45,7 @@ import { createPileMesh } from "./render/pileMesh";
 import { advanceClock, createClock, parseTimeOfDay, readClock, setHour, startNextDay } from "./gameplay/clock";
 import { createDeathScreen } from "./ui/deathScreen";
 import { createCommandSystem } from "./gameplay/commands";
+import { emptyBagIntoStacks } from "./gameplay/droppedBag";
 import { createExposureSystem, createHealth, isDead } from "./gameplay/health";
 import { createInteractionSystem } from "./gameplay/interaction";
 import { containerState, createSearch, createSearchSystem, searchProgress } from "./gameplay/search";
@@ -91,7 +92,7 @@ import { createHeightfield, heightAt, type Heightfield } from "./world/terrain";
 import { PROP_SET_IDS, PROP_SETS, type PropSet, type PropSetId, propModelFor, propModelUrls, propSetId } from "./world/propModels";
 import type { ZoneDefinition } from "./world/zoneDefinition";
 import { type LoadedZone, loadZone } from "./world/zoneLoader";
-import { createZoneState, putPiles, resetZoneState, takePiles } from "./world/zoneState";
+import { createZoneState, forgetDroppedBag, putPiles, removeDroppedBag, resetZoneState, takePiles } from "./world/zoneState";
 import { isZoneId, loadZones, ZONE_IDS, type ZoneId } from "./world/zones";
 import { createZoneVeil } from "./ui/zoneVeil";
 
@@ -650,16 +651,17 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   /** Set while the local player is on the way from one zone to another (see `switchZone` below). */
   let travel: { to: ZoneId; entry: string; seconds: number; switched: boolean } | undefined;
   // Whatever changes the bag asks for it with a command, carried out in the next step.
-  const commands = createCommandSystem(world, {
-    // What is thrown out lands on whatever is under the character, also when it is thrown out in mid-air.
-    floorUnder: (actor) => {
-      if (!actor.transform || !actor.body) {
-        return undefined;
-      }
-      const fall = physics.sweepSphere(actor.transform, { x: 0, y: -1, z: 0 }, DROP_PROBE_DISTANCE, DROP_PROBE_RADIUS, actor.body.handle);
-      return fall === undefined ? undefined : actor.transform.y - fall - DROP_PROBE_RADIUS;
-    },
-  });
+  /** The height of whatever is under a character, also one in mid-air: where what it lets go of comes to lie. */
+  const floorUnder = (actor: { transform?: { x: number; y: number; z: number }; body?: { handle: number } }): number | undefined => {
+    if (!actor.transform || !actor.body) {
+      return undefined;
+    }
+    const fall = physics.sweepSphere(actor.transform, { x: 0, y: -1, z: 0 }, DROP_PROBE_DISTANCE, DROP_PROBE_RADIUS, actor.body.handle);
+    return fall === undefined ? undefined : actor.transform.y - fall - DROP_PROBE_RADIUS;
+  };
+  const commands = createCommandSystem(world, { floorUnder });
+  /** Where the bag a death left behind lies, if it is in the zone that is in the world. */
+  let droppedBagAt: readonly [number, number] | null = null;
   // What lies on the ground: thrown out of a bag, to be picked up again. The piles are the
   // game's, not the zone's, so they are still there when the zone is put up again.
   const piles = world.with("pile", "interactable", "transform");
@@ -667,9 +669,23 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     for (const entity of piles) {
       // A pile made by a command has no picture yet.
       if (!entity.renderable) {
-        world.addComponent(entity, "renderable", { object: createPileMesh() });
+        world.addComponent(entity, "renderable", { object: createPileMesh(entity.pile.dropped === true) });
       }
     }
+    droppedBagAt = null;
+    for (const entity of piles) {
+      if (entity.pile.dropped) {
+        droppedBagAt = [entity.transform.x, entity.transform.z];
+      }
+    }
+    // The bag may also lie in a zone that is not in the world.
+    const elsewhere = [...zoneStates].flatMap(([id, state]) => state.piles.filter((pile) => pile.dropped).map((pile) => ({ zone: id as string, pile })))[0];
+    const here = [...piles].find((entity) => entity.pile.dropped);
+    debug.droppedBag = here
+      ? { zone: zoneDefinition.id, x: here.transform.x, z: here.transform.z, items: here.pile.items.map((stack) => `${stack.item} ${stack.count}`) }
+      : elsewhere
+        ? { zone: elsewhere.zone, x: elsewhere.pile.x, z: elsewhere.pile.z, items: elsewhere.pile.items.map((stack) => `${stack.item} ${stack.count}`) }
+        : null;
     debug.piles = [...piles].map((entity) => ({
       id: entity.interactable.id,
       x: entity.transform.x,
@@ -797,7 +813,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       }
       for (const entity of piles) {
         if (entity.interactable.id === target) {
-          targetKind = "pickup";
+          targetKind = entity.pile.dropped ? "pickup_bag" : "pickup";
         }
       }
       // The shelter's door only tells how far its repair is.
@@ -874,9 +890,6 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
 
   // Where a player who died starts again: at the shelter's entrance, or the zone's start
   // point if the zone has none. Facing east, towards house A's door.
-  const shelterEntrance = riverbed.exits.find((exit) => exit.to === "shelter");
-  const [respawnEast, respawnSouth] = shelterEntrance?.position ?? riverbed.spawn.position;
-  const RESPAWN_FACING = 90;
   /** Where the compass marks the shelter: the way into it from the zone in the world, or null inside it. */
   const shelterMark = (): readonly [number, number] | null => zoneDefinition.exits.find((exit) => exit.to === "shelter")?.position ?? null;
   let shelterAt = shelterMark();
@@ -1025,16 +1038,41 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     player.temperature.value = 0;
     player.thirst.value = MAX_THIRST;
   };
-  // Going on. A stand-in until the dropped bag (step 2.20) and the shelter zone (2.16) exist:
-  // the next morning, at the shelter's entrance, in full health.
+  /** Whether a bag left behind by an earlier death still lies somewhere. */
+  const droppedBagExists = (): boolean => [...piles].some((entity) => entity.pile.dropped) || [...zoneStates.values()].some((state) => state.piles.some((pile) => pile.dropped));
+  // Going on (prototype design 2.4): the bag stays where the character fell, an earlier one
+  // is lost, and the next morning begins in the shelter, in full health.
   const respawn = (): void => {
     endDeath();
-    // Whoever collapsed inside the shelter (of thirst) stays in it. Everyone else still wakes
-    // in house A: starting again in the shelter itself comes with step 2.20.
-    if (zoneDefinition.interior) {
-      teleport(zoneDefinition.spawn.position[0], zoneDefinition.spawn.position[1], zoneDefinition.spawn.facing);
+    removeDroppedBag(world);
+    for (const state of zoneStates.values()) {
+      forgetDroppedBag(state);
+    }
+    const carried = emptyBagIntoStacks(player.inventory);
+    if (carried.length > 0) {
+      const at = player.transform;
+      putPiles(world, [
+        {
+          id: `dropped_bag_${debug.player.deaths}`,
+          x: at.x,
+          y: floorUnder(player) ?? at.y - CHARACTER_HEIGHT / 2,
+          z: at.z,
+          rotationY: at.rotationY,
+          items: carried,
+          dropped: true,
+        },
+      ]);
+    }
+    // Nothing is carried any more, so nothing is on a quick slot.
+    clearQuickSlots(player.quickSlots);
+    const wake = zones.shelter.spawn;
+    const wakeAt = { east: wake.position[0], south: wake.position[1], facing: wake.facing };
+    if (zoneDefinition.id === "shelter") {
+      teleport(wakeAt.east, wakeAt.south, wakeAt.facing);
+      showPiles();
     } else {
-      teleport(respawnEast, respawnSouth, RESPAWN_FACING);
+      // The bag goes into the state of the zone that is left, with whatever else lies there.
+      switchZone("shelter", wakeAt);
     }
     restore();
     startNextDay(clock);
@@ -1104,14 +1142,18 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     dying.seconds += dt;
     if (!dying.asked && dying.seconds >= DEATH_NOTICE_SECONDS) {
       dying.asked = true;
-      deathScreen.ask(player.health.lastHurtBy ?? "storm", {
-        onContinue: () => {
-          dying.choice = "continue";
+      deathScreen.ask(
+        player.health.lastHurtBy ?? "storm",
+        {
+          onContinue: () => {
+            dying.choice = "continue";
+          },
+          onQuit: () => {
+            dying.choice = "quit";
+          },
         },
-        onQuit: () => {
-          dying.choice = "quit";
-        },
-      });
+        { left: usedSlots(player.inventory) > 0, replaced: droppedBagExists() },
+      );
     }
     if (dying.choice === "continue") {
       respawn();
@@ -1405,7 +1447,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       // The compass turns with the view as it is drawn, and points from where the character is drawn.
       if (playing) {
         const heading = headingOf(yaw);
-        const mark = hud.setCompass(heading, shelterAt ? bearingTo(drawnAt.x, drawnAt.z, shelterAt[0], shelterAt[1]) : null);
+        const mark = hud.setCompass(
+          heading,
+          shelterAt ? bearingTo(drawnAt.x, drawnAt.z, shelterAt[0], shelterAt[1]) : null,
+          droppedBagAt ? bearingTo(drawnAt.x, drawnAt.z, droppedBagAt[0], droppedBagAt[1]) : null,
+        );
+        debug.hud.compass.bagShown = droppedBagAt !== null;
         debug.hud.compass.shelterShown = shelterAt !== null;
         debug.hud.compass.heading = heading;
         debug.hud.compass.shelterOffset = mark.offset;

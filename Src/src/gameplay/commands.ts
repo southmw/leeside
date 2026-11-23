@@ -107,7 +107,10 @@ export function createCommandSystem(world: GameWorld, options: CommandOptions = 
     const floor = options.floorUnder?.(actor) ?? at.y - (actor.character ? CHARACTER_HEIGHT / 2 : 0);
     const spots = [];
     for (const entity of piles) {
-      spots.push({ x: entity.transform.x, y: entity.transform.y, z: entity.transform.z, pile: entity.pile });
+      // The bag a death left behind stays what it is: nothing thrown out joins it.
+      if (!entity.pile.dropped) {
+        spots.push({ x: entity.transform.x, y: entity.transform.y, z: entity.transform.z, pile: entity.pile });
+      }
     }
     let pile = nearestWithin(spots, { x: at.x, y: floor, z: at.z }, PILE_MERGE_DISTANCE)?.pile;
     if (!pile) {

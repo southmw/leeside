@@ -29,6 +29,7 @@
   "interact.open": "{key} 열기",
   "interact.empty": "비어 있음",
   "interact.pickup": "{key} 줍기",
+  "interact.pickup_bag": "{key} 가방 되찾기",
   "interact.repair": "문 수리: 고철 {scrap}/{scrapNeed}, 천 {cloth}/{clothNeed}, 테이프 {tape}/{tapeNeed}",
   "interact.repair_done": "수리를 마친 문",
   "interact.travel_shelter": "{key} 대피소로 내려가기",
@@ -138,6 +139,8 @@
   "death.text.storm": "폭풍에 휩쓸렸습니다. 계속하면 다음 날 아침 대피소에서 다시 시작합니다.",
   "death.text.cold": "추위에 쓰러졌습니다. 계속하면 다음 날 아침 대피소에서 다시 시작합니다.",
   "death.text.thirst": "목이 말라 쓰러졌습니다. 계속하면 다음 날 아침 대피소에서 다시 시작합니다.",
+  "death.bag": "가방은 쓰러진 자리에 남습니다. 가서 주우면 되찾습니다.",
+  "death.bag_replaced": "전에 떨어뜨린 가방은 사라집니다.",
   "death.continue": "계속하기",
   "death.quit": "그만하기 (타이틀로)",
 

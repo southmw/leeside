@@ -165,7 +165,7 @@ export interface GameDebug {
     edges: string[];
     blinking: string[];
     damage: string | null;
-    compass: { heading: number; shelterOffset: number; shelterBeyond: number; shelterShown: boolean };
+    compass: { heading: number; shelterOffset: number; shelterBeyond: number; shelterShown: boolean; bagShown: boolean };
     /** The dot in the middle of the screen, and the prompt under it (what the target lets the player do; null for none). */
     crosshair: "hidden" | "idle" | "target";
     prompt: string | null;
@@ -188,6 +188,8 @@ export interface GameDebug {
    * in place of another.
    */
   travel: { state: "none" | "closing" | "opening"; count: number };
+  /** The bag a death left behind: the zone it lies in, where, and what is in it ("scrap 2"); null if there is none. */
+  droppedBag: { zone: string; x: number; z: number; items: string[] } | null;
   /** What storms have uncovered: how many storms have passed in this game, and what the last one left where ("scrap 346,85"). */
   reveals: { storms: number; last: string[] };
   /** The tally of a return to the shelter while it is up (what was brought in, as "scrap 2"), or null. */
@@ -232,13 +234,14 @@ export function installDebugApi(language: Language): GameDebug {
     weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0, wallDistance: 0, wallOpacity: 0 },
     sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0, visibility: 0 },
     audio: { state: "off", muted: false, windVolume: 0, windCutoffHz: 0, indoors: false, footsteps: 0 },
-    hud: { storm: "none", stormRemaining: 0, edges: [], blinking: [], damage: null, compass: { heading: 0, shelterOffset: 0, shelterBeyond: 0, shelterShown: true }, crosshair: "hidden", prompt: null },
+    hud: { storm: "none", stormRemaining: 0, edges: [], blinking: [], damage: null, compass: { heading: 0, shelterOffset: 0, shelterBeyond: 0, shelterShown: true, bagShown: false }, crosshair: "hidden", prompt: null },
     commands: { done: 0, refused: 0, last: null },
     containers: { byId: {}, panel: null, seed: 0 },
     piles: [],
     travel: { state: "none", count: 0 },
     tally: null,
     reveals: { storms: 0, last: [] },
+    droppedBag: null,
     repair: { scrap: 0, cloth: 0, tape: 0, done: false },
     shelterZonesShown: false,
     moveSpeed: 0,

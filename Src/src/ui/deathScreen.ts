@@ -27,8 +27,12 @@ export interface DeathChoices {
 export interface DeathScreen {
   /** Starts darkening the picture, over `seconds`. */
   darken(seconds: number): void;
-  /** Opens the window; `cause` is what took the last of the player's health. Exactly one of the choices is called, once. */
-  ask(cause: DamageCause, choices: DeathChoices): void;
+  /**
+   * Opens the window; `cause` is what took the last of the player's health. `bag` says what
+   * becomes of the bag: whether there is anything in it to leave behind, and whether one left
+   * behind earlier is lost by going on. Exactly one of the choices is called, once.
+   */
+  ask(cause: DamageCause, choices: DeathChoices, bag?: { left: boolean; replaced: boolean }): void;
   /** Takes everything away again, without calling a choice. */
   clear(): void;
 }
@@ -50,7 +54,19 @@ export function createDeathScreen(ui: Ui, i18n: I18n): DeathScreen {
       veil.style.setProperty("--death-fade", `${seconds}s`);
       veil.classList.add("shown");
     },
-    ask(cause, choices): void {
+    ask(cause, choices, bag = { left: false, replaced: false }): void {
+      // What becomes of the bag, each in a sentence of its own under the cause.
+      const notes = document.createElement("div");
+      notes.id = "death-notes";
+      for (const [shown, key] of [[bag.left, "death.bag"], [bag.replaced, "death.bag_replaced"]] as const) {
+        if (shown) {
+          const note = document.createElement("p");
+          note.className = "ui-text";
+          note.dataset.note = key;
+          note.textContent = i18n.t(key);
+          notes.append(note);
+        }
+      }
       let settled = false;
       // True the first time only: a click and a key press must not both count.
       const settle = (): boolean => {
@@ -68,6 +84,7 @@ export function createDeathScreen(ui: Ui, i18n: I18n): DeathScreen {
         id: "death",
         title: i18n.t("death.title"),
         text: i18n.t(`death.text.${cause}`),
+        content: notes,
         buttons: [
           { label: i18n.t("death.continue"), onActivate: choose(choices.onContinue) },
           { label: i18n.t("death.quit"), onActivate: choose(choices.onQuit) },

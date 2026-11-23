@@ -3,6 +3,7 @@ import bandage from "./icons/bandage.svg?raw";
 import cloth from "./icons/cloth.svg?raw";
 import cold from "./icons/cold.svg?raw";
 import health from "./icons/health.svg?raw";
+import markerBag from "./icons/marker-bag.svg?raw";
 import scrap from "./icons/scrap.svg?raw";
 import shelter from "./icons/shelter.svg?raw";
 import storm from "./icons/storm.svg?raw";
@@ -18,7 +19,7 @@ import waterBottle from "./icons/water-bottle.svg?raw";
  * not follow the text colour. The originals are in DOC/icons; keep the two in step.
  */
 
-const ICONS = { bag, bandage, cloth, cold, health, scrap, shelter, storm, tape, temperature, thirst, warning, "water-bottle": waterBottle } as const;
+const ICONS = { bag, bandage, cloth, cold, health, scrap, shelter, storm, tape, temperature, thirst, warning, "water-bottle": waterBottle, "marker-bag": markerBag } as const;
 
 export type IconName = keyof typeof ICONS;
 

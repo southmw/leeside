@@ -29,6 +29,7 @@
   "interact.open": "{key} Open",
   "interact.empty": "Empty",
   "interact.pickup": "{key} Pick up",
+  "interact.pickup_bag": "{key} Recover your bag",
   "interact.repair": "Door repair: scrap {scrap}/{scrapNeed}, cloth {cloth}/{clothNeed}, tape {tape}/{tapeNeed}",
   "interact.repair_done": "The door, repaired",
   "interact.travel_shelter": "{key} Go down to the shelter",
@@ -138,6 +139,8 @@
   "death.text.storm": "Caught in the storm. Continue to start again at the shelter the next morning.",
   "death.text.cold": "The cold took you. Continue to start again at the shelter the next morning.",
   "death.text.thirst": "You ran out of water. Continue to start again at the shelter the next morning.",
+  "death.bag": "Your bag stays where you fell. Go back there to recover it.",
+  "death.bag_replaced": "The bag you left behind before will be lost.",
   "death.continue": "Continue",
   "death.quit": "Quit to title",
 
