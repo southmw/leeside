@@ -33,7 +33,7 @@ import {
   MOVE_SPEED,
   REPAIR_NEEDS,
 } from "./data/tuning";
-import { isItemId, ITEM_IDS } from "./data/items";
+import { isItemId, isQuickSlotItem, ITEM_IDS } from "./data/items";
 import { broughtBack, countItems, restAtShelter, type ReturnTally } from "./gameplay/expedition";
 import { useRefusal } from "./gameplay/itemUse";
 import { revealAfterStorm, shortfall, stormJustPassed } from "./gameplay/reveal";
@@ -49,16 +49,17 @@ import { createDeathScreen } from "./ui/deathScreen";
 import { createCommandSystem } from "./gameplay/commands";
 import { emptyBagIntoStacks } from "./gameplay/droppedBag";
 import { createExposureSystem, createHealth, isDead } from "./gameplay/health";
+import { createIntro, introGuide, introProtects, protectedHealth, stepIntro } from "./gameplay/intro";
 import { createInteractionSystem } from "./gameplay/interaction";
 import { containerState, createSearch, createSearchSystem, searchProgress } from "./gameplay/search";
-import { addItems, createInventory, emptyInventory, parseBag, roomFor, usedSlots } from "./gameplay/inventory";
+import { addItems, countOf, createInventory, emptyInventory, parseBag, roomFor, usedSlots } from "./gameplay/inventory";
 import { createTemperature, createTemperatureSystem, temperatureStage } from "./gameplay/temperature";
 import { createThirst, createThirstSystem } from "./gameplay/thirst";
 import { createLookSystem } from "./gameplay/lookSystem";
 import { createMovementSystem } from "./gameplay/movementSystem";
 import { createShelterSystem } from "./gameplay/shelter";
 import { createView, previewLook } from "./gameplay/view";
-import { callStorm, calmWeather, createWeather, readWeather, stormOfDay, type WeatherReading } from "./gameplay/weather";
+import { callStorm, calmWeather, createWeather, introStorm, readWeather, stormOfDay, type WeatherReading } from "./gameplay/weather";
 import { createEmptyActions, DEFAULT_KEY_BINDINGS, QUICK_ACTIONS } from "./input/actions";
 import { createInputSystem } from "./input/inputSystem";
 import { createLocalInput } from "./input/localInput";
@@ -178,14 +179,17 @@ export interface GameContext {
    * to its beginning by then and waits for `start` again.
    */
   onQuit(): void;
+  /** Called once the player has come through the introduction, down into the shelter. */
+  onIntroDone(): void;
 }
 
 export interface RunningGame {
   /**
    * Hands control to the player. Until then the world is drawn behind the title screen with
-   * a slowly swaying camera and input is ignored.
+   * a slowly swaying camera and input is ignored. `skipIntro` starts without the introduction
+   * (the player's choice on the title screen).
    */
-  start(): void;
+  start(options?: { skipIntro?: boolean }): void;
   /**
    * Changes what the player looks like. The model is fetched first, so the change shows a
    * moment later; if it cannot be fetched the character stays as it is.
@@ -649,6 +653,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       }
     });
   };
+  /** The introduction's state (see `startIntro` below). Over, until a game begins with it. */
+  let intro = createIntro(true);
   /** Set while the tally of a return to the shelter is up. Game time stands still meanwhile. */
   let tally: ReturnTally | undefined;
   /**
@@ -855,6 +861,10 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       thirst: player.thirst.value,
       hurtBy: hurting ? (player.health.lastHurtBy ?? null) : null,
     });
+    // On the way to shelter in the introduction the shelter's mark stands out, storm or not.
+    if (intro.step === "shelter" || intro.step === "hatch") {
+      alerts.shelterMarked = true;
+    }
     hud.setAlerts(alerts);
     debug.hud.storm = alerts.storm?.kind ?? "none";
     debug.hud.stormRemaining = alerts.storm?.kind === "warning" ? alerts.storm.remaining : 0;
@@ -1017,7 +1027,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       healthRestored: Math.ceil(restored),
       repair: repairRows(repair, delivered),
       repairDone: isRepairDone(repair),
+      firstReturn: firstReturnDue,
     };
+    firstReturnDue = false;
     showRepair();
     bagWindow.close();
     containerPanel.close();
@@ -1115,6 +1127,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     pauseScreen.clear();
     paused = false;
     debug.paused = false;
+    endIntro();
     bagWindow.close();
     containerPanel.close();
     playing = false;
@@ -1157,6 +1170,65 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     showWeather();
     context.onQuit();
   };
+  // The introduction (prototype design 5.4): a storm announced at the start, a line of
+  // guidance for each step of the way to the shelter, and two minutes in which the storm
+  // cannot kill. It runs for a game begun from the title; `?skipIntro` and the title's own
+  // switch leave it out, and a visit without the title (`?skipTitle`) has none unless `?intro` asks.
+  const introAllowed = !bench && (startParams.has("intro") || (!startParams.has("skipTitle") && !startParams.has("skipIntro")));
+  /** Set when a game has had the introduction, until the tally of the first return has said what the repair is for. */
+  let firstReturnDue = false;
+  const introTrunk = riverbed.containers.find((container) => container.contents !== undefined)?.id;
+  const introAt = { x: player.transform.x, z: player.transform.z };
+  const showIntro = (): void => {
+    const guide = introGuide(intro);
+    hud.setGuide(guide ? i18n.t(`intro.${guide}`) : null);
+    debug.intro = { step: intro.step, guide, protects: introProtects(intro), seconds: intro.seconds };
+  };
+  const startIntro = (): void => {
+    intro = createIntro(false);
+    firstReturnDue = true;
+    introAt.x = player.transform.x;
+    introAt.z = player.transform.z;
+    // The storm of the introduction, and no other that day. The player starts looking at it.
+    callStorm(weather, clock.elapsed, introStorm(clock.elapsed));
+    weather.calmDay = readClock(clock).day;
+    player.view.yaw = yawFromDegrees(180);
+    showWeather();
+    showIntro();
+  };
+  const endIntro = (): void => {
+    intro = createIntro(true);
+    firstReturnDue = false;
+    showIntro();
+  };
+  const advanceIntro = (dt: number): void => {
+    if (intro.step === "done") {
+      return;
+    }
+    const movedNow = Math.hypot(player.transform.x - introAt.x, player.transform.z - introAt.z);
+    introAt.x = player.transform.x;
+    introAt.z = player.transform.z;
+    const carriesUsable = ITEM_IDS.some((item) => isQuickSlotItem(item) && countOf(player.inventory, item) > 0);
+    stepIntro(
+      intro,
+      {
+        movedNow,
+        trunkSearched: introTrunk !== undefined && stateOf(riverbed.id).containers.get(introTrunk)?.opened === true,
+        stormApproach: latestWeather.approach,
+        stormHere: latestWeather.phase === "storm",
+        indoors: zoneDefinition.id === riverbed.id && player.shelter.zone !== null,
+        inShelter: zoneDefinition.interior !== undefined,
+        couldUseQuickSlot: carriesUsable && player.quickSlots.slots.every((slot) => slot === null),
+      },
+      dt,
+    );
+    if ((intro.step as string) === "done") {
+      context.onIntroDone();
+    }
+    showIntro();
+  };
+  showIntro();
+
   // Pausing (UI design 10): Escape with nothing else open, or the page losing the player's
   // attention. Nothing in the game moves on until the player comes back from the pause screen.
   let paused = false;
@@ -1355,6 +1427,14 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           }
           showRepair();
         },
+        intro: () => intro.step,
+        // The introduction from here on: its storm is announced now and its guidance starts over.
+        startIntro: () => {
+          if (playing && !tally && !travel) {
+            startIntro();
+          }
+        },
+        skipIntro: () => endIntro(),
         // The return without the walk: into the shelter if need be, and the tally comes up.
         returnToShelter: () => {
           if (travel || tally || !playing) {
@@ -1454,15 +1534,22 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       lastWeatherPhase = latestWeather.phase;
       // The storm hurts in game time: not behind the title, nor while the clock is stopped.
       if (playing && !bench && !tally) {
+        const healthBefore = player.health.current;
         exposureSystem(dt * clock.scale);
         temperatureSystem(dt * clock.scale);
         thirstSystem(dt * clock.scale);
+        // In its first two minutes the introduction does not let the storm kill.
+        player.health.current = protectedHealth(player.health.current, healthBefore, introProtects(intro));
         if (isDead(player.health)) {
           advanceDeath(dt);
         } else if (death) {
           // Brought back by a development tool.
           endDeath();
         }
+      }
+      // Also while the tally is up: arriving in the shelter is what ends the introduction.
+      if (playing && !bench) {
+        advanceIntro(dt);
       }
       showAudio();
       showShelter();
@@ -1633,18 +1720,23 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   await firstFrame;
   let lookHintShown = false;
   return {
-    start(): void {
+    start(options = {}): void {
       if (playing || bench) {
         return;
       }
       playing = true;
+      const withIntro = introAllowed && !options.skipIntro;
+      if (withIntro) {
+        startIntro();
+      }
       // The character turns its back to the camera again, the way it faces in play.
       if (characterModel) {
         characterModel.object.rotation.y = 0;
       }
       hud.setVisible(true);
       // Once: the game can be started again after quitting to the title.
-      if (!lookHintShown) {
+      // The introduction says how to look round itself.
+      if (!lookHintShown && !withIntro) {
         lookHintShown = true;
         createLookHint(mouse, i18n);
       }

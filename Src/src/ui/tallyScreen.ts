@@ -68,6 +68,12 @@ export function createTallyScreen(ui: Ui, i18n: I18n): TallyScreen {
     show(tally, onNextDay): void {
       const content = make("div");
       content.id = "tally";
+      // The first time, a line says what the door's repair is about.
+      if (tally.firstReturn) {
+        const goal = make("p", "ui-text tally-goal", i18n.t("tally.first_return"));
+        goal.id = "tally-goal";
+        content.append(goal);
+      }
       const columns = make("div", "tally-columns");
       const left = make("div");
       const right = make("div");

@@ -18,6 +18,8 @@ const css = `
 .title-tagline { font-size: 1.1em; margin: 0.8em 0 2.2em; opacity: 0.9; text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.7); }
 .title-action { width: 16em; min-height: 3.4em; }
 .title-action .ui-button { margin: 0; padding: 0.8em 1em; font-size: 1.15em; letter-spacing: 0.25em; }
+/* Skipping the introduction: a small switch under START, marked when it is on. */
+.title-action .ui-button.title-skip { margin-top: 0.5em; padding: 0.35em 1em; font-size: 0.85em; letter-spacing: 0; }
 .title-characters { margin-top: 1.4em; }
 .title-characters-label { font-size: 0.875em; opacity: 0.8; margin-bottom: 0.4em; text-shadow: 0 0.05em 0.3em rgba(0, 0, 0, 0.7); }
 .title-characters-row { display: flex; justify-content: center; border: 1px solid rgba(232, 220, 192, 0.3); border-radius: 0.3em; overflow: hidden; }
@@ -51,6 +53,8 @@ export interface TitleScreenOptions {
   onLanguage(language: Language): void;
   /** Called when the player picks another character. */
   onCharacter(id: string): void;
+  /** Whether the introduction has been played through on this machine: then skipping it is offered. */
+  introDone: boolean;
 }
 
 export interface TitleScreen {
@@ -58,6 +62,8 @@ export interface TitleScreen {
   setState(state: StartFlowState): void;
   /** Fades the title out and removes it. */
   remove(): void;
+  /** Whether the player has chosen to skip the introduction. */
+  readonly skipIntro: boolean;
 }
 
 /**
@@ -81,6 +87,7 @@ export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOption
   let state: StartFlowState = { phase: "loading", done: 0, total: 1 };
   let removed = false;
   let character = options.character;
+  let skipIntro = false;
   const pickCharacter = (id: string): void => {
     if (id !== character) {
       character = id;
@@ -125,6 +132,20 @@ export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOption
       const action = element("div", "title-action");
       if (canStart(state)) {
         action.append(button("title-start", t("title.start"), options.onStart, true));
+        // Offered only to those who have been through the introduction once.
+        if (options.introDone) {
+          const skip = button(
+            "title-skip-intro",
+            t("title.skip_intro"),
+            () => {
+              skipIntro = !skipIntro;
+              render();
+            },
+            skipIntro,
+          );
+          skip.classList.add("title-skip");
+          action.append(skip);
+        }
       } else {
         const fraction = loadingFraction(state);
         const bar = createBar({ label: t("title.loading"), value: `${Math.round(fraction * 100)}%`, fraction });
@@ -186,6 +207,9 @@ export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOption
   render();
 
   return {
+    get skipIntro(): boolean {
+      return skipIntro;
+    },
     setState(next: StartFlowState): void {
       state = next;
       if (!removed) {

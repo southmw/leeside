@@ -530,7 +530,7 @@ try {
   // Title screen: it is what a visitor sees first. START (button or Enter) hands over control;
   // before that the character does not respond. The language switch works at once.
   {
-    await page.goto(url, { waitUntil: "load" });
+    await page.goto(`${url}?skipIntro`, { waitUntil: "load" });
     const titleScreen = page.locator("#title-screen");
     await titleScreen.waitFor({ state: "visible", timeout: 15_000 });
     await page.locator("#title-start").waitFor({ state: "visible", timeout: READY_TIMEOUT_MS });
@@ -595,7 +595,7 @@ try {
     check("after START the character moves", afterStart < atTitle.z - 0.5, `z ${atTitle.z.toFixed(1)} -> ${afterStart.toFixed(1)}`);
 
     // Enter starts the game as well.
-    await page.goto(url, { waitUntil: "load" });
+    await page.goto(`${url}?skipIntro`, { waitUntil: "load" });
     await page.locator("#title-start").waitFor({ state: "visible", timeout: READY_TIMEOUT_MS });
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__game.phase === "playing", undefined, { timeout: 5_000 }).catch(() => {});
@@ -2504,6 +2504,137 @@ try {
     } finally {
       // Whatever happened above, the checks that follow start from the defaults.
       await page.evaluate(() => window.localStorage.removeItem("leeside.settings")).catch(() => {});
+    }
+    }
+
+    {
+    // The introduction: a storm announced at the start, a line of guidance for each step of
+    // the way to the shelter, and protection from the storm for the first two minutes.
+    const introNow = () =>
+      page.evaluate(() => ({
+        intro: { ...window.__game.intro },
+        guide: document.querySelector("#hud-guide").hidden ? null : document.querySelector("#hud-guide").textContent,
+        weather: window.__game.weather.phase,
+        secondsLeft: window.__game.weather.secondsLeft,
+        yaw: window.__game.view.yaw,
+        health: window.__game.player.health,
+        dead: window.__game.player.dead,
+        marked: document.querySelector("#hud-compass-shelter").classList.contains("marked"),
+        lookHint: document.querySelector("#look-hint") !== null,
+        zone: window.__game.zone.id,
+        goal: document.querySelector("#tally-goal")?.textContent ?? "",
+        window: window.__game.ui.window,
+        stored: window.localStorage.getItem("leeside.introDone"),
+        phase: window.__game.phase,
+        sim: window.__game.simSeconds,
+      }));
+    const place = async (id) => {
+      await page.keyboard.press("F2");
+      await page.locator(`#dev-place-${id}`).click();
+      await page.keyboard.press("F2");
+      await settle();
+    };
+    try {
+      await page.goto(gameUrl("lang=en&seed=1&intro"), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.evaluate(() => window.localStorage.removeItem("leeside.introDone"));
+      await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+      await settle();
+      const began = await introNow();
+      check(
+        "the introduction begins with a storm announced, the player looking south at it, and a line saying how to look and move",
+        began.intro.step === "look" && began.intro.protects && began.weather === "warning" && began.secondsLeft > 60 && began.secondsLeft <= 75 && Math.abs(Math.abs(began.yaw) - Math.PI) < 0.01 && (began.guide ?? "").startsWith("A storm is coming"),
+        `step ${began.intro.step}, ${began.weather} ${began.secondsLeft.toFixed(0)} s, yaw ${began.yaw.toFixed(2)}, "${began.guide}"`,
+      );
+      await page.screenshot({ path: join(outDir, "intro.png") });
+      // A few steps, and the guidance moves on to the cars.
+      await page.keyboard.down("KeyW");
+      await page.waitForFunction(() => window.__game.intro.step === "search", undefined, { timeout: 10_000 }).catch(() => {});
+      await page.keyboard.up("KeyW");
+      const searching = await introNow();
+      check("after a few steps the guidance points to the cars", searching.intro.step === "search" && (searching.guide ?? "").startsWith("Search the cars"), `"${searching.guide}"`);
+      // The trunk searched: now to shelter, with the shelter's mark standing out on the compass.
+      await place("car_line_second_trunk");
+      await page.keyboard.down("KeyE");
+      await page.waitForFunction(() => window.__game.containers.panel !== null, undefined, { timeout: 30_000 }).catch(() => {});
+      await page.keyboard.up("KeyE");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => window.__game.intro.step === "shelter", undefined, { timeout: 10_000 }).catch(() => {});
+      await settle();
+      const fleeing = await introNow();
+      check("once the trunk is searched the guidance sends the player to shelter, and the compass marks it", fleeing.intro.step === "shelter" && (fleeing.guide ?? "").startsWith("The storm is close") && fleeing.marked, `"${fleeing.guide}", marked ${fleeing.marked}`);
+      // Indoors: the hatch is pointed out.
+      await place("house_a_cabinet_back");
+      await page.waitForFunction(() => window.__game.intro.step === "hatch", undefined, { timeout: 10_000 }).catch(() => {});
+      const indoors = await introNow();
+      check("inside house A the guidance points out the hatch", indoors.intro.step === "hatch" && (indoors.guide ?? "").includes("hatch"), `"${indoors.guide}"`);
+      // Down in the shelter the introduction is over, the first tally says what the repair is for, and the machine remembers.
+      await page.keyboard.press("F2");
+      await page.locator("#dev-zone-return").click();
+      await page.keyboard.press("F2");
+      await page.waitForFunction(() => window.__game.ui.window === "tally", undefined, { timeout: 10_000 }).catch(() => {});
+      await settle();
+      const arrived = await introNow();
+      check(
+        "down in the shelter the introduction is over; the first tally says what the repair is for, and the machine remembers",
+        arrived.intro.step === "done" && arrived.guide === null && !arrived.intro.protects && arrived.goal.startsWith("The shelter's door is broken") && arrived.stored === "1",
+        `step ${arrived.intro.step}, "${arrived.goal}", stored ${arrived.stored}`,
+      );
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 10_000 }).catch(() => {});
+      await page.keyboard.press("F2");
+      await page.locator("#dev-zone-dry_riverbed").click();
+      await page.locator("#dev-zone-return").click();
+      await page.keyboard.press("F2");
+      await page.waitForFunction(() => window.__game.ui.window === "tally", undefined, { timeout: 10_000 }).catch(() => {});
+      const second = await introNow();
+      check("the second tally does not say it again", second.window === "tally" && second.goal === "");
+      // Protection: out in the storm for its first two minutes, health stops at 30.
+      await page.goto(gameUrl("lang=en&seed=1&intro&health=34"), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+      await page.keyboard.press("F2");
+      await page.locator("#dev-storm-now").click();
+      await page.keyboard.press("F2");
+      await page.waitForFunction(() => window.__game.player.health <= 30, undefined, { timeout: 60_000 }).catch(() => {});
+      const floored = await introNow();
+      await page.waitForFunction((sim) => window.__game.simSeconds > sim + 3, floored.sim, { timeout: 60_000 }).catch(() => {});
+      const held = await introNow();
+      check("in its first two minutes the introduction does not let health fall below 30", floored.health === 30 && held.health === 30 && !held.dead && held.intro.protects && held.weather === "storm", `health ${floored.health} -> ${held.health}`);
+      // Ended with the panel, the protection is gone.
+      await page.keyboard.press("F2");
+      await page.locator("#dev-intro-skip").click();
+      await page.keyboard.press("F2");
+      await page.waitForFunction(() => window.__game.player.health < 29, undefined, { timeout: 30_000 }).catch(() => {});
+      const unprotected = await introNow();
+      check("with the introduction ended the storm hurts as usual", unprotected.intro.step === "done" && unprotected.health < 29 && unprotected.guide === null, `health ${unprotected.health.toFixed(1)}`);
+      // From the title: START plays the introduction; a machine that has been through it is offered to skip it.
+      await page.goto(`${url}?lang=en`, { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      const offered = await page.locator("#title-skip-intro").count();
+      await page.locator("#title-start").click();
+      await page.waitForFunction(() => window.__game.phase === "playing", undefined, { timeout: 5_000 }).catch(() => {});
+      await settle();
+      const fromTitle = await introNow();
+      check("START from the title plays the introduction, without the separate hint for looking round", offered === 1 && fromTitle.intro.step === "look" && fromTitle.weather === "warning" && !fromTitle.lookHint && fromTitle.guide !== null, `step ${fromTitle.intro.step}, ${fromTitle.weather}`);
+      await page.goto(`${url}?lang=en`, { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.locator("#title-skip-intro").click();
+      const switchedOn = await page.locator("#title-skip-intro").evaluate((node) => node.classList.contains("selected"));
+      await page.locator("#title-start").click();
+      await page.waitForFunction(() => window.__game.phase === "playing", undefined, { timeout: 5_000 }).catch(() => {});
+      await settle();
+      const skipped = await introNow();
+      check("with the title's switch on, START plays without the introduction", switchedOn && skipped.intro.step === "done" && skipped.weather === "clear" && skipped.guide === null && Math.abs(skipped.yaw) < 0.01, `step ${skipped.intro.step}, ${skipped.weather}`);
+      await page.goto(`${url}?skipIntro&lang=en`, { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.locator("#title-start").click();
+      await page.waitForFunction(() => window.__game.phase === "playing", undefined, { timeout: 5_000 }).catch(() => {});
+      await settle();
+      const byAddress = await introNow();
+      check("?skipIntro starts without the introduction too", byAddress.intro.step === "done" && byAddress.weather === "clear", `step ${byAddress.intro.step}`);
+    } finally {
+      await page.evaluate(() => window.localStorage.removeItem("leeside.introDone")).catch(() => {});
     }
     }
 

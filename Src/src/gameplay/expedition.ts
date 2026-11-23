@@ -54,4 +54,6 @@ export interface ReturnTally {
   /** The door's repair after this return's materials went in (gameplay/repair.ts). */
   repair: RepairRow[];
   repairDone: boolean;
+  /** Whether this is the return that ends the introduction: the tally then says what the repair is for. */
+  firstReturn: boolean;
 }

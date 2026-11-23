@@ -7,7 +7,7 @@ import type { ZonePlace } from "../world/startPoint";
 
 /**
  * The development panel: everything the start conditions in the address do (`?character`,
- * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?health`, `?temperature`, `?thirst`, `?mute`, `?at`, `?zone`, `?lang`, `?bench`), changed on screen while the game runs.
+ * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?health`, `?temperature`, `?thirst`, `?mute`, `?at`, `?zone`, `?intro`, `?lang`, `?bench`), changed on screen while the game runs.
  * Development builds only. F2 or the button in the corner opens and closes it.
  *
  * A new start condition gets a control here as well, so that nothing has to be tested by
@@ -98,6 +98,10 @@ export interface DevControls {
   repair(): { scrap: number; cloth: number; tape: number };
   resetRepair(): void;
   almostRepair(): void;
+  /** The introduction: the step it is at, starting it from here, and ending it. */
+  intro(): string;
+  startIntro(): void;
+  skipIntro(): void;
   /** Returns to the shelter as if through the hatch: the tally comes up. */
   returnToShelter(): void;
   shelterZonesShown(): boolean;
@@ -375,6 +379,11 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
       ...bagSection(),
       ...containersSection(),
       ...repairSection(),
+      ...section(
+        t("dev.intro"),
+        button("dev-intro-start", t("dev.intro.start"), () => controls.startIntro(), controls.intro() !== "done"),
+        button("dev-intro-skip", t("dev.intro.skip"), () => controls.skipIntro(), controls.intro() === "done"),
+      ),
       ...audioSection(),
       ...section(
         t("dev.shelter"),

@@ -71,6 +71,13 @@ const css = `
 #hud-storm .hud-storm-fill { height: 100%; background: #ff8a2a; }
 #hud-storm.storm { color: #ffd9d2; background: rgba(120, 28, 20, 0.85); border-color: #e0513f; justify-content: center; }
 #hud-storm.storm .hud-storm-track { display: none; }
+/* Guidance: what to do next, said once in a line above the quick slots. */
+#hud-guide {
+  position: absolute; left: 50%; bottom: 7em; transform: translateX(-50%); max-width: 46em; padding: 0.5em 1.1em; text-align: center;
+  font-size: 1.1em; font-weight: 700; border-radius: 0.25em; background: rgba(20, 19, 16, 0.72); border: 0.1em solid rgba(232, 220, 192, 0.35);
+  text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.75);
+}
+#hud-guide[hidden] { display: none; }
 /* The frame rate, for those who ask for it in the settings. */
 #hud-fps { position: absolute; left: 1.25em; top: 1em; font-size: 0.875em; font-weight: 700; opacity: 0.85; text-shadow: 0 0.05em 0.25em rgba(0, 0, 0, 0.75); }
 #hud-fps[hidden] { display: none; }
@@ -209,6 +216,8 @@ export interface Hud {
   setCompass(heading: number, shelterBearing: number | null, bagBearing?: number | null): CompassPosition;
   /** Shows the warnings and effects the player's situation calls for (hudState.ts). */
   setAlerts(alerts: HudAlerts): void;
+  /** Shows a line of guidance above the quick slots (the introduction's), or takes it away with null. */
+  setGuide(text: string | null): void;
   /** Shows the frame rate in a corner (the setting), or hides it with null. */
   setFps(fps: number | null): void;
   /** Shows how full the bag is (hudState.ts); `key` is what the key that opens the bag window is called. */
@@ -351,11 +360,14 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   const quick = make("div", "hud-quick");
   const quickSlots: Array<{ node: HTMLElement; key: HTMLElement; icon: HTMLElement; name: HTMLElement; count: HTMLElement }> = [];
 
+  const guide = make("div", "hud-guide");
+  guide.hidden = true;
+  let guideShown: string | null = null;
   const fps = make("div", "hud-fps");
   fps.hidden = true;
   let fpsShown: number | null = null;
 
-  root.append(...edges.map((edge) => edge.node), clock, top, vitals, shelter, bag, quick, aim, fps);
+  root.append(...edges.map((edge) => edge.node), clock, top, vitals, shelter, bag, quick, aim, guide, fps);
   // Under the title and windows, which are added to the root later or sit above by their own rules.
   ui.root.prepend(root);
 
@@ -497,6 +509,13 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
     update(next): void {
       latest = next;
       renderClock();
+    },
+    setGuide(text): void {
+      if (text !== guideShown) {
+        guideShown = text;
+        guide.hidden = text === null;
+        guide.textContent = text ?? "";
+      }
     },
     setFps(value): void {
       const rounded = value === null ? null : Math.round(value);

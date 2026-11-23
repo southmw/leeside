@@ -59,6 +59,22 @@ function storeCharacter(id: string): void {
     // Not being able to remember the choice is not worth interrupting the player for.
   }
 }
+// Whether the introduction has been played through here before: then the title offers to skip it.
+const INTRO_STORAGE_KEY = "leeside.introDone";
+function introDone(): boolean {
+  try {
+    return window.localStorage.getItem(INTRO_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function storeIntroDone(): void {
+  try {
+    window.localStorage.setItem(INTRO_STORAGE_KEY, "1");
+  } catch {
+    // Then the introduction is simply not offered for skipping next time.
+  }
+}
 // `?character=lis` picks a character for this visit only.
 let character = chooseCharacter(startParams.get("character"), storedCharacter());
 
@@ -73,7 +89,7 @@ const settingsScreen = createSettingsScreen(ui, i18n, settings, {
 const withoutTitle = startParams.has("skipTitle") || startParams.has("bench");
 
 let flow = initialStartFlow(LOADING_STEPS);
-let startGame: (() => void) | undefined;
+let startGame: ((skipIntro: boolean) => void) | undefined;
 let setGameCharacter: ((id: string) => Promise<void>) | undefined;
 
 const showTitle = (): TitleScreen =>
@@ -84,6 +100,7 @@ const showTitle = (): TitleScreen =>
     onStart: () => dispatch({ type: "start" }),
     onSettings: () => settingsScreen.open(() => {}),
     onLanguage: (language) => settings.set({ language }),
+    introDone: introDone(),
     onCharacter: (id) => {
       character = id;
       storeCharacter(id);
@@ -98,9 +115,10 @@ function dispatch(event: StartFlowEvent): void {
   title?.setState(flow);
   const isPlaying = flow.phase === "playing";
   if (isPlaying && !wasPlaying) {
+    const skipIntro = title?.skipIntro ?? false;
     title?.remove();
     title = undefined;
-    startGame?.();
+    startGame?.(skipIntro);
   } else if (wasPlaying && !isPlaying) {
     // Back from the game, which has put itself back to its beginning. This is the one way to
     // the title for a visit that began without it (`?skipTitle`).
@@ -131,8 +149,9 @@ if (unsupported && !withoutTitle) {
       openSettings: (onBack) => settingsScreen.open(onBack),
       onProgress: () => dispatch({ type: "step_done" }),
       onQuit: () => dispatch({ type: "quit" }),
+      onIntroDone: storeIntroDone,
     });
-    startGame = () => game.start();
+    startGame = (skipIntro) => game.start({ skipIntro });
     setGameCharacter = (id) => game.setCharacter(id);
     // The player may have picked another character while the game was still loading.
     void game.setCharacter(character);
