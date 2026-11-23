@@ -42,6 +42,9 @@ import { createTallyScreen } from "./ui/tallyScreen";
 import { canPause, shouldPauseOnLeave, simulationRuns } from "./app/pause";
 import { QUALITY_PRESETS, type Settings, type SettingsStore } from "./app/settings";
 import { createPauseScreen } from "./ui/pauseScreen";
+import { FEEDBACK_URL } from "./app/links";
+import { playSummary } from "./gameplay/summary";
+import { createEndScreen } from "./ui/endScreen";
 import { clearQuickSlots, createQuickSlots, createQuickUseSystem } from "./gameplay/quickSlots";
 import { createPileMesh } from "./render/pileMesh";
 import { advanceClock, createClock, parseTimeOfDay, readClock, setHour, startNextDay } from "./gameplay/clock";
@@ -786,7 +789,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   };
   // What is in the bag is seen in the bag window (Tab); the HUD only says how full it is.
   const bagWindow = createBagWindow(ui, i18n, {
-    canOpen: () => playing && !bench && !travel && !tally && tallyDue === undefined && !isDead(player.health),
+    canOpen: () => playing && !bench && !travel && !tally && !ending && tallyDue === undefined && !isDead(player.health),
     listBeside: () => containerPanel.openId !== null,
     onDiscard: (slot) => commands.push({ type: "discardItem", actor: LOCAL_PLAYER_ID, slot, count: 1 }),
     onUse: (item) => commands.push({ type: "useItem", actor: LOCAL_PLAYER_ID, item }),
@@ -991,6 +994,38 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   };
   // The return (prototype design 2.3): the shelter gives rest at once, the tally says what
   // the outing brought in, and moving on from it is the next morning.
+  // Where feedback is left: not decided yet (app/links.ts). In development `?feedback=address`
+  // stands in for it, so that the buttons can be looked at.
+  const feedbackUrl = FEEDBACK_URL || (import.meta.env.DEV ? (startParams.get("feedback") ?? "") : "");
+  // The end (prototype design 2.5): once the door is repaired, the morning after says so,
+  // sums the game up and lets the player play on. Once per game.
+  const endScreen = createEndScreen(ui, i18n, feedbackUrl ? { feedbackUrl } : {});
+  /** Real seconds in play in this game, for the summary. */
+  let playSeconds = 0;
+  let endShown = false;
+  /** Set while the end screen is up. Game time stands still meanwhile, as for the tally. */
+  let ending = false;
+  const showEnd = (): void => {
+    const summary = playSummary(playSeconds, readClock(clock).day, debug.player.deaths);
+    debug.end = { shown: endShown, open: ending, time: `${summary.minutes}:${summary.seconds}`, days: summary.days, deaths: summary.deaths };
+  };
+  const openEnd = (): void => {
+    endShown = true;
+    ending = true;
+    endScreen.show(playSummary(playSeconds, readClock(clock).day, debug.player.deaths), () => {
+      ending = false;
+      showEnd();
+    });
+    showEnd();
+  };
+  const endEnding = (): void => {
+    ending = false;
+    endShown = false;
+    playSeconds = 0;
+    endScreen.clear();
+    showEnd();
+  };
+  showEnd();
   const tallyScreen = createTallyScreen(ui, i18n);
   const showTally = (): void => {
     debug.tally = tally
@@ -1010,6 +1045,10 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     showClock();
     showWeather();
     showTally();
+    // The door is done: that is as far as the prototype goes.
+    if (isRepairDone(repair) && !endShown) {
+      openEnd();
+    }
   };
   const openTally = (): void => {
     if (tally || isDead(player.health)) {
@@ -1128,6 +1167,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     paused = false;
     debug.paused = false;
     endIntro();
+    endEnding();
     bagWindow.close();
     containerPanel.close();
     playing = false;
@@ -1234,6 +1274,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   let paused = false;
   const pauseScreen = createPauseScreen(ui, i18n, {
     openSettings: context.openSettings,
+    ...(feedbackUrl ? { feedbackUrl } : {}),
     onResume: () => {
       paused = false;
       debug.paused = false;
@@ -1496,7 +1537,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         inputSystem();
         // On the way to another zone the character stands still. The keys are still read, so
         // that one held down through the change does not count as pressed again after it.
-        if (travel || tally || tallyDue !== undefined) {
+        playSeconds += dt;
+        if (travel || tally || ending || tallyDue !== undefined) {
           Object.assign(player.input, createEmptyActions(), { interact: player.input.interact });
         }
       }
@@ -1517,7 +1559,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         Object.assign(player.search, createSearch());
       }
       // Time stands still behind the title, during a measurement, and while the tally is up.
-      if (playing && !bench && !tally) {
+      if (playing && !bench && !tally && !ending) {
         advanceClock(clock, dt);
       }
       sectionTimer.end("sim");
@@ -1533,7 +1575,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       }
       lastWeatherPhase = latestWeather.phase;
       // The storm hurts in game time: not behind the title, nor while the clock is stopped.
-      if (playing && !bench && !tally) {
+      if (playing && !bench && !tally && !ending) {
         const healthBefore = player.health.current;
         exposureSystem(dt * clock.scale);
         temperatureSystem(dt * clock.scale);

@@ -196,6 +196,8 @@ export interface GameDebug {
   droppedBag: { zone: string; x: number; z: number; items: string[] } | null;
   /** What storms have uncovered: how many storms have passed in this game, and what the last one left where ("scrap 346,85"). */
   reveals: { storms: number; last: string[] };
+  /** The end screen: whether this game has shown it, whether it is up, and the summary as it would read now. */
+  end: { shown: boolean; open: boolean; time: string; days: number; deaths: number };
   /** The introduction: its step ("done" when there is none), the guidance shown (null for none), whether it still protects, and how long it has run. */
   intro: { step: string; guide: string | null; protects: boolean; seconds: number };
   /** The tally of a return to the shelter while it is up (what was brought in, as "scrap 2"), or null. */
@@ -249,6 +251,7 @@ export function installDebugApi(language: Language): GameDebug {
     travel: { state: "none", count: 0 },
     tally: null,
     intro: { step: "done", guide: null, protects: false, seconds: 0 },
+    end: { shown: false, open: false, time: "0:00", days: 1, deaths: 0 },
     reveals: { storms: 0, last: [] },
     droppedBag: null,
     repair: { scrap: 0, cloth: 0, tape: 0, done: false },

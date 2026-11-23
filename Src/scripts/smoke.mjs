@@ -2074,6 +2074,10 @@ try {
     await page.waitForTimeout(1500);
     await page.screenshot({ path: join(outDir, "tally-done.png") });
     await page.keyboard.press("Enter");
+    // The door is done, so the end screen follows the tally (it has checks of its own further down): past it.
+    await page.waitForFunction(() => window.__game.ui.window === "end", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 10_000 }).catch(() => {});
     await page.keyboard.down("KeyW");
     await page.waitForFunction(() => window.__game.player.interaction === "shelter_door", undefined, { timeout: 10_000 }).catch(() => {});
@@ -2636,6 +2640,99 @@ try {
     } finally {
       await page.evaluate(() => window.localStorage.removeItem("leeside.introDone")).catch(() => {});
     }
+    }
+
+    {
+    // The end: the morning after the door is finished the end screen sums the game up, once.
+    const endNow = () =>
+      page.evaluate(() => ({
+        end: { ...window.__game.end },
+        window: window.__game.ui.window,
+        title: document.querySelector('[data-window="end"] .ui-title')?.textContent ?? "",
+        text: document.querySelector('[data-window="end"] .ui-text')?.textContent ?? "",
+        time: document.querySelector("#end-time")?.textContent ?? "",
+        days: document.querySelector("#end-days")?.textContent ?? "",
+        deaths: document.querySelector("#end-deaths")?.textContent ?? "",
+        note: document.querySelector("#end-note")?.textContent ?? "",
+        buttons: [...document.querySelectorAll('[data-window="end"] > .ui-button')].map((button) => button.textContent),
+        pauseButtons: [...document.querySelectorAll('[data-window="pause"] > .ui-button')].map((button) => button.textContent),
+        day: window.__game.clock.day,
+        hour: window.__game.clock.hour,
+        repair: window.__game.repair.done,
+        sim: window.__game.simSeconds,
+        z: window.__game.player.z,
+      }));
+    /** Brings the repair to one short of each material, gives one of each, and returns to the shelter. */
+    const finishDoor = async (query) => {
+      await page.goto(gameUrl(query), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+      await page.keyboard.press("F2");
+      await page.locator("#dev-repair-almost").click();
+      await page.locator("#dev-bag-give-scrap").click();
+      await page.locator("#dev-bag-give-cloth").click();
+      await page.locator("#dev-bag-give-tape").click();
+      await page.waitForFunction(() => window.__game.player.bag.filter((slot) => slot !== null).length === 3, undefined, { timeout: 10_000 }).catch(() => {});
+      await page.locator("#dev-zone-return").click();
+      await page.waitForFunction(() => window.__game.ui.window === "tally", undefined, { timeout: 10_000 }).catch(() => {});
+      await page.keyboard.press("F2");
+    };
+    await finishDoor("lang=en&seed=1");
+    const atTally = await endNow();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.ui.window === "end", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const ended = await endNow();
+    check(
+      "the morning after the door is finished the end screen comes up: the prototype ends here",
+      atTally.repair && !atTally.end.shown && ended.window === "end" && ended.end.open && ended.end.shown && ended.title === "The shelter is sealed" && ended.text.includes("prototype ends here") && ended.note.includes("feedback") && ended.day === 2,
+      `"${ended.title}", "${ended.text}"`,
+    );
+    check(
+      "it sums the game up: time played, days survived, deaths; and without an address for feedback only offers to play on",
+      /^\d+:\d\d$/.test(ended.time) && ended.time === ended.end.time && ended.days === "2" && ended.deaths === "0" && ended.buttons.join() === "Keep playing",
+      `time ${ended.time}, days ${ended.days}, deaths ${ended.deaths}, buttons ${ended.buttons.join()}`,
+    );
+    await page.screenshot({ path: join(outDir, "end.png") });
+    // Time stands still under it, and Keep playing goes on.
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction((sim) => window.__game.simSeconds > sim + 1, ended.sim, { timeout: 30_000 }).catch(() => {});
+    await page.keyboard.up("KeyW");
+    const waiting = await endNow();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const playingOn = await endNow();
+    check("while it is up the clock stands still and the character does not walk; Keep playing goes on", waiting.hour === ended.hour && Math.abs(waiting.z - ended.z) < 0.01 && playingOn.window === null && !playingOn.end.open && playingOn.hour > ended.hour, `hour ${ended.hour.toFixed(3)} -> ${waiting.hour.toFixed(3)} -> ${playingOn.hour.toFixed(3)}`);
+    // It comes once: the next return is an ordinary one.
+    await page.keyboard.press("F2");
+    await page.locator("#dev-zone-dry_riverbed").click();
+    await page.locator("#dev-zone-return").click();
+    await page.waitForFunction(() => window.__game.ui.window === "tally", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.press("F2");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.clock.day === 3, undefined, { timeout: 10_000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const later = await endNow();
+    check("the end screen comes once: a later return is an ordinary one", later.day === 3 && later.window === null && later.end.shown && !later.end.open);
+    // With an address for feedback (a stand-in, in development): the button is there, first, and in the pause screen too.
+    await finishDoor("lang=ko&seed=1&feedback=https://example.com/feedback");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.ui.window === "end", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const withFeedback = await endNow();
+    await page.screenshot({ path: join(outDir, "end-ko.png") });
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => window.__game.ui.window === "pause", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    const pausedWithFeedback = await endNow();
+    check(
+      "with an address for feedback the end screen offers it first, in Korean too, and so does the pause screen",
+      withFeedback.title === "대피소의 문을 고쳤습니다" && withFeedback.buttons.join() === "의견 남기기,계속 플레이하기" && pausedWithFeedback.pauseButtons.join() === "계속하기,설정,조작 방법,처음부터,의견 남기기",
+      `${withFeedback.buttons.join()} / ${pausedWithFeedback.pauseButtons.join()}`,
+    );
     }
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.
