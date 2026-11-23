@@ -174,6 +174,8 @@ export const MATERIAL_STACK = 5;
 export const CONSUMABLE_STACK = 3;
 /** What a bandage gives back (prototype design 4.1). */
 export const BANDAGE_HEALTH = 30;
+/** Health given back on returning to the shelter (prototype design 2.3). */
+export const RETURN_HEALTH = 50;
 /** Quick slots (prototype design 4.5): how many there are, on the keys 1 upwards. */
 export const QUICK_SLOTS = 4;
 /**

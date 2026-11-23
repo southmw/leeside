@@ -42,7 +42,7 @@ const css = `
 .ui-bar .ui-bar-track { height: 0.6em; margin-top: 0.2em; border-radius: 0.3em; background: rgba(232, 220, 192, 0.15); overflow: hidden; }
 .ui-bar .ui-bar-fill { height: 100%; background: #d9c79a; }
 .ui-window {
-  position: absolute; left: 50%; top: 50%; min-width: 22em; max-width: 34em;
+  position: absolute; left: 50%; top: 50%; min-width: 22em; max-width: 44em;
   transform: translate(-50%, -50%); opacity: 1;
   transition: opacity 0.15s, transform 0.15s;
 }

@@ -1,8 +1,8 @@
 import { parseZoneDefinition, type ZoneDefinition } from "../zoneDefinition";
 
 /**
- * The shelter (prototype design 5.5): one room under house A, 16 m square. Nothing is in it
- * yet but the way out; the door to repair and the tally of a return come with their own steps.
+ * The shelter (prototype design 5.5): one room under house A, 16 m square, with the door
+ * whose repair is the prototype's goal and the ladder out.
  */
 
 export const SHELTER_SIZE = 16;
@@ -21,6 +21,8 @@ const definition = {
   spawn: { position: [8, 10], facing: 0 },
   entries: [{ id: "from_riverbed", position: [8, 10], facing: 0 }],
   // On the south wall.
+  // The door to repair, in the middle of the north wall: what one sees on coming in.
+  props: [{ id: "shelter_door", kind: "shelter_door", position: [8, 0.2] }],
   exits: [{ id: "to_riverbed", position: [8, 15.8], shape: "ladder", to: "dry_riverbed", entry: "from_shelter" }],
 };
 

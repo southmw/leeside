@@ -94,6 +94,12 @@ export interface DevControls {
   zones: readonly string[];
   zone(): string;
   goToZone(id: string): void;
+  /** The door's repair: how many of each material are in, starting it over, and bringing it one short of each. */
+  repair(): { scrap: number; cloth: number; tape: number };
+  resetRepair(): void;
+  almostRepair(): void;
+  /** Returns to the shelter as if through the hatch: the tally comes up. */
+  returnToShelter(): void;
   shelterZonesShown(): boolean;
   /** Draws the shelter zones as boxes, or stops drawing them. */
   showShelterZones(shown: boolean): void;
@@ -265,7 +271,22 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
     heading?.append(containersNow);
     return heading && row ? [heading, row] : [];
   };
+  let repairNow: HTMLElement | undefined;
+  const repairSection = (): HTMLElement[] => {
+    const [heading, row] = section(
+      t("dev.repair"),
+      button("dev-repair-reset", t("dev.repair.reset"), () => controls.resetRepair()),
+      button("dev-repair-almost", t("dev.repair.almost"), () => controls.almostRepair()),
+    );
+    repairNow = element("span", "", "dev-now");
+    repairNow.id = "dev-repair-now";
+    heading?.append(repairNow);
+    return heading && row ? [heading, row] : [];
+  };
   function refreshClock(): void {
+    if (repairNow) {
+      repairNow.textContent = t("dev.repair.now", controls.repair());
+    }
     if (containersNow) {
       containersNow.textContent = t("dev.containers.now", controls.containers());
     }
@@ -353,13 +374,14 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
       ...thirstSection(),
       ...bagSection(),
       ...containersSection(),
+      ...repairSection(),
       ...audioSection(),
       ...section(
         t("dev.shelter"),
         button("dev-shelter-show", t("dev.shelter.show"), () => controls.showShelterZones(true), controls.shelterZonesShown()),
         button("dev-shelter-hide", t("dev.shelter.hide"), () => controls.showShelterZones(false), !controls.shelterZonesShown()),
       ),
-      ...section(t("dev.zone"), ...controls.zones.map((id) => button(`dev-zone-${id}`, i18n.tData(`zone.${id}.name`), () => controls.goToZone(id), id === controls.zone()))),
+      ...section(t("dev.zone"), ...controls.zones.map((id) => button(`dev-zone-${id}`, i18n.tData(`zone.${id}.name`), () => controls.goToZone(id), id === controls.zone())), button("dev-zone-return", t("dev.zone.return"), () => controls.returnToShelter())),
       // Places are named by their ids in the zone data, which are not text for players.
       ...section(t("dev.places"), ...controls.places.map((place) => button(`dev-place-${place.id}`, place.id, () => controls.goTo(place)))),
       ...section(

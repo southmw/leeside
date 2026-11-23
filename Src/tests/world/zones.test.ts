@@ -79,6 +79,9 @@ describe("the shelter", () => {
     expect(new Set(shelter.terrain.heights).size).toBe(1);
     expect(shelter.buildings).toEqual([]);
     expect(shelter.containers).toEqual([]);
+    // The door to repair is on the north wall, opposite the ladder.
+    expect(shelter.props.map((prop) => prop.kind)).toEqual(["shelter_door"]);
+    expect(shelter.props[0]?.position[1]).toBeLessThan(1);
   });
 
   it("puts whoever comes in with the ladder behind them, in reach but out of view", () => {

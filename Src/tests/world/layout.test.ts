@@ -313,10 +313,15 @@ describe("the loaded zone", () => {
     const scene = fakeScene();
     const before = physics.bodyCount;
     const loaded = loadZone(loadShelter(), physics, scene, { world });
-    // The floor, four boundary walls and the ceiling.
-    expect(physics.bodyCount - before).toBe(1 + 4 + 1);
-    // The floor, four walls, the ceiling and the ladder.
-    expect(scene.objects.size).toBe(1 + 4 + 1 + 1);
+    // The floor, four boundary walls, the ceiling and the door.
+    expect(physics.bodyCount - before).toBe(1 + 4 + 1 + 1);
+    // The floor, four walls, the ceiling, the door and the ladder.
+    expect(scene.objects.size).toBe(1 + 4 + 1 + 1 + 1);
+    // The door can be looked at, and knows the box it is.
+    const door = [...world.with("interactable", "transform")].find((entity) => entity.interactable.kind === "repair");
+    expect(door?.interactable.id).toBe("shelter_door");
+    expect(door?.interactable.solid).toBeDefined();
+    expect(door?.transform).toMatchObject({ x: 8, y: 0, z: 0.2 });
     expect(loaded.shelterZoneCount).toBe(1);
     expect([...world.with("shelterZone")].map((entity) => entity.shelterZone.id)).toEqual(["shelter"]);
     expect([...world.with("exit")].map((entity) => entity.exit.to)).toEqual(["dry_riverbed"]);

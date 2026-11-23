@@ -32,9 +32,13 @@ import {
   MAX_THIRST,
   MIN_TEMPERATURE,
   MOVE_SPEED,
+  REPAIR_NEEDS,
 } from "./data/tuning";
 import { isItemId, ITEM_IDS } from "./data/items";
+import { broughtBack, countItems, restAtShelter, type ReturnTally } from "./gameplay/expedition";
 import { useRefusal } from "./gameplay/itemUse";
+import { createRepair, deliverMaterials, isRepairDone, REPAIR_MATERIALS, repairRows, resetRepair } from "./gameplay/repair";
+import { createTallyScreen } from "./ui/tallyScreen";
 import { clearQuickSlots, createQuickSlots, createQuickUseSystem } from "./gameplay/quickSlots";
 import { createPileMesh } from "./render/pileMesh";
 import { advanceClock, createClock, parseTimeOfDay, readClock, setHour, startNextDay } from "./gameplay/clock";
@@ -406,6 +410,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     }
   };
   fillStartBag();
+  // What the bag held when the day's outing began: what it holds more of on the return is
+  // what the outing brought in (prototype design 2.3).
+  let outingStart = countItems(player.inventory);
   const mouse = createMouse(canvas, document);
 
   // `?bench` (or `?bench=seconds`) measures performance: the camera flies a fixed route round
@@ -563,6 +570,29 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.player.thirst = player.thirst.value;
   };
   showThirst();
+  // The repair of the shelter's door, the prototype's goal. It is the shelter's, not the
+  // player's: what has gone in stays in, also through a death.
+  const repair = createRepair();
+  const showRepair = (): void => {
+    debug.repair = { ...repair, done: isRepairDone(repair) };
+  };
+  showRepair();
+  /** The numbers the door's prompt has in it. */
+  const repairValues = (): Record<string, number> => ({
+    scrap: repair.scrap,
+    scrapNeed: REPAIR_NEEDS.scrap,
+    cloth: repair.cloth,
+    clothNeed: REPAIR_NEEDS.cloth,
+    tape: repair.tape,
+    tapeNeed: REPAIR_NEEDS.tape,
+  });
+  /** Set while the tally of a return to the shelter is up. Game time stands still meanwhile. */
+  let tally: ReturnTally | undefined;
+  /**
+   * Seconds until the tally comes up, after arriving in the shelter: once the picture is
+   * back, not over the zone's name while it fades. Undefined when none is due.
+   */
+  let tallyDue: number | undefined;
   /** Set while the local player is on the way from one zone to another (see `switchZone` below). */
   let travel: { to: ZoneId; entry: string; seconds: number; switched: boolean } | undefined;
   // Whatever changes the bag asks for it with a command, carried out in the next step.
@@ -672,7 +702,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   };
   // What is in the bag is seen in the bag window (Tab); the HUD only says how full it is.
   const bagWindow = createBagWindow(ui, i18n, {
-    canOpen: () => playing && !bench && !travel && !isDead(player.health),
+    canOpen: () => playing && !bench && !travel && !tally && tallyDue === undefined && !isDead(player.health),
     listBeside: () => containerPanel.openId !== null,
     onDiscard: (slot) => commands.push({ type: "discardItem", actor: LOCAL_PLAYER_ID, slot, count: 1 }),
     onUse: (item) => commands.push({ type: "useItem", actor: LOCAL_PLAYER_ID, item }),
@@ -716,13 +746,17 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           targetKind = "pickup";
         }
       }
+      // The shelter's door only tells how far its repair is.
+      if (zoneDefinition.props.some((prop) => prop.id === target && prop.kind === "shelter_door")) {
+        targetKind = isRepairDone(repair) ? "repair_done" : "repair";
+      }
     }
     // The bag window does not hide the prompt: a container can be searched with the bag open.
     const windowOpen = ui.centreWindowId !== null || containerPanel.openId !== null || travel !== undefined;
     const cue = interactionCue({ targetKind, windowOpen, dead: isDead(player.health) });
     // The ring fills while the key is held on a container not yet searched.
     const progress = searchProgress(player.search);
-    hud.setInteraction(cue, interactKey, progress);
+    hud.setInteraction(cue, interactKey, progress, cue.prompt === "repair" ? repairValues() : undefined);
     debug.player.search.target = player.search.target;
     debug.player.search.progress = progress;
     debug.player.interaction = target;
@@ -843,10 +877,76 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       debug.travel.state = "opening";
     }
     if (travel.seconds >= TRAVEL_FADE_SECONDS + TRAVEL_HOLD_SECONDS) {
+      const cameIn = zones[travel.to].interior !== undefined;
       travel = undefined;
       veil.reveal(TRAVEL_FADE_SECONDS);
       debug.travel.state = "none";
+      // Down in the shelter the day is over: the tally follows as soon as the picture is back.
+      if (cameIn) {
+        tallyDue = TRAVEL_FADE_SECONDS;
+      }
     }
+  };
+  // The return (prototype design 2.3): the shelter gives rest at once, the tally says what
+  // the outing brought in, and moving on from it is the next morning.
+  const tallyScreen = createTallyScreen(ui, i18n);
+  const showTally = (): void => {
+    debug.tally = tally
+      ? {
+          day: tally.day,
+          brought: tally.brought.map((stack) => `${stack.item} ${stack.count}`),
+          healthRestored: tally.healthRestored,
+          delivered: tally.repair.filter((row) => row.added > 0).map((row) => `${row.item} ${row.added}`),
+        }
+      : null;
+  };
+  const nextDay = (): void => {
+    tally = undefined;
+    startNextDay(clock);
+    // The new day's outing starts with what is in the bag now.
+    outingStart = countItems(player.inventory);
+    showClock();
+    showWeather();
+    showTally();
+  };
+  const openTally = (): void => {
+    if (tally || isDead(player.health)) {
+      return;
+    }
+    const restored = restAtShelter(player.health);
+    player.temperature.value = 0;
+    // Counted before the materials leave the bag for the door.
+    const brought = broughtBack(outingStart, countItems(player.inventory));
+    const delivered = deliverMaterials(repair, player.inventory);
+    tally = {
+      day: readClock(clock).day,
+      brought,
+      // As the health bar counts: whole numbers, rounded up.
+      healthRestored: Math.ceil(restored),
+      repair: repairRows(repair, delivered),
+      repairDone: isRepairDone(repair),
+    };
+    showRepair();
+    bagWindow.close();
+    containerPanel.close();
+    tallyScreen.show(tally, nextDay);
+    showTally();
+  };
+  const advanceTally = (dt: number): void => {
+    if (tallyDue === undefined) {
+      return;
+    }
+    tallyDue -= dt;
+    if (tallyDue <= 0) {
+      tallyDue = undefined;
+      openTally();
+    }
+  };
+  const endTally = (): void => {
+    tallyDue = undefined;
+    tally = undefined;
+    tallyScreen.clear();
+    showTally();
   };
   const endTravel = (): void => {
     travel = undefined;
@@ -884,6 +984,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     }
     restore();
     startNextDay(clock);
+    outingStart = countItems(player.inventory);
     shelterSystem();
     showClock();
     showWeather();
@@ -893,6 +994,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   const backToTitle = (): void => {
     endDeath();
     endTravel();
+    endTally();
     bagWindow.close();
     containerPanel.close();
     playing = false;
@@ -903,6 +1005,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     player.view.pitch = START_PITCH;
     restore();
     fillStartBag();
+    outingStart = countItems(player.inventory);
+    resetRepair(repair);
+    showRepair();
     clearQuickSlots(player.quickSlots);
     clearPiles();
     Object.assign(player.input, createEmptyActions());
@@ -1067,6 +1172,29 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           containerPanel.close();
           fillContainerStates();
         },
+        repair: () => ({ ...repair }),
+        resetRepair: () => {
+          resetRepair(repair);
+          showRepair();
+        },
+        // One short of each material: the next return with one of each finishes the door.
+        almostRepair: () => {
+          for (const material of REPAIR_MATERIALS) {
+            repair[material] = REPAIR_NEEDS[material] - 1;
+          }
+          showRepair();
+        },
+        // The return without the walk: into the shelter if need be, and the tally comes up.
+        returnToShelter: () => {
+          if (travel || tally || !playing) {
+            return;
+          }
+          if (!zoneDefinition.interior) {
+            const entry = zones.shelter.entries[0] ?? zones.shelter.spawn;
+            switchZone("shelter", { east: entry.position[0], south: entry.position[1], facing: entry.facing });
+          }
+          openTally();
+        },
         shelterZonesShown: () => shelterZones.visible,
         showShelterZones: (shown) => {
           shelterZones.setVisible(shown);
@@ -1107,12 +1235,13 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         inputSystem();
         // On the way to another zone the character stands still. The keys are still read, so
         // that one held down through the change does not count as pressed again after it.
-        if (travel) {
+        if (travel || tally || tallyDue !== undefined) {
           Object.assign(player.input, createEmptyActions(), { interact: player.input.interact });
         }
       }
       runCommands();
       advanceTravel(dt);
+      advanceTally(dt);
       lookSystem();
       movementSystem(dt);
       physicsSystem.update();
@@ -1126,8 +1255,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         player.interaction.target = null;
         Object.assign(player.search, createSearch());
       }
-      // Time stands still behind the title and during a measurement.
-      if (playing && !bench) {
+      // Time stands still behind the title, during a measurement, and while the tally is up.
+      if (playing && !bench && !tally) {
         advanceClock(clock, dt);
       }
       sectionTimer.end("sim");
@@ -1137,7 +1266,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       }
       showWeather();
       // The storm hurts in game time: not behind the title, nor while the clock is stopped.
-      if (playing && !bench) {
+      if (playing && !bench && !tally) {
         exposureSystem(dt * clock.scale);
         temperatureSystem(dt * clock.scale);
         thirstSystem(dt * clock.scale);

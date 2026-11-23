@@ -1829,10 +1829,15 @@ try {
     check("the change takes less than two seconds", down.seconds < 2, `${down.seconds.toFixed(2)} s`);
     check(
       "one arrives at the shelter's entry with the ladder behind: sheltered, nothing to use, no shelter mark on the compass",
-      Math.abs(down.after.x - 8) < 0.2 && Math.abs(down.after.z - 10) < 0.2 && down.after.shelter === "shelter" && down.after.signShown && down.after.target === null && down.after.interactables === 1 && !down.after.compassShown && down.after.markHidden,
+      Math.abs(down.after.x - 8) < 0.2 && Math.abs(down.after.z - 10) < 0.2 && down.after.shelter === "shelter" && down.after.signShown && down.after.target === null && down.after.interactables === 2 && !down.after.compassShown && down.after.markHidden,
       `at ${down.after.x.toFixed(1)}, ${down.after.z.toFixed(1)}, shelter ${down.after.shelter}, target ${down.after.target}`,
     );
     check("what lies on the ground outside is not in the shelter", down.before.piles.length === 1 && down.after.piles.length === 0, `${down.before.piles.join()} -> ${down.after.piles.join()}`);
+    // Coming in ends the day: the tally is up. It is looked at further down; here it is passed.
+    await page.waitForFunction(() => window.__game.ui.window === "tally", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
     // A storm outside: the clock runs on, the warning shows, and nothing of it gets in.
     await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
     await page.keyboard.press("F2");
@@ -1893,6 +1898,182 @@ try {
     await page.keyboard.press("F2");
     const placed = await zoneNow();
     check("a place of the riverbed chosen from inside the shelter leads outside", placed.zone === "dry_riverbed" && placed.inside === "house_a" && placed.target === "house_a_cabinet_back", `${placed.zone}, target ${placed.target}`);
+
+    // The return: coming down into the shelter gives rest and shows the tally, time stands
+    // still while it is up, and moving on is the next morning.
+    const tallyNow = () =>
+      page.evaluate(() => ({
+        tally: window.__game.tally && { ...window.__game.tally, brought: [...window.__game.tally.brought] },
+        window: window.__game.ui.window,
+        title: document.querySelector('[data-window="tally"] .ui-title')?.textContent ?? "",
+        rows: [...document.querySelectorAll("#tally .tally-row")].map((row) => `${row.querySelector(".tally-row-name").textContent} ${row.querySelector(".tally-row-count").textContent}`),
+        nothing: document.querySelector("#tally .tally-nothing")?.textContent ?? "",
+        healthText: document.querySelector("#tally .tally-health > span:last-child")?.textContent ?? "",
+        daysText: document.querySelector("#tally .tally-days")?.textContent ?? "",
+        repairRows: [...document.querySelectorAll("#tally .tally-repair-row")].map((row) =>
+          `${row.querySelector(".tally-repair-name").textContent} ${row.querySelector(".tally-repair-count").textContent} ${row.querySelector(".tally-repair-added").textContent}`.trim(),
+        ),
+        addedWidths: [...document.querySelectorAll("#tally .tally-bar-added")].map((bar) => bar.style.width),
+        doneText: document.querySelector("#tally .tally-done")?.textContent ?? "",
+        repair: { ...window.__game.repair },
+        target: window.__game.player.interaction,
+        prompt: window.__game.hud.prompt,
+        promptText: document.querySelector("#hud-prompt").textContent,
+        button: document.querySelector('[data-window="tally"] .ui-button')?.textContent ?? "",
+        health: window.__game.player.health,
+        thirst: window.__game.player.thirst,
+        day: window.__game.clock.day,
+        hour: window.__game.clock.hour,
+        zone: window.__game.zone.id,
+        x: window.__game.player.x,
+        z: window.__game.player.z,
+        sim: window.__game.simSeconds,
+        bag: window.__game.player.bag.map((slot) => (slot ? `${slot.item} ${slot.count}` : "-")),
+      }));
+    await openZonePage("lang=en&seed=1&at=282.5,281&face=270&health=30&thirst=50&time=15:00&bag=scrap:1,water_bottle:2");
+    // The outing: two scrap and a cloth found, a water bottle drunk.
+    await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    await page.keyboard.press("F2");
+    await page.locator("#dev-bag-give-scrap").click();
+    await page.locator("#dev-bag-give-scrap").click();
+    await page.locator("#dev-bag-give-cloth").click();
+    await page.keyboard.press("F2");
+    await page.keyboard.press("Tab");
+    await page.waitForFunction(() => window.__game.ui.window === "bag", undefined, { timeout: 5_000 }).catch(() => {});
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.commands.last?.type === "useItem", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.press("Tab");
+    await settle();
+    const beforeReturn = await tallyNow();
+    await page.keyboard.press("KeyE");
+    await page.waitForFunction(() => window.__game.ui.window === "tally", undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const returned = await tallyNow();
+    check(
+      "coming down into the shelter brings up the tally: what the outing brought in, not what was drunk",
+      returned.zone === "shelter" && returned.title === "Day 1 - Returned" && returned.tally?.brought.join() === "scrap 2,cloth 1" && returned.rows.join() === "Scrap x2,Cloth x1" && returned.daysText === "Days survived: 1" && returned.button === "Next day",
+      `"${returned.title}": ${returned.rows.join(", ")} / ${returned.daysText}`,
+    );
+    check(
+      "the repair materials in the bag go into the door: all of them, also the scrap carried since the morning",
+      returned.tally?.delivered.join() === "scrap 3,cloth 1" && returned.repair.scrap === 3 && returned.repair.cloth === 1 && returned.repair.tape === 0 && !returned.repair.done &&
+        returned.bag.join() === ["-", "water_bottle 1", "-", "-", "-", "-", "-", "-"].join(),
+      `delivered ${returned.tally?.delivered.join()}, bag ${returned.bag.slice(0, 3).join(" | ")}`,
+    );
+    check(
+      "the tally shows the repair material by material, with what has just gone in",
+      returned.repairRows.join() === "Scrap 3 / 15 (+3),Cloth 1 / 8 (+1),Tape 0 / 3" && returned.doneText === "",
+      returned.repairRows.join(" | "),
+    );
+    check("the shelter gives 50 health back at once, and the tally says so", beforeReturn.health === 30 && returned.health === 80 && returned.tally?.healthRestored === 50 && returned.healthText === "Health +50", `${beforeReturn.health} -> ${returned.health}, "${returned.healthText}"`);
+    // Once the window has faded in.
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: join(outDir, "tally.png") });
+    // Time stands still and the character stays put while the tally is up.
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction((sim) => window.__game.simSeconds > sim + 1, returned.sim, { timeout: 30_000 }).catch(() => {});
+    await page.keyboard.up("KeyW");
+    await page.keyboard.press("Tab");
+    await settle();
+    const waited = await tallyNow();
+    check(
+      "while the tally is up the clock and thirst stand still, the character does not walk and the bag does not open",
+      waited.window === "tally" && waited.hour === returned.hour && waited.thirst === returned.thirst && Math.abs(waited.z - returned.z) < 0.01 && waited.sim > returned.sim + 1,
+      `hour ${returned.hour.toFixed(3)} -> ${waited.hour.toFixed(3)}, thirst ${returned.thirst.toFixed(2)} -> ${waited.thirst.toFixed(2)}`,
+    );
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const morning = await tallyNow();
+    check(
+      "Next day is 06:00 of the day after, still in the shelter; thirst is not restored and the bag is as it was",
+      morning.tally === null && morning.day === 2 && morning.hour >= 6 && morning.hour < 6.2 && morning.zone === "shelter" && morning.health === 80 && morning.thirst <= returned.thirst && morning.thirst > returned.thirst - 1 && morning.bag.join() === returned.bag.join(),
+      `day ${morning.day}, ${morning.hour.toFixed(2)}, thirst ${morning.thirst.toFixed(1)}`,
+    );
+    // The door on the north wall tells how far the repair is, to whoever walks up to it.
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction(() => window.__game.player.interaction === "shelter_door", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.up("KeyW");
+    await settle();
+    const atDoor = await tallyNow();
+    check("the shelter's door says how far its repair is", atDoor.target === "shelter_door" && atDoor.prompt === "repair" && atDoor.promptText === "Door repair: scrap 3/15, cloth 1/8, tape 0/3", `"${atDoor.promptText}"`);
+    await page.screenshot({ path: join(outDir, "shelter-door.png") });
+    // Out and straight back in: nothing new, and only as much health as was missing.
+    await page.keyboard.down("KeyS");
+    await page.waitForFunction(() => window.__game.player.interaction === "to_riverbed", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.up("KeyS");
+    await goThrough("dry_riverbed");
+    await page.keyboard.down("KeyS");
+    await page.waitForFunction(() => window.__game.player.interaction === "to_shelter", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.up("KeyS");
+    await settle();
+    await page.keyboard.press("KeyE");
+    await page.waitForFunction(() => window.__game.ui.window === "tally", undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const again = await tallyNow();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const thirdDay = await tallyNow();
+    check(
+      "a return with nothing new says so and gives back only the health that was missing; Escape moves on too",
+      again.title === "Day 2 - Returned" && again.rows.length === 0 && again.nothing === "Nothing brought back this time." && again.healthText === "Health +20" && again.health === 100 && thirdDay.day === 3 && thirdDay.window === null,
+      `"${again.title}", "${again.nothing}", "${again.healthText}", then day ${thirdDay.day}`,
+    );
+    // The panel's Return does the same from anywhere outside, without the walk.
+    await openZonePage("lang=ko&seed=1&bag=tape:1");
+    // The panel is loaded a moment after the game.
+    await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    await page.keyboard.press("F2");
+    await page.locator("#dev-bag-give-tape").click();
+    await page.waitForFunction(() => window.__game.player.bag[0]?.count === 2, undefined, { timeout: 10_000 }).catch(() => {});
+    await page.locator("#dev-zone-return").click();
+    await page.waitForFunction(() => window.__game.ui.window === "tally", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.press("F2");
+    await settle();
+    const byPanel = await tallyNow();
+    check(
+      "the panel's Return goes to the shelter and brings up the tally, in Korean too",
+      byPanel.zone === "shelter" && byPanel.title === "1일째 - 귀환" && byPanel.rows.join() === "테이프 x1" && byPanel.daysText === "생존 1일" && byPanel.button === "다음 날" && byPanel.repairRows.join() === "고철 0 / 15,천 0 / 8,테이프 2 / 3 (+2)",
+      `"${byPanel.title}": ${byPanel.rows.join()} / ${byPanel.repairRows.join(" | ")}`,
+    );
+    await page.waitForTimeout(1500);
+    const grown = await tallyNow();
+    check("the new part of a bar grows to its length", grown.addedWidths.length === 3 && parseFloat(grown.addedWidths[0]) === 0 && grown.addedWidths[2] === "66.7%", grown.addedWidths.join());
+    await page.screenshot({ path: join(outDir, "tally-ko.png") });
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 10_000 }).catch(() => {});
+    // One short of each material, and more than enough in the bag: the door is finished, and
+    // what it did not need stays in the bag.
+    await page.keyboard.press("F2");
+    await page.locator("#dev-repair-almost").click();
+    const panelRepair = await page.locator("#dev-repair-now").innerText();
+    await page.locator("#dev-bag-give-scrap").click();
+    await page.locator("#dev-bag-give-scrap").click();
+    await page.locator("#dev-bag-give-cloth").click();
+    await page.locator("#dev-bag-give-tape").click();
+    await page.waitForFunction(() => window.__game.player.bag.filter((slot) => slot !== null).length === 3, undefined, { timeout: 10_000 }).catch(() => {});
+    await page.locator("#dev-zone-return").click();
+    await page.waitForFunction(() => window.__game.ui.window === "tally", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.press("F2");
+    await settle();
+    const finished = await tallyNow();
+    check(
+      "the last materials finish the door; what it did not need stays in the bag",
+      panelRepair.includes("14") && finished.repair.done && finished.repairRows.join() === "고철 15 / 15 (+1),천 8 / 8 (+1),테이프 3 / 3 (+1)" && finished.doneText === "문 수리를 마쳤습니다." && finished.bag.filter((slot) => slot !== "-").join() === "scrap 1",
+      `${finished.repairRows.join(" | ")}, "${finished.doneText}", bag ${finished.bag.filter((slot) => slot !== "-").join()}`,
+    );
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: join(outDir, "tally-done.png") });
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction(() => window.__game.player.interaction === "shelter_door", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.up("KeyW");
+    await settle();
+    const doorDone = await tallyNow();
+    check("the door then says it is repaired", doorDone.prompt === "repair_done" && doorDone.promptText === "수리를 마친 문", `"${doorDone.promptText}"`);
 
     // `?zone=shelter` starts in the shelter. Dying of thirst there, one goes on there; quitting
     // goes back to the title in the zone the game starts in.

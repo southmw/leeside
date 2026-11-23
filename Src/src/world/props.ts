@@ -26,6 +26,8 @@ export const PROP_SHAPES: Readonly<Record<ZoneProp["kind"], PropShape>> = {
   well: { size: [1.8, 1.0, 1.8], color: 0x8f8a80 },
   // Rubble across a blocked exit: too high to jump (the reach is about 1.2 m).
   barrier: { size: [12, 2.6, 1.6], color: 0x6f6252 },
+  // The door the prototype's goal is to repair (prototype design 2.1), flat against a wall.
+  shelter_door: { size: [2.4, 2.8, 0.4], color: 0x7a4a32 },
 };
 
 export interface PropBox {

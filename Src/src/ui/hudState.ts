@@ -125,9 +125,10 @@ export function hudAlerts(situation: HudSituation): HudAlerts {
 /**
  * What the prompt under the dot can say: hold to search a container, press to open one
  * already searched, only that it is empty, press to pick up what lies on the ground, or
- * press to leave for another zone (one prompt for each zone to go to).
+ * press to leave for another zone (one prompt for each zone to go to), or how far the
+ * repair of the shelter's door is (no key: it only tells).
  */
-export type PromptKind = "search" | "open" | "empty" | "pickup" | `travel_${ZoneId}`;
+export type PromptKind = "search" | "open" | "empty" | "pickup" | `travel_${ZoneId}` | "repair" | "repair_done";
 
 /** What the middle of the screen has to go by. */
 export interface InteractionSituation {

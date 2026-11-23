@@ -211,9 +211,10 @@ export interface Hud {
   quickSlotPressed(index: number, used: boolean): void;
   /**
    * Shows the dot in the middle and the prompt under it (hudState.ts). `key` is what the
-   * interaction key is called; `progress` (0 to 1) fills the ring round the dot.
+   * interaction key is called; `progress` (0 to 1) fills the ring round the dot. `values` are
+   * the numbers a prompt has in it (the repair's).
    */
-  setInteraction(cue: InteractionCue, key: string, progress: number): void;
+  setInteraction(cue: InteractionCue, key: string, progress: number, values?: Readonly<Record<string, number>>): void;
 }
 
 export function createHud(ui: Ui, i18n: I18n): Hud {
@@ -421,13 +422,15 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   };
   let promptKind: InteractionCue["prompt"] = null;
   let promptKeyLabel = "";
+  let promptValues: Readonly<Record<string, number>> = {};
+  let promptValuesShown = "";
   // The key has a place in the sentence that differs from language to language. The sentence
   // is asked for with a mark where the key goes, and the key's box is put there.
   const renderPrompt = (): void => {
     if (!promptKind) {
       return;
     }
-    setKeyText(prompt, i18n.t(`interact.${promptKind}`, { key: KEY_MARK }), promptKeyLabel);
+    setKeyText(prompt, i18n.t(`interact.${promptKind}`, { ...promptValues, key: KEY_MARK }), promptKeyLabel);
   };
   // Everything whose words do not change from frame to frame, written again when the language does.
   const renderWords = (): void => {
@@ -531,12 +534,15 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
       void node.offsetWidth;
       node.classList.add(used ? "used" : "refused");
     },
-    setInteraction(cue, key, progress): void {
+    setInteraction(cue, key, progress, values = {}): void {
       aim.hidden = cue.crosshair === "hidden";
       aim.classList.toggle("target", cue.crosshair === "target");
-      if (cue.prompt !== promptKind || key !== promptKeyLabel) {
+      const valuesNow = cue.prompt === null ? "" : Object.values(values).join();
+      if (cue.prompt !== promptKind || key !== promptKeyLabel || valuesNow !== promptValuesShown) {
         promptKind = cue.prompt;
         promptKeyLabel = key;
+        promptValues = values;
+        promptValuesShown = valuesNow;
         prompt.hidden = promptKind === null;
         renderPrompt();
       }

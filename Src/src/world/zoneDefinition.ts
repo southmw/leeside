@@ -60,7 +60,7 @@ const buildingSchema = z
   })
   .strict();
 
-export const PROP_KINDS = ["car", "overturned_car", "tent", "well", "barrier"] as const;
+export const PROP_KINDS = ["car", "overturned_car", "tent", "well", "barrier", "shelter_door"] as const;
 
 const propSchema = z
   .object({

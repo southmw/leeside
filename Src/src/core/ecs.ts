@@ -85,8 +85,11 @@ export interface Shelter {
   zone: string | null;
 }
 
-/** What using an interaction target does: searching a container, picking up what lies on the ground, or leaving for another zone. */
-export type InteractionKind = "search" | "pickup" | "travel";
+/**
+ * What an interaction target is for: searching a container, picking up what lies on the
+ * ground, leaving for another zone, or (the shelter's door) seeing how far its repair is.
+ */
+export type InteractionKind = "search" | "pickup" | "travel" | "repair";
 
 /** A way out of the zone (prototype design 5.5): the zone it leads to and the entry point there. */
 export interface ExitLink {

@@ -188,6 +188,10 @@ export interface GameDebug {
    * in place of another.
    */
   travel: { state: "none" | "closing" | "opening"; count: number };
+  /** The tally of a return to the shelter while it is up (what was brought in, as "scrap 2"), or null. */
+  tally: { day: number; brought: string[]; healthRestored: number; delivered: string[] } | null;
+  /** The repair of the shelter's door: how many of each material are in, and whether it is done. */
+  repair: { scrap: number; cloth: number; tape: number; done: boolean };
   /** Whether the shelter zones are drawn as boxes (development panel). */
   shelterZonesShown: boolean;
   /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
@@ -231,6 +235,8 @@ export function installDebugApi(language: Language): GameDebug {
     containers: { byId: {}, panel: null, seed: 0 },
     piles: [],
     travel: { state: "none", count: 0 },
+    tally: null,
+    repair: { scrap: 0, cloth: 0, tape: 0, done: false },
     shelterZonesShown: false,
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },

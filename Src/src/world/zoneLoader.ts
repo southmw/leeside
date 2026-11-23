@@ -121,6 +121,16 @@ export function loadZone(
     const body = physics.addStaticBox(box.center, box.halfExtents, 0, box.yaw);
     bodies.push(body);
     propBodies.set(prop.id, body);
+    // The shelter's door can be looked at: it says how far its repair is.
+    if (prop.kind === "shelter_door" && options.world) {
+      const [east, south] = prop.position;
+      entities.push(
+        options.world.add({
+          transform: createTransform(east, heightAt(terrain, east, south), south),
+          interactable: { id: prop.id, kind: "repair", solid: body },
+        }),
+      );
+    }
     const model = options.propModel?.(prop, box);
     if (model) {
       models.push(model);
