@@ -7,7 +7,7 @@ import type { ZonePlace } from "../world/startPoint";
 
 /**
  * The development panel: everything the start conditions in the address do (`?character`,
- * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?health`, `?temperature`, `?thirst`, `?mute`, `?at`, `?lang`, `?bench`), changed on screen while the game runs.
+ * `?props`, `?speed`, `?time`, `?timescale`, `?storm`, `?health`, `?temperature`, `?thirst`, `?mute`, `?at`, `?zone`, `?lang`, `?bench`), changed on screen while the game runs.
  * Development builds only. F2 or the button in the corner opens and closes it.
  *
  * A new start condition gets a control here as well, so that nothing has to be tested by
@@ -90,6 +90,10 @@ export interface DevControls {
   containers(): { count: number; opened: number };
   /** Fills every container afresh (with other contents) and closes them all. */
   refillContainers(): void;
+  /** The zones, the one the player is in, and going straight to another (to its start point). */
+  zones: readonly string[];
+  zone(): string;
+  goToZone(id: string): void;
   shelterZonesShown(): boolean;
   /** Draws the shelter zones as boxes, or stops drawing them. */
   showShelterZones(shown: boolean): void;
@@ -355,6 +359,7 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
         button("dev-shelter-show", t("dev.shelter.show"), () => controls.showShelterZones(true), controls.shelterZonesShown()),
         button("dev-shelter-hide", t("dev.shelter.hide"), () => controls.showShelterZones(false), !controls.shelterZonesShown()),
       ),
+      ...section(t("dev.zone"), ...controls.zones.map((id) => button(`dev-zone-${id}`, i18n.tData(`zone.${id}.name`), () => controls.goToZone(id), id === controls.zone()))),
       // Places are named by their ids in the zone data, which are not text for players.
       ...section(t("dev.places"), ...controls.places.map((place) => button(`dev-place-${place.id}`, place.id, () => controls.goTo(place)))),
       ...section(

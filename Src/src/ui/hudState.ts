@@ -4,6 +4,7 @@ import { DANGER_HEALTH, LOW_THIRST } from "../data/tuning";
 import { countOf, type Inventory, isFull, usedSlots } from "../gameplay/inventory";
 import type { TemperatureStage } from "../gameplay/temperature";
 import type { WeatherPhase } from "../gameplay/weather";
+import type { ZoneId } from "../world/zones";
 
 /**
  * What the HUD shows, as plain logic (UI design 5): where things sit on the compass, and
@@ -123,9 +124,10 @@ export function hudAlerts(situation: HudSituation): HudAlerts {
 
 /**
  * What the prompt under the dot can say: hold to search a container, press to open one
- * already searched, only that it is empty, or press to pick up what lies on the ground.
+ * already searched, only that it is empty, press to pick up what lies on the ground, or
+ * press to leave for another zone (one prompt for each zone to go to).
  */
-export type PromptKind = "search" | "open" | "empty" | "pickup";
+export type PromptKind = "search" | "open" | "empty" | "pickup" | `travel_${ZoneId}`;
 
 /** What the middle of the screen has to go by. */
 export interface InteractionSituation {

@@ -42,7 +42,6 @@ import { createDeathScreen } from "./ui/deathScreen";
 import { createCommandSystem } from "./gameplay/commands";
 import { createExposureSystem, createHealth, isDead } from "./gameplay/health";
 import { createInteractionSystem } from "./gameplay/interaction";
-import { fillContainers } from "./gameplay/loot";
 import { containerState, createSearch, createSearchSystem, searchProgress } from "./gameplay/search";
 import { addItems, createInventory, emptyInventory, parseBag, roomFor, usedSlots } from "./gameplay/inventory";
 import { createTemperature, createTemperatureSystem, temperatureStage } from "./gameplay/temperature";
@@ -82,11 +81,14 @@ import { createStormParticles } from "./render/stormParticles";
 import { stormWallAt } from "./render/stormWall";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
 import { buildingAt, yawFromDegrees } from "./world/building";
-import { numberParam, resolveStart, zonePlaces } from "./world/startPoint";
+import { numberParam, resolveStart, type StartPoint, zonePlaces } from "./world/startPoint";
 import { heightAt } from "./world/terrain";
 import { PROP_SET_IDS, PROP_SETS, type PropSet, type PropSetId, propModelFor, propModelUrls, propSetId } from "./world/propModels";
+import type { ZoneDefinition } from "./world/zoneDefinition";
 import { type LoadedZone, loadZone } from "./world/zoneLoader";
-import { loadDryRiverbed } from "./world/zones/dryRiverbed";
+import { createZoneState, putPiles, resetZoneState, takePiles } from "./world/zoneState";
+import { isZoneId, loadZones, ZONE_IDS, type ZoneId } from "./world/zones";
+import { createZoneVeil } from "./ui/zoneVeil";
 
 /** Performance measurement: how long it lasts by default, and how the camera flies. */
 const BENCH_SECONDS = 60;
@@ -118,6 +120,17 @@ const DEATH_CAMERA_SECONDS = 1;
 
 /** Mixed into the game's seed for the containers' contents, so they have rolls of their own. */
 const LOOT_SEED_SALT = 0x9e3779b9;
+/** Mixed in once more for each zone after the first, so no two zones are filled alike. */
+const ZONE_SEED_STEP = 0x85ebca6b;
+
+/**
+ * Changing zones (prototype design 5.5): the picture takes this long to go dark and to come
+ * back, and stays dark, with the zone's name on it, for the hold in between. Seconds.
+ */
+const TRAVEL_FADE_SECONDS = 0.35;
+const TRAVEL_HOLD_SECONDS = 0.5;
+/** In a zone that is a room the light is that of this hour, whatever the clock says. */
+const INDOOR_LIGHT_HOUR = 9;
 
 /** What the key that opens the bag window is called on screen. */
 const BAG_KEY_LABEL = "Tab";
@@ -224,43 +237,65 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
 
   // Prop models are fetched before the zone is built. `?props=boxes` draws props and
   // rocks as plain shapes instead, for comparing looks and performance.
-  const riverbed = loadDryRiverbed();
-  const zoneDefinition = riverbed;
+  const zones = loadZones();
+  const riverbed = zones.dry_riverbed;
+  // `?zone=shelter` starts in the shelter. A measurement always flies round the riverbed.
+  const zoneWish = startParams.get("zone");
+  const startZoneId: ZoneId = !startParams.has("bench") && isZoneId(zoneWish) ? zoneWish : "dry_riverbed";
+  // The zone that is in the world. One at a time (technical design 9).
+  let zoneDefinition: ZoneDefinition = zones[startZoneId];
   // One number decides a game's weather and what is in its containers. Each visit has its
   // own unless `?seed=1` fixes it.
   const pickSeed = (): number => numberParam(startParams.get("seed"), 0, 0xffffffff, Date.now() % 0xffffffff);
   let gameSeed = pickSeed();
-  // The containers' states (opened, what is left) are kept here, not in the zone, so that
-  // they are still there when the zone is put up again.
-  const containerStates = new Map<string, Container>(
-    riverbed.containers.map((container) => [container.id, { kind: container.kind, opened: false, items: [] }]),
-  );
+  // What has happened in each zone (containers opened, what lies on the ground) is kept
+  // here, not in the zone, so that it is still there when the zone is put up again.
+  const zoneStates = new Map(ZONE_IDS.map((id) => [id, createZoneState(zones[id])] as const));
+  const stateOf = (id: string): ReturnType<typeof createZoneState> => {
+    const state = isZoneId(id) ? zoneStates.get(id) : undefined;
+    if (!state) {
+      throw new Error(`No state for zone "${id}"`);
+    }
+    return state;
+  };
+  /** The containers of the zone that is in the world. */
+  let containerStates: Map<string, Container> = stateOf(zoneDefinition.id).containers;
+  const allContainers = (): Array<[string, Container]> => [...zoneStates.values()].flatMap((state) => [...state.containers]);
   const showContainerStates = (): void => {
     debug.containers.seed = gameSeed;
     debug.containers.byId = Object.fromEntries(
-      [...containerStates].map(([id, state]) => [id, { opened: state.opened, items: state.items.map((stack) => `${stack.item} ${stack.count}`) }]),
+      allContainers().map(([id, state]) => [id, { opened: state.opened, items: state.items.map((stack) => `${stack.item} ${stack.count}`) }]),
     );
   };
-  /** Fills every container for the game with the current seed, and closes them all. */
+  /** Puts every zone back to how a game begins: containers filled with the current seed and closed. */
   const fillContainerStates = (): void => {
-    // A stream of its own, so the contents do not follow the weather's rolls.
-    const filled = fillContainers(riverbed.containers, (gameSeed ^ LOOT_SEED_SALT) >>> 0);
-    for (const [id, state] of containerStates) {
-      state.opened = false;
-      state.items = filled.get(id) ?? [];
-    }
+    ZONE_IDS.forEach((id, index) => {
+      // A stream of its own for each zone, so the contents do not follow the weather's rolls.
+      resetZoneState(stateOf(id), zones[id], (gameSeed ^ LOOT_SEED_SALT ^ Math.imul(index, ZONE_SEED_STEP)) >>> 0);
+    });
     showContainerStates();
   };
   fillContainerStates();
   const propLibraries = new Map<PropSetId, PropModelLibrary>();
-  const buildZone = async (set: PropSetId): Promise<LoadedZone> => {
-    let library = propLibraries.get(set);
-    if (!library) {
-      library = await loadPropModels(`${import.meta.env.BASE_URL}models/`, propModelUrls(riverbed.props, set));
-      propLibraries.set(set, library);
+  /**
+   * Fetches a set's models for every zone at once, so that changing zones never waits for a
+   * download and can be done within one step.
+   */
+  const ensureLibrary = async (set: PropSetId): Promise<void> => {
+    if (!propLibraries.has(set)) {
+      const everyProp = ZONE_IDS.flatMap((id) => zones[id].props);
+      propLibraries.set(set, await loadPropModels(`${import.meta.env.BASE_URL}models/`, propModelUrls(everyProp, set)));
     }
-    const models = library;
-    const built = loadZone(riverbed, physics, scene, {
+  };
+  let propSet: PropSetId = propSetId(startParams.get("props"));
+  /** Puts a zone into the world, from its definition and its state. The set's models must have been fetched. */
+  const buildZone = (definition: ZoneDefinition, set: PropSetId): LoadedZone => {
+    const models = propLibraries.get(set);
+    if (!models) {
+      throw new Error(`The models of "${set}" have not been loaded`);
+    }
+    const state = stateOf(definition.id);
+    const built = loadZone(definition, physics, scene, {
       world,
       propSet: set,
       propModel: (prop, box) => {
@@ -269,13 +304,13 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       },
       rockModels: (rocks) => models.createRocks(PROP_SETS[set].rocks, rocks),
       pebbleColor: (PROP_SETS[set] as PropSet).pebbleColor,
-      containerState: (id) => containerStates.get(id),
+      containerState: (id) => state.containers.get(id),
     });
-    debug.zone.id = zoneDefinition.id;
-    debug.zone.nameKey = zoneDefinition.nameKey;
-    debug.zone.buildings = zoneDefinition.buildings.length;
+    debug.zone.id = definition.id;
+    debug.zone.nameKey = definition.nameKey;
+    debug.zone.buildings = definition.buildings.length;
     debug.zone.shelterZones = built.shelterZoneCount;
-    debug.zone.props = zoneDefinition.props.length;
+    debug.zone.props = definition.props.length;
     debug.zone.rocks = built.rockCount;
     debug.zone.propModels = built.propModelCount;
     debug.zone.rockModels = built.rocksModelled;
@@ -283,7 +318,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.zone.containers = built.containerCount;
     return built;
   };
-  let zone = await buildZone(propSetId(startParams.get("props")));
+  await ensureLibrary(propSet);
+  let zone = buildZone(zoneDefinition, propSet);
   onProgress("zone");
 
   // Where the player starts: the zone's start point, or `?at=east,south` and `?face=degrees`
@@ -466,11 +502,16 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   const showSky = (): void => {
     // The weather as of the latest step: dust in the air, a dimmer sun, a shorter view, and
     // the wall of the storm on its way.
-    const light = sceneLook(daylightAt(readClock(clock).hour), latestWeather.intensity, latestWeather.approach);
-    const wall = stormWallAt(latestWeather);
+    // In a room there is no weather to see and the light does not follow the hour.
+    const indoors = zoneDefinition.interior !== undefined;
+    const intensity = indoors ? 0 : latestWeather.intensity;
+    const approach = indoors ? 0 : latestWeather.approach;
+    const light = sceneLook(daylightAt(indoors ? INDOOR_LIGHT_HOUR : readClock(clock).hour), intensity, approach);
+    const outside = stormWallAt(latestWeather);
+    const wall = indoors ? { ...outside, opacity: 0 } : outside;
     sky.update(light, wall, camera, cameraFocus, skySeconds);
     // The first grains fly as the wall draws near; the air fills with them when it breaks.
-    const sand = apparentStrength(latestWeather.intensity, latestWeather.approach);
+    const sand = apparentStrength(intensity, approach);
     stormParticles.update(sand, skySeconds, light.dust, renderer.domElement.height, camera.fov);
     debug.weather.wallDistance = wall.distance;
     debug.weather.wallOpacity = wall.opacity;
@@ -522,6 +563,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     debug.player.thirst = player.thirst.value;
   };
   showThirst();
+  /** Set while the local player is on the way from one zone to another (see `switchZone` below). */
+  let travel: { to: ZoneId; entry: string; seconds: number; switched: boolean } | undefined;
   // Whatever changes the bag asks for it with a command, carried out in the next step.
   const commands = createCommandSystem(world, {
     // What is thrown out lands on whatever is under the character, also when it is thrown out in mid-air.
@@ -572,6 +615,10 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       // A quick slot's key answers on the slot itself: used, or not.
       if (command.type === "useQuickSlot" && command.actor === LOCAL_PLAYER_ID) {
         hud.quickSlotPressed(command.slot, result.ok);
+      }
+      // The way out was within reach: the zone changes, behind a dark picture.
+      if (result.ok && command.type === "useExit" && command.actor === LOCAL_PLAYER_ID) {
+        beginTravel(command.exit);
       }
       // A container the local player has just opened shows what is in it, if anything.
       if (result.ok && command.type === "openContainer" && command.actor === LOCAL_PLAYER_ID) {
@@ -625,7 +672,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   };
   // What is in the bag is seen in the bag window (Tab); the HUD only says how full it is.
   const bagWindow = createBagWindow(ui, i18n, {
-    canOpen: () => playing && !bench && !isDead(player.health),
+    canOpen: () => playing && !bench && !travel && !isDead(player.health),
     listBeside: () => containerPanel.openId !== null,
     onDiscard: (slot) => commands.push({ type: "discardItem", actor: LOCAL_PLAYER_ID, slot, count: 1 }),
     onUse: (item) => commands.push({ type: "useItem", actor: LOCAL_PLAYER_ID, item }),
@@ -659,7 +706,11 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     if (targetState) {
       targetKind = ({ closed: "search", stocked: "open", empty: "empty" } as const)[containerState(targetState)];
     } else if (target !== null) {
-      // Not a container: something lying on the ground.
+      // Not a container: a way out of the zone, or something lying on the ground.
+      const way = zoneDefinition.exits.find((exit) => exit.id === target);
+      if (way && isZoneId(way.to)) {
+        targetKind = `travel_${way.to}`;
+      }
       for (const entity of piles) {
         if (entity.interactable.id === target) {
           targetKind = "pickup";
@@ -667,7 +718,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       }
     }
     // The bag window does not hide the prompt: a container can be searched with the bag open.
-    const windowOpen = ui.centreWindowId !== null || containerPanel.openId !== null;
+    const windowOpen = ui.centreWindowId !== null || containerPanel.openId !== null || travel !== undefined;
     const cue = interactionCue({ targetKind, windowOpen, dead: isDead(player.health) });
     // The ring fills while the key is held on a container not yet searched.
     const progress = searchProgress(player.search);
@@ -735,9 +786,73 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
 
   // Where a player who died starts again: at the shelter's entrance, or the zone's start
   // point if the zone has none. Facing east, towards house A's door.
-  const shelterEntrance = zoneDefinition.exits.find((exit) => exit.to === "shelter");
-  const [respawnEast, respawnSouth] = shelterEntrance?.position ?? zoneDefinition.spawn.position;
+  const shelterEntrance = riverbed.exits.find((exit) => exit.to === "shelter");
+  const [respawnEast, respawnSouth] = shelterEntrance?.position ?? riverbed.spawn.position;
   const RESPAWN_FACING = 90;
+  /** Where the compass marks the shelter: the way into it from the zone in the world, or null inside it. */
+  const shelterMark = (): readonly [number, number] | null => zoneDefinition.exits.find((exit) => exit.to === "shelter")?.position ?? null;
+  let shelterAt = shelterMark();
+
+  // Changing zones (prototype design 5.5). The zone itself is changed within one step, while
+  // the picture is dark: the old one is taken down and its piles written down, the new one
+  // put up from its state.
+  const veil = createZoneVeil(ui);
+  /** Called after a zone has been put up in place of another (development tools redraw what they show). */
+  let onZoneChanged: () => void = () => {};
+  const switchZone = (to: ZoneId, at: StartPoint): void => {
+    stateOf(zoneDefinition.id).piles = takePiles(world);
+    zone.unload();
+    zoneDefinition = zones[to];
+    const arrived = stateOf(to);
+    containerStates = arrived.containers;
+    zone = buildZone(zoneDefinition, propSet);
+    putPiles(world, arrived.piles);
+    arrived.piles = [];
+    showPiles();
+    teleport(at.east, at.south, at.facing);
+    shelterSystem();
+    shelterAt = shelterMark();
+    onZoneChanged();
+    // Drawn once now, behind the dark picture, so nothing stutters when it comes into view.
+    warmUpScene(renderer, scene, camera);
+    debug.travel.count += 1;
+  };
+  const beginTravel = (exitId: string): void => {
+    const way = zoneDefinition.exits.find((exit) => exit.id === exitId);
+    if (travel || !way?.entry || !isZoneId(way.to)) {
+      return;
+    }
+    travel = { to: way.to, entry: way.entry, seconds: 0, switched: false };
+    bagWindow.close();
+    containerPanel.close();
+    veil.cover(TRAVEL_FADE_SECONDS);
+    debug.travel.state = "closing";
+  };
+  const advanceTravel = (dt: number): void => {
+    if (!travel) {
+      return;
+    }
+    travel.seconds += dt;
+    if (!travel.switched && travel.seconds >= TRAVEL_FADE_SECONDS) {
+      const target = zones[travel.to];
+      const entryId = travel.entry;
+      const entry = target.entries.find((candidate) => candidate.id === entryId) ?? target.spawn;
+      switchZone(travel.to, { east: entry.position[0], south: entry.position[1], facing: entry.facing });
+      travel.switched = true;
+      veil.name(i18n.tData(target.nameKey));
+      debug.travel.state = "opening";
+    }
+    if (travel.seconds >= TRAVEL_FADE_SECONDS + TRAVEL_HOLD_SECONDS) {
+      travel = undefined;
+      veil.reveal(TRAVEL_FADE_SECONDS);
+      debug.travel.state = "none";
+    }
+  };
+  const endTravel = (): void => {
+    travel = undefined;
+    veil.reveal(0);
+    debug.travel.state = "none";
+  };
   // Death (prototype design 3.4): the character collapses, the picture darkens, and after a
   // moment the player is asked whether to go on or to stop. The world keeps running meanwhile.
   const deathScreen = createDeathScreen(ui, i18n);
@@ -760,7 +875,13 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   // the next morning, at the shelter's entrance, in full health.
   const respawn = (): void => {
     endDeath();
-    teleport(respawnEast, respawnSouth, RESPAWN_FACING);
+    // Whoever collapsed inside the shelter (of thirst) stays in it. Everyone else still wakes
+    // in house A: starting again in the shelter itself comes with step 2.20.
+    if (zoneDefinition.interior) {
+      teleport(zoneDefinition.spawn.position[0], zoneDefinition.spawn.position[1], zoneDefinition.spawn.facing);
+    } else {
+      teleport(respawnEast, respawnSouth, RESPAWN_FACING);
+    }
     restore();
     startNextDay(clock);
     shelterSystem();
@@ -771,10 +892,14 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   // is reloaded, so START can be pressed at once.
   const backToTitle = (): void => {
     endDeath();
+    endTravel();
     bagWindow.close();
     containerPanel.close();
     playing = false;
-    teleport(start.east, start.south, start.facing);
+    // Back to the zone the game starts in, if it was left.
+    if (zoneDefinition.id === startZoneId) {
+      teleport(start.east, start.south, start.facing);
+    }
     player.view.pitch = START_PITCH;
     restore();
     fillStartBag();
@@ -787,6 +912,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     // A new game: other weather, and the containers filled afresh.
     gameSeed = pickSeed();
     fillContainerStates();
+    if (zoneDefinition.id !== startZoneId) {
+      switchZone(startZoneId, start);
+    }
     Object.assign(weather, newWeather());
     debug.weather.seed = weather.seed;
     debug.player.deaths = 0;
@@ -834,6 +962,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   if (import.meta.env.DEV && !bench) {
     void Promise.all([import("./debug/devPanel"), import("./debug/shelterZoneOverlay")]).then(([{ createDevPanel }, { createShelterZoneOverlay }]) => {
       const shelterZones: ShelterZoneOverlay = createShelterZoneOverlay(world, scene);
+      onZoneChanged = () => shelterZones.refresh();
       createDevPanel(ui, i18n, {
         characters: CHARACTERS.map((character) => character.id),
         character: () => debug.player.character,
@@ -841,11 +970,22 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         propSets: PROP_SET_IDS,
         propSet: () => debug.zone.propSet,
         setPropSet: async (set) => {
+          propSet = propSetId(set);
+          await ensureLibrary(propSet);
           // The old zone goes first, so its colliders are not in the way of the new ones.
           zone.unload();
-          zone = await buildZone(propSetId(set));
+          zone = buildZone(zoneDefinition, propSet);
           shelterZones.refresh();
           warmUpScene(renderer, scene, camera);
+        },
+        zones: ZONE_IDS,
+        zone: () => zoneDefinition.id,
+        // Straight there, without the dark picture: to the zone's own start point.
+        goToZone: (id) => {
+          if (isZoneId(id) && id !== zoneDefinition.id && !travel) {
+            const { position, facing } = zones[id].spawn;
+            switchZone(id, { east: position[0], south: position[1], facing });
+          }
         },
         moveSpeed: () => moveSpeed,
         setMoveSpeed: (speed) => {
@@ -918,8 +1058,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           });
         },
         containers: () => ({
-          count: containerStates.size,
-          opened: [...containerStates.values()].filter((state) => state.opened).length,
+          count: allContainers().length,
+          opened: allContainers().filter(([, state]) => state.opened).length,
         }),
         refillContainers: () => {
           // Development only: other contents without starting the game again.
@@ -932,11 +1072,16 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
           shelterZones.setVisible(shown);
           debug.shelterZonesShown = shown;
         },
-        places: zonePlaces(zoneDefinition),
+        // The places are the riverbed's: going to one from the shelter goes outside first.
+        places: zonePlaces(riverbed),
         // Where a trunk is depends on the set of models in use, so the place is worked out afresh.
         goTo: (place) => {
-          const now = zonePlaces(zoneDefinition, propSetId(debug.zone.propSet)).find((candidate) => candidate.id === place.id) ?? place;
-          teleport(now.east, now.south, now.facing);
+          const now = zonePlaces(riverbed, propSet).find((candidate) => candidate.id === place.id) ?? place;
+          if (zoneDefinition.id === riverbed.id) {
+            teleport(now.east, now.south, now.facing);
+          } else if (!travel) {
+            switchZone("dry_riverbed", now);
+          }
         },
       });
     });
@@ -960,8 +1105,14 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       // During a measurement nobody plays: the character stands still and the camera flies itself.
       if (playing && !bench) {
         inputSystem();
+        // On the way to another zone the character stands still. The keys are still read, so
+        // that one held down through the change does not count as pressed again after it.
+        if (travel) {
+          Object.assign(player.input, createEmptyActions(), { interact: player.input.interact });
+        }
       }
       runCommands();
+      advanceTravel(dt);
       lookSystem();
       movementSystem(dt);
       physicsSystem.update();
@@ -1062,7 +1213,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       // The compass turns with the view as it is drawn, and points from where the character is drawn.
       if (playing) {
         const heading = headingOf(yaw);
-        const mark = hud.setCompass(heading, bearingTo(drawnAt.x, drawnAt.z, respawnEast, respawnSouth));
+        const mark = hud.setCompass(heading, shelterAt ? bearingTo(drawnAt.x, drawnAt.z, shelterAt[0], shelterAt[1]) : null);
+        debug.hud.compass.shelterShown = shelterAt !== null;
         debug.hud.compass.heading = heading;
         debug.hud.compass.shelterOffset = mark.offset;
         debug.hud.compass.shelterBeyond = mark.beyond;

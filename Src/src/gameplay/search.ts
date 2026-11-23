@@ -23,8 +23,8 @@ export function containerState(container: Pick<Container, "opened" | "items">): 
   return container.items.length > 0 ? "stocked" : "empty";
 }
 
-/** What the interaction key is aimed at: a container in one of its states, or a pile on the ground. */
-export type TargetState = ContainerState | "pile";
+/** What the interaction key is aimed at: a container in one of its states, a pile on the ground, or a way out of the zone. */
+export type TargetState = ContainerState | "pile" | "exit";
 
 export interface SearchSituation {
   /** Whether the interaction key is down this step. */
@@ -40,7 +40,8 @@ export interface SearchSituation {
 /**
  * Advances a search by `dt` seconds. Returns the id of the container to open now (or of the
  * pile to pick up), or null. Holding counts only from a fresh press with the same container
- * as the target throughout. A pile, like a container already searched, takes a single press.
+ * as the target throughout. A pile or an exit, like a container already searched, takes a
+ * single press.
  */
 export function stepSearch(search: Search, situation: SearchSituation, dt: number): string | null {
   const pressed = situation.interact && !search.held;
@@ -54,7 +55,7 @@ export function stepSearch(search: Search, situation: SearchSituation, dt: numbe
   if (situation.dead || !target || target.state === "empty") {
     return stop();
   }
-  if (target.state === "stocked" || target.state === "pile") {
+  if (target.state === "stocked" || target.state === "pile" || target.state === "exit") {
     stop();
     return pressed ? target.id : null;
   }
@@ -85,6 +86,7 @@ export function searchProgress(search: Search): number {
 export function createSearchSystem(world: GameWorld, push: (command: Command) => void): (dt: number) => void {
   const containers = world.with("container", "interactable");
   const piles = world.with("pile", "interactable");
+  const exits = world.with("exit", "interactable");
   const searchers = world.with("search", "input", "interaction", "id");
   return (dt) => {
     for (const searcher of searchers) {
@@ -100,13 +102,24 @@ export function createSearchSystem(world: GameWorld, push: (command: Command) =>
             target = { id: entity.interactable.id, state: "pile" };
           }
         }
+        for (const entity of exits) {
+          if (entity.interactable.id === searcher.interaction.target) {
+            target = { id: entity.interactable.id, state: "exit" };
+          }
+        }
       }
       const { input, character } = searcher;
       const moving = input.moveX !== 0 || input.moveY !== 0 || input.jump || (character !== undefined && !character.grounded);
       const dead = searcher.health !== undefined && searcher.health.current <= 0;
       const open = stepSearch(searcher.search, { interact: input.interact, moving, target, dead }, dt);
       if (open !== null) {
-        push(target?.state === "pile" ? { type: "pickUp", actor: searcher.id, pile: open } : { type: "openContainer", actor: searcher.id, container: open });
+        if (target?.state === "pile") {
+          push({ type: "pickUp", actor: searcher.id, pile: open });
+        } else if (target?.state === "exit") {
+          push({ type: "useExit", actor: searcher.id, exit: open });
+        } else {
+          push({ type: "openContainer", actor: searcher.id, container: open });
+        }
       }
     }
   };

@@ -4,8 +4,8 @@ import { ITEM_IDS } from "../data/items";
 /**
  * The format of a zone definition and its validator.
  *
- * A zone is described by data: terrain, where the player starts, buildings, props, exits,
- * scattered clutter and the containers to search. Terrain and buildings are fixed. Where the
+ * A zone is described by data: terrain, where the player starts, buildings, props, exits and
+ * the points where one arrives, scattered clutter and the containers to search. Terrain and buildings are fixed. Where the
  * containers are is fixed too; what is in them is drawn when a game starts.
  *
  * Positions are `[east, south]` in metres from the zone's north-west corner, the way the
@@ -71,10 +71,32 @@ const propSchema = z
   })
   .strict();
 
+/** What a usable exit looks like: a hatch in the floor, or a ladder up a wall. Placeholders. */
+export const EXIT_SHAPES = ["hatch", "ladder"] as const;
+
+/** Where someone who comes in from another zone is put (an exit there names it as its `entry`). */
+const entrySchema = z
+  .object({
+    id: idSchema,
+    position: positionSchema,
+    /** Direction faced on arriving. */
+    facing: rotationSchema,
+  })
+  .strict();
+
+/** Makes the zone a room: walls along its edges and a ceiling, all of it out of the weather. */
+const interiorSchema = z
+  .object({
+    /** Height of the ceiling above the floor, in metres. */
+    height: z.number().min(2.5).max(20),
+  })
+  .strict();
+
 const exitSchema = z
   .object({
     id: idSchema,
     position: positionSchema,
+    shape: z.enum(EXIT_SHAPES).default("hatch"),
     /** A blocked exit is visible but cannot be used (the prototype's north and east exits). */
     blocked: z.boolean().default(false),
     /** Zone this exit leads to, and the entry point there. Required unless the exit is blocked. */
@@ -142,6 +164,8 @@ export const zoneDefinitionSchema = z
     buildings: z.array(buildingSchema).default([]),
     props: z.array(propSchema).default([]),
     exits: z.array(exitSchema).default([]),
+    entries: z.array(entrySchema).default([]),
+    interior: interiorSchema.optional(),
     scatter: z.array(scatterSchema).default([]),
     containers: z.array(containerSchema).default([]),
   })
@@ -164,7 +188,7 @@ export const zoneDefinitionSchema = z
 
     // Ids must be unique across the whole zone, so anything in it can be named by id alone.
     const seen = new Map<string, string>();
-    for (const list of ["buildings", "props", "exits", "scatter", "containers"] as const) {
+    for (const list of ["buildings", "props", "exits", "entries", "scatter", "containers"] as const) {
       zone[list].forEach((item, index) => {
         const firstUse = seen.get(item.id);
         if (firstUse) {
@@ -222,6 +246,7 @@ export type ZoneDefinition = z.infer<typeof zoneDefinitionSchema>;
 export type ZoneBuilding = ZoneDefinition["buildings"][number];
 export type ZoneProp = ZoneDefinition["props"][number];
 export type ZoneExit = ZoneDefinition["exits"][number];
+export type ZoneEntry = ZoneDefinition["entries"][number];
 export type ZoneContainer = ZoneDefinition["containers"][number];
 
 export type ZoneParseResult =

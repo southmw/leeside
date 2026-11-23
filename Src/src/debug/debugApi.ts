@@ -165,7 +165,7 @@ export interface GameDebug {
     edges: string[];
     blinking: string[];
     damage: string | null;
-    compass: { heading: number; shelterOffset: number; shelterBeyond: number };
+    compass: { heading: number; shelterOffset: number; shelterBeyond: number; shelterShown: boolean };
     /** The dot in the middle of the screen, and the prompt under it (what the target lets the player do; null for none). */
     crosshair: "hidden" | "idle" | "target";
     prompt: string | null;
@@ -182,6 +182,12 @@ export interface GameDebug {
   containers: { byId: Record<string, { opened: boolean; items: string[] }>; panel: string | null; seed: number };
   /** What lies on the ground, thrown out of a bag: each pile's id, where it is, and what is on it ("scrap 2"). */
   piles: Array<{ id: string; x: number; y: number; z: number; items: string[] }>;
+  /**
+   * Changing zones: "closing" while the picture darkens, "opening" from the moment the new
+   * zone is in the world until the picture is back, and how many times a zone has been put up
+   * in place of another.
+   */
+  travel: { state: "none" | "closing" | "opening"; count: number };
   /** Whether the shelter zones are drawn as boxes (development panel). */
   shelterZonesShown: boolean;
   /** Walking speed in use, in m/s: the tuning value unless `?speed` overrides it. */
@@ -220,10 +226,11 @@ export function installDebugApi(language: Language): GameDebug {
     weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0, wallDistance: 0, wallOpacity: 0 },
     sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0, visibility: 0 },
     audio: { state: "off", muted: false, windVolume: 0, windCutoffHz: 0, indoors: false, footsteps: 0 },
-    hud: { storm: "none", stormRemaining: 0, edges: [], blinking: [], damage: null, compass: { heading: 0, shelterOffset: 0, shelterBeyond: 0 }, crosshair: "hidden", prompt: null },
+    hud: { storm: "none", stormRemaining: 0, edges: [], blinking: [], damage: null, compass: { heading: 0, shelterOffset: 0, shelterBeyond: 0, shelterShown: true }, crosshair: "hidden", prompt: null },
     commands: { done: 0, refused: 0, last: null },
     containers: { byId: {}, panel: null, seed: 0 },
     piles: [],
+    travel: { state: "none", count: 0 },
     shelterZonesShown: false,
     moveSpeed: 0,
     camera: { distance: 0, wantedDistance: 0, y: 0 },

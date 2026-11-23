@@ -72,11 +72,15 @@ const containers = [
 
 const exits = [
   // The shelter's entrance is in house A's basement.
-  { id: "to_shelter", position: [281, 281], to: "shelter", entry: "from_riverbed" },
+  // A hatch in the middle of the floor (prototype design 5.5).
+  { id: "to_shelter", position: [281, 281], shape: "hatch", to: "shelter", entry: "from_riverbed" },
   // N and E lead to zones the prototype does not have.
   { id: "north_exit", position: [356, 8], blocked: true },
   { id: "east_exit", position: [713, 188], blocked: true },
 ];
+
+// Coming up out of the shelter: beside the hatch, facing house A's door, the hatch behind.
+const entries = [{ id: "from_shelter", position: [282.5, 281], facing: 90 }];
 
 /** The ground is levelled under each building, a little beyond its corners. */
 const pads = buildings.map(({ position, size }) => ({
@@ -95,6 +99,7 @@ const definition = {
   buildings,
   props,
   exits,
+  entries,
   scatter: [{ id: "rocks", kind: "rock", count: 1100, seed: 20261116 }],
   containers,
 };

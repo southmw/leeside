@@ -8,6 +8,7 @@ import { createTerrainMesh } from "../render/terrainMesh";
 import { boundaryWalls } from "./boundary";
 import { buildingBoxes, buildingShelterZone } from "./building";
 import { OPENED_SHADE, placeContainer } from "./containers";
+import { exitBox, interiorShell, interiorShelterZone } from "./interior";
 import { DEFAULT_PROP_SET, type PropSetId } from "./propModels";
 import { type PropBox, propBox } from "./props";
 import { scatterItems } from "./scatter";
@@ -179,6 +180,42 @@ export function loadZone(
           container: state,
         }),
       );
+    }
+  }
+
+  // Ways out that can be used: each is an entity to interact with, drawn as a placeholder
+  // that is not in the way.
+  for (const exit of definition.exits) {
+    if (exit.blocked || !exit.to || !exit.entry) {
+      continue;
+    }
+    const [east, south] = exit.position;
+    const groundHeight = heightAt(terrain, east, south);
+    show(createPropMesh(exitBox(exit, groundHeight)));
+    if (options.world) {
+      entities.push(
+        options.world.add({
+          transform: createTransform(east, groundHeight, south),
+          interactable: { id: exit.id, kind: "travel" },
+          exit: { to: exit.to, entry: exit.entry },
+        }),
+      );
+    }
+  }
+
+  // A zone that is a room: walls where its edges are, a ceiling, and shelter everywhere.
+  if (definition.interior) {
+    const floor = heightAt(terrain, definition.size / 2, definition.size / 2);
+    const shell = interiorShell(definition.size, definition.interior.height, floor);
+    for (const wall of shell.walls) {
+      show(createPropMesh(wall));
+    }
+    bodies.push(physics.addStaticBox(shell.ceiling.center, shell.ceiling.halfExtents));
+    show(createPropMesh(shell.ceiling));
+    const shelter = interiorShelterZone(definition, floor);
+    if (shelter && options.world) {
+      entities.push(options.world.add(shelter));
+      shelterZoneCount += 1;
     }
   }
 

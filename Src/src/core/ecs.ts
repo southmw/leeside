@@ -85,8 +85,14 @@ export interface Shelter {
   zone: string | null;
 }
 
-/** What using an interaction target does: searching a container, or picking up what lies on the ground. */
-export type InteractionKind = "search" | "pickup";
+/** What using an interaction target does: searching a container, picking up what lies on the ground, or leaving for another zone. */
+export type InteractionKind = "search" | "pickup" | "travel";
+
+/** A way out of the zone (prototype design 5.5): the zone it leads to and the entry point there. */
+export interface ExitLink {
+  to: string;
+  entry: string;
+}
 
 /**
  * Something a character can use when near and looking its way (gameplay/interaction.ts). The
@@ -181,6 +187,8 @@ export interface Entity {
   inventory?: Inventory;
   /** Makes the entity a container to search; it is an `interactable` too. */
   container?: Container;
+  /** Makes the entity a way into another zone; it is an `interactable` too. */
+  exit?: ExitLink;
   /** Makes the entity a pile of things on the ground; it is an `interactable` too. */
   pile?: Pile;
   /** Kept for entities that can search (players). */

@@ -1103,7 +1103,7 @@ try {
       return interactionNow();
     };
     const facingCrate = await interactionAt("lang=en&at=406.26,115.48&face=350");
-    check("the zone has its 14 containers, each something to interact with", facingCrate.containers === 14 && facingCrate.interactables === 14, `${facingCrate.containers} containers, ${facingCrate.interactables} targets`);
+    check("the zone has its 14 containers and the hatch to the shelter, each something to interact with", facingCrate.containers === 14 && facingCrate.interactables === 15, `${facingCrate.containers} containers, ${facingCrate.interactables} targets`);
     check(
       "standing by a crate and looking at it makes it the target",
       facingCrate.target === "well_crate" && facingCrate.crosshair === "target" && facingCrate.prompt === "search",
@@ -1747,6 +1747,182 @@ try {
     await page.keyboard.press("F2");
     const emptiedOut = await pilesNow();
     check("the panel's Empty leaves no pile behind", emptiedOut.piles.length === 0 && emptiedOut.bag.every((slot) => slot === "-"));
+    }
+
+    {
+    // Zones: E at the hatch in house A goes down to the shelter behind a dark picture, the
+    // ladder there leads back, and each zone is as it was left.
+    const zoneNow = () =>
+      page.evaluate(() => ({
+        zone: window.__game.zone.id,
+        travel: { ...window.__game.travel },
+        x: window.__game.player.x,
+        z: window.__game.player.z,
+        inside: window.__game.player.inside,
+        shelter: window.__game.player.shelter,
+        health: window.__game.player.health,
+        target: window.__game.player.interaction,
+        prompt: window.__game.hud.prompt,
+        promptText: document.querySelector("#hud-prompt").textContent,
+        piles: window.__game.piles.map((pile) => `${pile.id} ${pile.items.join("+")}`),
+        interactables: window.__game.zone.interactables,
+        compassShown: window.__game.hud.compass.shelterShown,
+        markHidden: document.querySelector("#hud-compass-shelter").hidden,
+        signShown: !document.querySelector("#hud-shelter").hidden,
+        weather: window.__game.weather.phase,
+        intensity: window.__game.weather.intensity,
+        visibility: window.__game.sky.visibility,
+        wallOpacity: window.__game.weather.wallOpacity,
+        edges: window.__game.hud.edges,
+        stormNotice: window.__game.hud.storm,
+        veilShown: document.querySelector("#zone-veil").classList.contains("shown"),
+        veilName: document.querySelector("#zone-veil .zone-veil-name").textContent,
+        windows: window.__game.ui.windows,
+        sim: window.__game.simSeconds,
+        hour: window.__game.clock.hour,
+        day: window.__game.clock.day,
+        dead: window.__game.player.dead,
+        phase: window.__game.phase,
+        counts: { geometries: window.__game.stats.geometries, textures: window.__game.stats.textures, entities: window.__game.entityCount, bodies: window.__game.bodyCount },
+      }));
+    const openZonePage = async (query) => {
+      await page.goto(gameUrl(query), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+      await settle();
+    };
+    /** Presses E at an exit and waits until the other zone is up and the picture is back. */
+    const goThrough = async (zone) => {
+      const before = await zoneNow();
+      await page.keyboard.press("KeyE");
+      await page.waitForFunction(() => window.__game.travel.state !== "none", undefined, { timeout: 10_000 }).catch(() => {});
+      const dark = await zoneNow();
+      await page.waitForFunction((id) => window.__game.zone.id === id, zone, { timeout: 10_000 }).catch(() => {});
+      const switched = await zoneNow();
+      await page.waitForFunction(() => window.__game.travel.state === "none", undefined, { timeout: 10_000 }).catch(() => {});
+      await settle();
+      const after = await zoneNow();
+      return { before, dark, switched, after, seconds: after.sim - before.sim };
+    };
+    // East of the hatch, looking at it; a thing is thrown out here and stays behind.
+    await openZonePage("lang=en&seed=1&at=285,281&face=270&bag=scrap:2");
+    await page.keyboard.press("Tab");
+    await page.waitForFunction(() => window.__game.ui.window === "bag", undefined, { timeout: 5_000 }).catch(() => {});
+    await page.keyboard.press("KeyX");
+    await page.waitForFunction(() => window.__game.piles.length === 1, undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.down("KeyW");
+    await page.waitForFunction(() => window.__game.player.interaction === "to_shelter", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.up("KeyW");
+    await settle();
+    const atHatch = await zoneNow();
+    check(
+      "the hatch in house A is a target, and the prompt offers the way down",
+      atHatch.zone === "dry_riverbed" && atHatch.inside === "house_a" && atHatch.target === "to_shelter" && atHatch.prompt === "travel_shelter" && atHatch.promptText === "E Go down to the shelter" && atHatch.compassShown && !atHatch.markHidden,
+      `target ${atHatch.target}, "${atHatch.promptText}"`,
+    );
+    await page.screenshot({ path: join(outDir, "hatch.png") });
+    const down = await goThrough("shelter");
+    check(
+      "E darkens the picture, closes the bag, and puts the shelter up in place of the riverbed",
+      down.dark.travel.state === "closing" && down.dark.veilShown && down.dark.windows.length === 0 && down.switched.zone === "shelter" && down.switched.veilName === "Shelter" && down.after.zone === "shelter" && !down.after.veilShown && down.after.travel.count === 1,
+      `${down.dark.travel.state}, veil "${down.switched.veilName}", then ${down.after.zone}`,
+    );
+    check("the change takes less than two seconds", down.seconds < 2, `${down.seconds.toFixed(2)} s`);
+    check(
+      "one arrives at the shelter's entry with the ladder behind: sheltered, nothing to use, no shelter mark on the compass",
+      Math.abs(down.after.x - 8) < 0.2 && Math.abs(down.after.z - 10) < 0.2 && down.after.shelter === "shelter" && down.after.signShown && down.after.target === null && down.after.interactables === 1 && !down.after.compassShown && down.after.markHidden,
+      `at ${down.after.x.toFixed(1)}, ${down.after.z.toFixed(1)}, shelter ${down.after.shelter}, target ${down.after.target}`,
+    );
+    check("what lies on the ground outside is not in the shelter", down.before.piles.length === 1 && down.after.piles.length === 0, `${down.before.piles.join()} -> ${down.after.piles.join()}`);
+    // A storm outside: the clock runs on, the warning shows, and nothing of it gets in.
+    await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    await page.keyboard.press("F2");
+    await page.locator("#dev-storm-now").click();
+    await page.keyboard.press("F2");
+    await page.waitForFunction(() => window.__game.weather.intensity > 0.9, undefined, { timeout: 60_000 }).catch(() => {});
+    const stormStart = await zoneNow();
+    await page.waitForFunction((sim) => window.__game.simSeconds > sim + 2, stormStart.sim, { timeout: 60_000 }).catch(() => {});
+    const inStorm = await zoneNow();
+    check(
+      "in the shelter a storm outside does no harm and is not seen, but the warning says it is there",
+      inStorm.weather === "storm" && inStorm.intensity > 0.9 && inStorm.health === 100 && inStorm.visibility > 1000 && inStorm.wallOpacity === 0 && !inStorm.edges.includes("storm") && inStorm.stormNotice === "storm" && inStorm.hour > stormStart.hour,
+      `health ${inStorm.health}, visibility ${Math.round(inStorm.visibility)} m, edges ${inStorm.edges.join()}`,
+    );
+    await page.screenshot({ path: join(outDir, "shelter.png") });
+    // Back to the ladder (it is behind: standing at it counts whichever way one looks), and out.
+    await page.keyboard.down("KeyS");
+    await page.waitForFunction(() => window.__game.player.interaction === "to_riverbed", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.up("KeyS");
+    await settle();
+    const atLadder = await zoneNow();
+    const up = await goThrough("dry_riverbed");
+    check("the ladder offers the way out", atLadder.target === "to_riverbed" && atLadder.promptText === "E Go outside", `"${atLadder.promptText}"`);
+    check(
+      "one comes up beside the hatch in house A, facing away from it, into the storm that is still blowing",
+      up.after.zone === "dry_riverbed" && Math.abs(up.after.x - 282.5) < 0.2 && Math.abs(up.after.z - 281) < 0.2 && up.after.inside === "house_a" && up.after.shelter === "house_a" && up.after.target === null && up.after.weather === "storm" && up.after.visibility < 100 && up.switched.veilName === "Dry Riverbed" && up.seconds < 2,
+      `at ${up.after.x.toFixed(1)}, ${up.after.z.toFixed(1)}, target ${up.after.target}, visibility ${Math.round(up.after.visibility)} m, ${up.seconds.toFixed(2)} s`,
+    );
+    check("what was thrown out is still lying where it was left", up.after.piles.join() === atHatch.piles.join() && up.after.piles.length === 1, up.after.piles.join());
+    // Five times there and back: nothing piles up in memory or in the world.
+    await page.keyboard.press("F2");
+    await page.locator("#dev-storm-calm").click();
+    const hop = async (zone) => {
+      await page.locator(`#dev-zone-${zone}`).click();
+      await page.waitForFunction((id) => window.__game.zone.id === id, zone, { timeout: 10_000 }).catch(() => {});
+      await settle();
+    };
+    await hop("shelter");
+    await hop("dry_riverbed");
+    const baseline = await zoneNow();
+    for (let trip = 0; trip < 5; trip += 1) {
+      await hop("shelter");
+      await hop("dry_riverbed");
+    }
+    const afterTrips = await zoneNow();
+    await page.keyboard.press("F2");
+    check(
+      "after five trips to the shelter and back the counts of geometries, textures, entities and bodies have not grown",
+      JSON.stringify(afterTrips.counts) === JSON.stringify(baseline.counts) && afterTrips.travel.count === baseline.travel.count + 10 && afterTrips.piles.length === 1,
+      `${JSON.stringify(baseline.counts)} -> ${JSON.stringify(afterTrips.counts)}`,
+    );
+    // The panel's places are the riverbed's: from the shelter they lead outside.
+    await page.keyboard.press("F2");
+    await hop("shelter");
+    await page.locator("#dev-place-house_a_cabinet_back").click();
+    await page.waitForFunction(() => window.__game.zone.id === "dry_riverbed", undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    await page.keyboard.press("F2");
+    const placed = await zoneNow();
+    check("a place of the riverbed chosen from inside the shelter leads outside", placed.zone === "dry_riverbed" && placed.inside === "house_a" && placed.target === "house_a_cabinet_back", `${placed.zone}, target ${placed.target}`);
+
+    // `?zone=shelter` starts in the shelter. Dying of thirst there, one goes on there; quitting
+    // goes back to the title in the zone the game starts in.
+    await openZonePage("lang=ko&zone=shelter&thirst=0&health=30&timescale=4");
+    const startedIn = await zoneNow();
+    check("?zone=shelter starts in the shelter", startedIn.zone === "shelter" && startedIn.shelter === "shelter" && Math.abs(startedIn.x - 8) < 0.2, `${startedIn.zone} at ${startedIn.x.toFixed(1)}, ${startedIn.z.toFixed(1)}`);
+    await page.keyboard.down("KeyS");
+    await page.waitForFunction(() => window.__game.player.interaction === "to_riverbed", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.keyboard.up("KeyS");
+    await settle();
+    const koreanLadder = await zoneNow();
+    check("the prompt at the ladder is in Korean too", koreanLadder.promptText === "E 밖으로 나가기", `"${koreanLadder.promptText}"`);
+    await page.waitForFunction(() => window.__game.ui.window === "death", undefined, { timeout: 60_000 }).catch(() => {});
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !window.__game.player.dead, undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const wokeIn = await zoneNow();
+    check("whoever collapses in the shelter goes on in the shelter", wokeIn.zone === "shelter" && !wokeIn.dead && wokeIn.health === 100 && wokeIn.day === 2 && Math.abs(wokeIn.z - 10) < 0.5, `${wokeIn.zone}, day ${wokeIn.day}, health ${wokeIn.health}`);
+    await openZonePage("lang=en&seed=1");
+    await page.keyboard.press("F2");
+    await hop("shelter");
+    await page.locator("#dev-health-zero").click();
+    await page.keyboard.press("F2");
+    await page.waitForFunction(() => window.__game.ui.window === "death", undefined, { timeout: 30_000 }).catch(() => {});
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.phase === "title", undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const quitFrom = await zoneNow();
+    check("quitting from the shelter goes back to the title in the riverbed, at the start", quitFrom.phase === "title" && quitFrom.zone === "dry_riverbed" && Math.abs(quitFrom.x - 360) < 1 && Math.abs(quitFrom.z - 619) < 1 && quitFrom.day === 1, `${quitFrom.phase}, ${quitFrom.zone} at ${quitFrom.x.toFixed(0)}, ${quitFrom.z.toFixed(0)}`);
     }
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.

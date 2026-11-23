@@ -14,6 +14,7 @@ import { heightAt } from "../../src/world/terrain";
 import type { ZoneDefinition } from "../../src/world/zoneDefinition";
 import { loadZone, ROCK_COLLIDER_MIN_SIZE } from "../../src/world/zoneLoader";
 import { loadDryRiverbed } from "../../src/world/zones/dryRiverbed";
+import { loadShelter } from "../../src/world/zones/shelter";
 
 const zone = loadDryRiverbed();
 const rocksEntry = zone.scatter[0] as ZoneDefinition["scatter"][number];
@@ -244,8 +245,10 @@ describe("the loaded zone", () => {
     // Terrain, 7 boxes per building, one per prop and boxed container, the large rocks, and 4 boundary walls.
     expect(physics.bodyCount).toBe(1 + zone.buildings.length * 7 + zone.props.length + boxed + largeRocks + 4);
     // Terrain, building boxes, props, containers (a box each, or a trunk's lid), and one mesh for all rocks.
-    // Boundary walls are invisible.
-    expect(scene.objects.size).toBe(1 + zone.buildings.length * 7 + zone.props.length + zone.containers.length + 1);
+    // Boundary walls are invisible. The hatch down to the shelter is drawn, and has no body.
+    const usableExits = zone.exits.filter((exit) => !exit.blocked).length;
+    expect(usableExits).toBe(1);
+    expect(scene.objects.size).toBe(1 + zone.buildings.length * 7 + zone.props.length + zone.containers.length + 1 + usableExits);
     expect(loaded.rockCount).toBeGreaterThan(1000);
 
     loaded.unload();
@@ -276,7 +279,7 @@ describe("the loaded zone", () => {
     const physics = new PhysicsWorld();
     const world = createWorld();
     const loaded = loadZone(zone, physics, fakeScene(), { world });
-    const targets = [...world.with("interactable", "transform")];
+    const targets = [...world.with("container", "interactable", "transform")];
     expect(loaded.containerCount).toBe(14);
     expect(targets.map((entity) => entity.interactable.id).sort()).toEqual(zone.containers.map((container) => container.id).sort());
     expect(targets.every((entity) => entity.interactable.kind === "search")).toBe(true);
@@ -287,6 +290,40 @@ describe("the loaded zone", () => {
     expect(crate?.transform.y).toBeCloseTo(heightAt(loaded.terrain, 406, 114));
     loaded.unload();
     expect(world.entities).toHaveLength(0);
+    physics.dispose();
+  });
+
+  it("puts each usable exit into the world as a way to another zone", () => {
+    const physics = new PhysicsWorld();
+    const world = createWorld();
+    const loaded = loadZone(zone, physics, fakeScene(), { world });
+    const ways = [...world.with("exit", "interactable", "transform")];
+    expect(ways.map((entity) => entity.interactable.id)).toEqual(["to_shelter"]);
+    expect(ways[0]?.interactable.kind).toBe("travel");
+    expect(ways[0]?.exit).toEqual({ to: "shelter", entry: "from_riverbed" });
+    expect(ways[0]?.transform).toMatchObject({ x: 281, z: 281 });
+    expect(ways[0]?.transform.y).toBeCloseTo(heightAt(loaded.terrain, 281, 281));
+    loaded.unload();
+    physics.dispose();
+  });
+
+  it("builds the shelter as a room, and takes all of it away again", () => {
+    const physics = new PhysicsWorld();
+    const world = createWorld();
+    const scene = fakeScene();
+    const before = physics.bodyCount;
+    const loaded = loadZone(loadShelter(), physics, scene, { world });
+    // The floor, four boundary walls and the ceiling.
+    expect(physics.bodyCount - before).toBe(1 + 4 + 1);
+    // The floor, four walls, the ceiling and the ladder.
+    expect(scene.objects.size).toBe(1 + 4 + 1 + 1);
+    expect(loaded.shelterZoneCount).toBe(1);
+    expect([...world.with("shelterZone")].map((entity) => entity.shelterZone.id)).toEqual(["shelter"]);
+    expect([...world.with("exit")].map((entity) => entity.exit.to)).toEqual(["dry_riverbed"]);
+    loaded.unload();
+    expect(world.entities).toHaveLength(0);
+    expect(physics.bodyCount).toBe(before);
+    expect(scene.objects.size).toBe(0);
     physics.dispose();
   });
 

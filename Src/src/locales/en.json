@@ -29,6 +29,8 @@
   "interact.open": "{key} Open",
   "interact.empty": "Empty",
   "interact.pickup": "{key} Pick up",
+  "interact.travel_shelter": "{key} Go down to the shelter",
+  "interact.travel_dry_riverbed": "{key} Go outside",
   "container.trunk": "Car trunk",
   "container.cabinet": "Cabinet",
   "container.crate": "Crate",
@@ -84,6 +86,7 @@
   "hint.drag_to_look": "Hold a mouse button and move the mouse to look around",
 
   "zone.dry_riverbed.name": "Dry Riverbed",
+  "zone.shelter.name": "Shelter",
 
   "bench.title": "Performance measurement",
   "bench.measuring": "Measuring performance... {percent}%",
@@ -162,6 +165,7 @@
   "dev.bag.discard": "Discard one from the last slot",
   "dev.bag.empty": "Empty",
   "dev.places": "Go to",
+  "dev.zone": "Zone",
   "dev.language": "Language",
   "dev.tools": "Tools",
   "dev.tools.debug": "Debug screen (F3)",

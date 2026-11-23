@@ -344,6 +344,39 @@ describe("using things and the quick slots", () => {
   });
 });
 
+describe("useExit", () => {
+  const atExit = () => {
+    const world = createWorld();
+    const player = world.add({ id: "player_1", inventory: createInventory(), health: createHealth(50), transform: createTransform(0, 0, 0) });
+    world.add({ transform: createTransform(1, 0, 0), interactable: { id: "to_shelter", kind: "travel" }, exit: { to: "shelter", entry: "from_riverbed" } });
+    const commands = createCommandSystem(world);
+    const run = (command: Command) => {
+      commands.push(command);
+      const [result] = commands.run();
+      if (!result) {
+        throw new Error("no result");
+      }
+      return result;
+    };
+    return { player, run };
+  };
+  const leave: Command = { type: "useExit", actor: "player_1", exit: "to_shelter" };
+
+  it("is allowed for someone standing at the exit", () => {
+    expect(atExit().run(leave)).toMatchObject({ ok: true });
+  });
+
+  it("is refused from out of reach, for an exit that is not there, and for someone who has collapsed", () => {
+    const { player, run } = atExit();
+    expect(run({ ...leave, exit: "to_the_moon" } as Command)).toMatchObject({ ok: false, reason: "nothing_there" });
+    player.transform.x = -CONTAINER_REACH;
+    expect(run(leave)).toMatchObject({ ok: false, reason: "out_of_reach" });
+    player.transform.x = 0;
+    player.health.current = 0;
+    expect(run(leave)).toMatchObject({ ok: false, reason: "collapsed" });
+  });
+});
+
 describe("commands from nobody", () => {
   it("are refused for an actor that does not exist", () => {
     const { commands } = setUp();

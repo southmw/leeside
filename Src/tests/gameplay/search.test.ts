@@ -163,6 +163,20 @@ describe("stepSearch on a pile on the ground", () => {
   });
 });
 
+describe("stepSearch on a way out of the zone", () => {
+  const exit = { id: "to_shelter", state: "exit" } as const;
+
+  it("takes it on a press, once", () => {
+    const search = createSearch();
+    expect(stepSearch(search, holding({ target: exit }), TICK)).toBe("to_shelter");
+    expect(hold(search, 2, holding({ target: exit })).opened).toBeNull();
+  });
+
+  it("is not taken by someone who has collapsed", () => {
+    expect(stepSearch(createSearch(), holding({ target: exit, dead: true }), TICK)).toBeNull();
+  });
+});
+
 describe("createSearchSystem", () => {
   const setUp = () => {
     const world = createWorld();
@@ -206,6 +220,18 @@ describe("createSearchSystem", () => {
     step(TICK);
     step(TICK);
     expect(pushed).toEqual([{ type: "pickUp", actor: "player_1", pile: "pile_1" }]);
+  });
+
+  it("asks to leave through an exit on a press", () => {
+    const world = createWorld();
+    world.add({ transform: createTransform(0, 0, 0), interactable: { id: "to_shelter", kind: "travel" }, exit: { to: "shelter", entry: "from_riverbed" } });
+    const player = world.add({ id: "player_1", input: createEmptyActions(), interaction: { target: "to_shelter" as string | null }, search: createSearch() });
+    const pushed: Command[] = [];
+    const step = createSearchSystem(world, (command) => pushed.push(command));
+    player.input.interact = true;
+    step(TICK);
+    step(TICK);
+    expect(pushed).toEqual([{ type: "useExit", actor: "player_1", exit: "to_shelter" }]);
   });
 
   it("counts walking, jumping and being in the air as moving", () => {

@@ -52,6 +52,7 @@ const css = `
   position: absolute; top: 0.15em; width: 3em; margin-left: -1.5em; text-align: center; white-space: nowrap;
   font-size: 1.05em; transition: color 0.3s;
 }
+#hud-compass-shelter[hidden] { display: none; }
 #hud-compass-shelter .hud-arrow { font-size: 0.8em; font-weight: 700; }
 #hud-compass-shelter.marked { color: #f0c060; font-size: 1.3em; top: 0; animation: hud-blink 1s infinite; }
 /* The storm warning: orange while it comes, red once it is here. */
@@ -194,9 +195,10 @@ export interface Hud {
   setShelter(sheltered: boolean, storm: boolean): void;
   /**
    * Turns the compass to `heading` and puts the shelter's mark at `shelterBearing` (both in
-   * degrees clockwise from north). Returns where the mark ended up.
+   * degrees clockwise from north). Returns where the mark ended up. With null for the
+   * bearing there is no mark: the player is in the shelter.
    */
-  setCompass(heading: number, shelterBearing: number): CompassPosition;
+  setCompass(heading: number, shelterBearing: number | null): CompassPosition;
   /** Shows the warnings and effects the player's situation calls for (hudState.ts). */
   setAlerts(alerts: HudAlerts): void;
   /** Shows how full the bag is (hudState.ts); `key` is what the key that opens the bag window is called. */
@@ -503,7 +505,8 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
         point.node.hidden = at.beyond !== 0;
         point.node.style.left = along(at.offset);
       }
-      const at = compassPosition(heading, shelterBearing);
+      shelterMark.hidden = shelterBearing === null;
+      const at = compassPosition(heading, shelterBearing ?? heading);
       shelterMark.style.left = along(at.offset);
       arrowLeft.hidden = at.beyond !== -1;
       arrowRight.hidden = at.beyond !== 1;

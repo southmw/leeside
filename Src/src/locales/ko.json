@@ -29,6 +29,8 @@
   "interact.open": "{key} 열기",
   "interact.empty": "비어 있음",
   "interact.pickup": "{key} 줍기",
+  "interact.travel_shelter": "{key} 대피소로 내려가기",
+  "interact.travel_dry_riverbed": "{key} 밖으로 나가기",
   "container.trunk": "차량 트렁크",
   "container.cabinet": "수납장",
   "container.crate": "상자",
@@ -84,6 +86,7 @@
   "hint.drag_to_look": "마우스 버튼을 누른 채 움직이면 시점이 돕니다",
 
   "zone.dry_riverbed.name": "마른 강바닥",
+  "zone.shelter.name": "대피소",
 
   "bench.title": "성능 측정",
   "bench.measuring": "성능 측정 중... {percent}%",
@@ -162,6 +165,7 @@
   "dev.bag.discard": "마지막 칸에서 하나 버리기",
   "dev.bag.empty": "비우기",
   "dev.places": "위치 이동",
+  "dev.zone": "구역",
   "dev.language": "언어",
   "dev.tools": "도구",
   "dev.tools.debug": "디버그 화면 (F3)",

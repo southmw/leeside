@@ -37,6 +37,8 @@ export type Command =
   | { type: "assignQuickSlot"; actor: string; slot: number; item: ItemId }
   /** Moves what lies on a pile into the actor's bag, as far as it fits. */
   | { type: "pickUp"; actor: string; pile: string }
+  /** Leaves the zone through one of its exits. The command only says the actor may; the game changes the zone. */
+  | { type: "useExit"; actor: string; exit: string }
   /** Opens a container (a search has been completed, or it was open already). */
   | { type: "openContainer"; actor: string; container: string }
   /** Moves one entry of an open container into the actor's bag, as far as it fits. */
@@ -91,6 +93,7 @@ export function createCommandSystem(world: GameWorld, options: CommandOptions = 
   const actors = world.with("id");
   const containers = world.with("container", "interactable", "transform");
   const piles = world.with("pile", "interactable", "transform");
+  const exits = world.with("exit", "interactable", "transform");
   // Piles are numbered as they are made, so the same commands always give the same names.
   let pilesMade = 0;
 
@@ -211,6 +214,25 @@ export function createCommandSystem(world: GameWorld, options: CommandOptions = 
         return refuse("unknown_item");
       }
       return assignQuickSlot(actor.quickSlots, command.slot, command.item) ? { command, ok: true, moved: 0 } : refuse("not_assignable");
+    }
+    if (command.type === "useExit") {
+      let way;
+      for (const candidate of exits) {
+        if (candidate.interactable.id === command.exit) {
+          way = candidate;
+        }
+      }
+      if (!way) {
+        return refuse("nothing_there");
+      }
+      if (actor.health && actor.health.current <= 0) {
+        return refuse("collapsed");
+      }
+      const from = actor.transform;
+      if (!from || Math.hypot(from.x - way.transform.x, from.z - way.transform.z) > CONTAINER_REACH) {
+        return refuse("out_of_reach");
+      }
+      return { command, ok: true, moved: 0 };
     }
     if (command.type === "pickUp") {
       let lying;
