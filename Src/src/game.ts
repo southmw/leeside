@@ -40,6 +40,8 @@ import { useRefusal } from "./gameplay/itemUse";
 import { revealAfterStorm, shortfall, stormJustPassed } from "./gameplay/reveal";
 import { createRepair, deliverMaterials, isRepairDone, REPAIR_MATERIALS, repairRows, resetRepair } from "./gameplay/repair";
 import { createTallyScreen } from "./ui/tallyScreen";
+import { canPause, shouldPauseOnLeave, simulationRuns } from "./app/pause";
+import { createPauseScreen } from "./ui/pauseScreen";
 import { clearQuickSlots, createQuickSlots, createQuickUseSystem } from "./gameplay/quickSlots";
 import { createPileMesh } from "./render/pileMesh";
 import { advanceClock, createClock, parseTimeOfDay, readClock, setHour, startNextDay } from "./gameplay/clock";
@@ -1087,6 +1089,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     endDeath();
     endTravel();
     endTally();
+    pauseScreen.clear();
+    paused = false;
+    debug.paused = false;
     bagWindow.close();
     containerPanel.close();
     playing = false;
@@ -1129,6 +1134,49 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     showWeather();
     context.onQuit();
   };
+  // Pausing (UI design 10): Escape with nothing else open, or the page losing the player's
+  // attention. Nothing in the game moves on until the player comes back from the pause screen.
+  let paused = false;
+  const pauseScreen = createPauseScreen(ui, i18n, {
+    onResume: () => {
+      paused = false;
+      debug.paused = false;
+      // What the mouse and keys did meanwhile is not the game's.
+      localInput.sample();
+    },
+    onRestart: () => {
+      paused = false;
+      debug.paused = false;
+      backToTitle();
+    },
+  });
+  const pause = (): void => {
+    paused = true;
+    debug.paused = true;
+    Object.assign(player.input, createEmptyActions());
+    pauseScreen.open();
+  };
+  window.addEventListener("keydown", (event) => {
+    // A window that is open has had the key already: Escape closes it, and never gets here.
+    const situation = { playing: playing && !bench, windowOpen: ui.openWindowId !== null, travelling: travel !== undefined || tallyDue !== undefined, paused };
+    if (event.code === "Escape" && !event.repeat && canPause(situation)) {
+      event.preventDefault();
+      pause();
+    }
+  });
+  const pauseOnLeave = (): void => {
+    const situation = { playing: playing && !bench, centreWindowOpen: ui.centreWindowId !== null, travelling: travel !== undefined || tallyDue !== undefined, paused };
+    if (shouldPauseOnLeave(situation)) {
+      pause();
+    }
+  };
+  window.addEventListener("blur", pauseOnLeave);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      pauseOnLeave();
+    }
+  });
+
   const advanceDeath = (dt: number): void => {
     if (!death) {
       death = { seconds: 0, asked: false };
@@ -1327,6 +1375,10 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       devLog?.update(nowMs);
     },
     update(dt) {
+      // Paused, nothing moves on: no input, no clock, no weather, no harm.
+      if (!simulationRuns(paused)) {
+        return;
+      }
       sectionTimer.begin("sim");
       renderSync.capture();
       // During a measurement nobody plays: the character stands still and the camera flies itself.
@@ -1405,11 +1457,6 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       debug.view.yaw = player.view.yaw;
       debug.view.pitch = player.view.pitch;
       debug.view.looking = mouse.looking;
-      debug.ui.scale = ui.scale;
-      debug.ui.tooSmall = ui.tooSmall;
-      debug.ui.window = ui.openWindowId;
-      debug.ui.windows = ui.openWindowIds;
-      debug.ui.selectedButton = ui.selectedButton;
       debug.camera.distance = cameraFit.distance;
       debug.camera.wantedDistance = wantedCameraDistance;
       debug.camera.y = camera.position.y;
@@ -1434,7 +1481,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       // The camera follows the character where it is drawn, not where the simulation has it,
       // and shows mouse movement that the next step has yet to apply.
       const drawnAt = player.renderable.object.position;
-      const pending = localInput.pendingLook();
+      // Paused, the view stays where it was, whatever the mouse does.
+      const pending = paused ? { lookX: 0, lookY: 0 } : localInput.pendingLook();
       const looked = previewLook(player.view, pending.lookX, pending.lookY);
       // Behind the title screen the camera sways slowly instead of following the mouse.
       titleSeconds += playing ? 0 : lastFrameSeconds;
@@ -1540,6 +1588,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       debug.bodyCount = physics.bodyCount;
       debug.canvas.width = canvas.width;
       debug.canvas.height = canvas.height;
+      // Read every frame, not every step: windows open and close while the game is paused too.
+      debug.ui.scale = ui.scale;
+      debug.ui.tooSmall = ui.tooSmall;
+      debug.ui.window = ui.openWindowId;
+      debug.ui.windows = ui.openWindowIds;
+      debug.ui.selectedButton = ui.selectedButton;
       debug.phase = bench ? "bench" : playing ? "playing" : "title";
       debug.ready = true;
       firstFrameDrawn();

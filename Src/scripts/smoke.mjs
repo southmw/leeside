@@ -39,8 +39,13 @@ async function launchBrowser() {
 const READY_TIMEOUT_MS = 60_000;
 
 const results = [];
+/** A check that comes this long after the one before it is marked in the report: something waited in vain. Seconds. */
+const SLOW_CHECK_SECONDS = 25;
+let lastCheckAt = Date.now();
 function check(name, passed, detail = "") {
-  results.push({ name, passed, detail });
+  const seconds = (Date.now() - lastCheckAt) / 1000;
+  lastCheckAt = Date.now();
+  results.push({ name, passed, detail, seconds });
 }
 
 let server;
@@ -2272,6 +2277,114 @@ try {
     check("dying with nothing in the bag leaves nothing, says nothing of a bag to fetch, and still loses the earlier one", emptyAsk.notes.join() === "전에 떨어뜨린 가방은 사라집니다." && third.dropped === null && third.piles.length === 0, `"${emptyAsk.notes.join("|")}", dropped ${JSON.stringify(third.dropped)}`);
     }
 
+    {
+    // Pausing: Escape stops the game and brings up the menu; the controls can be looked up,
+    // Escape goes back, and looking away from the page pauses by itself.
+    const pauseNow = () =>
+      page.evaluate(() => ({
+        paused: window.__game.paused,
+        window: window.__game.ui.window,
+        sim: window.__game.simSeconds,
+        tick: window.__game.tick,
+        hour: window.__game.clock.hour,
+        thirst: window.__game.player.thirst,
+        z: window.__game.player.z,
+        yaw: window.__game.view.yaw,
+        phase: window.__game.phase,
+        veil: document.querySelector("#pause-veil").classList.contains("shown"),
+        title: document.querySelector(".ui-window .ui-title")?.textContent ?? "",
+        buttons: [...document.querySelectorAll(".ui-window > .ui-button")].map((button) => button.textContent),
+        controls: [...document.querySelectorAll("#controls-list > span:not(.controls-keys)")].map((row) => row.textContent),
+        keys: [...document.querySelectorAll("#controls-list .controls-keys")].map((row) => [...row.querySelectorAll(".ui-key")].map((key) => key.textContent).join("")),
+        day: window.__game.clock.day,
+        bag: window.__game.player.bag.filter((slot) => slot !== null).length,
+      }));
+    await page.goto(gameUrl("lang=en&timescale=20&bag=scrap:2"), { waitUntil: "load" });
+    await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+    await settle();
+    const running = await pauseNow();
+    await page.keyboard.press("Escape");
+    // The window is reported with the next frame drawn.
+    await page.waitForFunction(() => window.__game.paused && window.__game.ui.window === "pause", undefined, { timeout: 5_000 }).catch(() => {});
+    const justPaused = await pauseNow();
+    // Keys and the clock while paused: nothing moves.
+    await page.keyboard.down("KeyW");
+    await page.waitForTimeout(700);
+    await page.keyboard.up("KeyW");
+    const stillPaused = await pauseNow();
+    check(
+      "Escape pauses: the picture dims and the menu offers to resume, the controls and starting over",
+      !running.paused && justPaused.paused && justPaused.window === "pause" && justPaused.veil && justPaused.title === "Paused" && justPaused.buttons.join() === "Resume,Controls,Start over",
+      `"${justPaused.title}": ${justPaused.buttons.join(", ")}`,
+    );
+    check(
+      "paused, nothing moves on: not the simulation, the clock, thirst or the character",
+      stillPaused.paused && stillPaused.tick === justPaused.tick && stillPaused.hour === justPaused.hour && stillPaused.thirst === justPaused.thirst && stillPaused.z === justPaused.z && stillPaused.window === "pause",
+      `tick ${justPaused.tick} -> ${stillPaused.tick}, hour ${justPaused.hour.toFixed(3)} -> ${stillPaused.hour.toFixed(3)}`,
+    );
+    await page.screenshot({ path: join(outDir, "pause.png") });
+    // Controls, and back with Escape.
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.ui.window === "controls", undefined, { timeout: 5_000 }).catch(() => {});
+    const controls = await pauseNow();
+    await page.screenshot({ path: join(outDir, "controls.png") });
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => window.__game.ui.window === "pause", undefined, { timeout: 5_000 }).catch(() => {});
+    const backAtMenu = await pauseNow();
+    check(
+      "the controls screen lists the keys, and Escape goes back to the menu, still paused",
+      controls.title === "Controls" && controls.controls.length === 11 && controls.controls[0] === "Move" && controls.keys[0] === "WASD" && controls.keys.includes("Tab") && controls.paused && backAtMenu.window === "pause" && backAtMenu.paused,
+      `${controls.controls.length} rows, first "${controls.controls[0]}" ${controls.keys[0]}`,
+    );
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !window.__game.paused, undefined, { timeout: 5_000 }).catch(() => {});
+    await settle();
+    const resumed = await pauseNow();
+    check("Escape resumes: the menu and the dimming go and the game runs on", !resumed.paused && resumed.window === null && !resumed.veil && resumed.tick > stillPaused.tick && resumed.hour > stillPaused.hour, `tick ${stillPaused.tick} -> ${resumed.tick}`);
+    // Escape with the bag open closes the bag; it does not pause.
+    await page.keyboard.press("Tab");
+    await page.waitForFunction(() => window.__game.ui.window === "bag", undefined, { timeout: 5_000 }).catch(() => {});
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 5_000 }).catch(() => {});
+    const bagClosed = await pauseNow();
+    check("Escape with the bag open closes the bag and does not pause", !bagClosed.paused && bagClosed.window === null);
+    // Looking away from the page pauses by itself.
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await page.waitForFunction(() => window.__game.paused && window.__game.ui.window === "pause", undefined, { timeout: 5_000 }).catch(() => {});
+    const leftPage = await pauseNow();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !window.__game.paused, undefined, { timeout: 5_000 }).catch(() => {});
+    check("leaving the page pauses the game, and Resume goes on", leftPage.paused && leftPage.window === "pause" && !(await pauseNow()).paused);
+    // Starting over asks first, and then goes to the title with the game at its beginning.
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => window.__game.paused, undefined, { timeout: 5_000 }).catch(() => {});
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.ui.window === "restart", undefined, { timeout: 5_000 }).catch(() => {});
+    const asking = await pauseNow();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.ui.window === "pause", undefined, { timeout: 5_000 }).catch(() => {});
+    const declined = await pauseNow();
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.ui.window === "restart", undefined, { timeout: 5_000 }).catch(() => {});
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.__game.phase === "title", undefined, { timeout: 10_000 }).catch(() => {});
+    await page.locator("#title-start").waitFor({ state: "visible", timeout: 10_000 }).catch(() => {});
+    const restarted = await pauseNow();
+    check(
+      "Start over asks first (Back is the first button), and then goes to the title with the game at its beginning",
+      asking.title === "Start over?" && asking.buttons[0] === "Back" && declined.window === "pause" && declined.paused && restarted.phase === "title" && !restarted.paused && !restarted.veil && restarted.day === 1 && restarted.bag === 1,
+      `"${asking.title}" ${asking.buttons.join(", ")} -> ${restarted.phase}`,
+    );
+    // Behind the title Escape does nothing.
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(300);
+    check("Escape does not pause behind the title", !(await pauseNow()).paused);
+    }
+
     // A phone gets an explanation instead of the game, and nothing is loaded for it.
     const phone = await browser.newPage({
       viewport: { width: 390, height: 844 },
@@ -2451,7 +2564,8 @@ try {
   await server?.close();
 }
 
-for (const { name, passed, detail } of results) {
+for (const { name, passed, detail: said, seconds } of results) {
+  const detail = seconds > SLOW_CHECK_SECONDS ? `${said}${said ? ", " : ""}SLOW: ${seconds.toFixed(0)} s` : said;
   console.log(`  ${passed ? "PASS" : "FAIL"}  ${name}${detail ? `  (${detail})` : ""}`);
   if (!passed) {
     exitCode = 1;

@@ -42,6 +42,8 @@ export interface GameDebug {
   ready: boolean;
   /** Whether the title screen is up, the player is in control, or a performance measurement is running. */
   phase: "title" | "playing" | "bench";
+  /** Whether the game is paused: the simulation stands still and the pause screen is up. */
+  paused: boolean;
   /** Number of frames rendered so far. */
   frame: number;
   /** Number of fixed simulation steps run so far. */
@@ -220,6 +222,7 @@ export function installDebugApi(language: Language): GameDebug {
   const debug: GameDebug = {
     ready: false,
     phase: "title",
+    paused: false,
     frame: 0,
     tick: 0,
     simSeconds: 0,
