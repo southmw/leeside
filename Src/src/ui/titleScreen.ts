@@ -1,5 +1,5 @@
 import { canStart, loadingFraction, type StartFlowState } from "../app/startFlow";
-import type { I18n, Language } from "../locales/i18n";
+import type { I18n } from "../locales/i18n";
 import { CHARACTERS, neighbourCharacter } from "../render/characterCatalog";
 import { createBar, type Ui } from "./uiRoot";
 
@@ -30,12 +30,9 @@ const css = `
 .title-corner.bottom-left { bottom: 1.5em; left: 1.5em; }
 .title-corner.bottom-right { bottom: 1.5em; right: 1.5em; }
 .title-corner .ui-button { width: auto; margin: 0; padding: 0.35em 0.9em; }
-.title-languages { display: flex; border: 1px solid rgba(232, 220, 192, 0.3); border-radius: 0.3em; overflow: hidden; }
-.title-languages .ui-button { border: 0; border-radius: 0; }
 .title-message { max-width: 30em; font-size: 1.1em; }
 `;
 
-const LANGUAGES: readonly Language[] = ["en", "ko"];
 
 /** The title can come back (after quitting from the game); its styles are added only once. */
 let styled = false;
@@ -49,8 +46,6 @@ export interface TitleScreenOptions {
   onStart(): void;
   /** Called when the settings button is pressed. */
   onSettings(): void;
-  /** Called when a language is chosen. Whoever is called changes the language (and remembers it). */
-  onLanguage(language: Language): void;
   /** Called when the player picks another character. */
   onCharacter(id: string): void;
   /** Whether the introduction has been played through on this machine: then skipping it is offered. */
@@ -67,7 +62,7 @@ export interface TitleScreen {
 }
 
 /**
- * The first screen (UI design 4): the game's name, START, language switch and a settings
+ * The first screen (UI design 4): the game's name, START and a settings
  * button, over the live scene. While loading, a progress bar stands where START will be.
  */
 export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOptions): TitleScreen {
@@ -165,14 +160,8 @@ export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOption
       middle.push(characters, element("p", "title-controls", t("title.controls")));
     }
 
-    const languages = element("div", "title-languages");
-    for (const language of LANGUAGES) {
-      languages.append(
-        button(`title-language-${language}`, t(`language.${language}`), () => options.onLanguage(language), language === i18n.language),
-      );
-    }
+    // The language is chosen in the settings (it used to have a switch here as well).
     const topRight = element("div", "title-corner top-right");
-    topRight.append(languages);
     if (!unsupported) {
       topRight.append(button("title-settings", t("title.settings"), openSettings));
     }

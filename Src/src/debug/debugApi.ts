@@ -169,7 +169,7 @@ export interface GameDebug {
     edges: string[];
     blinking: string[];
     damage: string | null;
-    compass: { heading: number; shelterOffset: number; shelterBeyond: number; shelterShown: boolean; bagShown: boolean };
+    compass: { heading: number; shelterOffset: number; shelterBeyond: number; shelterShown: boolean; bagShown: boolean; bagBeyond: number };
     /** The dot in the middle of the screen, and the prompt under it (what the target lets the player do; null for none). */
     crosshair: "hidden" | "idle" | "target";
     prompt: string | null;
@@ -244,7 +244,7 @@ export function installDebugApi(language: Language): GameDebug {
     weather: { phase: "clear", intensity: 0, approach: 0, secondsLeft: Number.POSITIVE_INFINITY, seed: 0, wallDistance: 0, wallOpacity: 0 },
     sky: { sunElevation: 0, sunIntensity: 0, ambientIntensity: 0, visibility: 0 },
     audio: { state: "off", muted: false, windVolume: 0, windCutoffHz: 0, indoors: false, footsteps: 0 },
-    hud: { storm: "none", stormRemaining: 0, edges: [], blinking: [], damage: null, compass: { heading: 0, shelterOffset: 0, shelterBeyond: 0, shelterShown: true, bagShown: false }, crosshair: "hidden", prompt: null },
+    hud: { storm: "none", stormRemaining: 0, edges: [], blinking: [], damage: null, compass: { heading: 0, shelterOffset: 0, shelterBeyond: 0, shelterShown: true, bagShown: false, bagBeyond: 0 }, crosshair: "hidden", prompt: null },
     commands: { done: 0, refused: 0, last: null },
     containers: { byId: {}, panel: null, seed: 0 },
     piles: [],

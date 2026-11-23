@@ -54,9 +54,22 @@ const css = `
 }
 #hud-compass-shelter[hidden] { display: none; }
 /* Where the bag a death left behind lies. */
-#hud-compass-bag { position: absolute; top: 0.15em; width: 3em; margin-left: -1.5em; text-align: center; white-space: nowrap; font-size: 1.05em; color: #ff9d4d; }
-#hud-compass-bag[hidden] { display: none; }
-#hud-compass-bag .hud-arrow { font-size: 0.8em; font-weight: 700; }
+/*
+ * In a row of its own under the compass, not on the strip: there it lay on top of the
+ * shelter's mark and the letters, and at the ends in the part that fades out, and could not
+ * be read. Bright and blinking: it is what the player is looking for.
+ */
+#hud-bag-row { position: relative; height: 1.9em; margin-top: 0.3em; }
+#hud-bag-row[hidden] { display: none; }
+#hud-compass-bag {
+  position: absolute; top: 0; transform: translateX(-50%); display: flex; align-items: center; gap: 0.3em;
+  padding: 0.1em 0.7em; white-space: nowrap; font-weight: 700; color: #ffb066;
+  background: rgba(20, 19, 16, 0.8); border: 0.1em solid #ff9d4d; border-radius: 0.95em;
+  animation: hud-blink 1s infinite;
+}
+#hud-compass-bag .ui-icon { width: 1.3em; height: 1.3em; }
+#hud-compass-bag .hud-arrow { font-size: 1.1em; font-weight: 700; }
+#hud-compass-bag .hud-arrow[hidden] { display: none; }
 #hud-compass-shelter .hud-arrow { font-size: 0.8em; font-weight: 700; }
 #hud-compass-shelter.marked { color: #f0c060; font-size: 1.3em; top: 0; animation: hud-blink 1s infinite; }
 /* The storm warning: orange while it comes, red once it is here. */
@@ -190,6 +203,8 @@ const COMPASS_POINTS = [
 
 /** How far from the middle the ends of the compass are drawn, in percent of the strip's width. */
 const COMPASS_REACH = 45;
+/** The same for the dropped bag's mark, which is wide and must not be cut off at the ends. */
+const BAG_MARK_REACH = 37;
 
 const EDGES = ["storm", "cold", "danger"] as const;
 
@@ -210,10 +225,11 @@ export interface Hud {
   /**
    * Turns the compass to `heading` and puts the shelter's mark at `shelterBearing` (both in
    * degrees clockwise from north). Returns where the mark ended up. With null for the
-   * bearing there is no mark: the player is in the shelter. `bagBearing` puts a second mark
-   * where the bag a death left behind lies; null (or left out) for none.
+   * bearing there is no mark: the player is in the shelter. `bag` puts a second mark where
+   * the bag a death left behind lies, with how far it is in metres; null (or left out) for
+   * none. Returns where the shelter's mark ended up, and the bag's.
    */
-  setCompass(heading: number, shelterBearing: number | null, bagBearing?: number | null): CompassPosition;
+  setCompass(heading: number, shelterBearing: number | null, bag?: { bearing: number; metres: number } | null): CompassPosition & { bag: CompassPosition | null };
   /** Shows the warnings and effects the player's situation calls for (hudState.ts). */
   setAlerts(alerts: HudAlerts): void;
   /** Shows a line of guidance above the quick slots (the introduction's), or takes it away with null. */
@@ -282,8 +298,12 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   bagArrowLeft.textContent = "‹";
   const bagArrowRight = make("span", "", "hud-arrow");
   bagArrowRight.textContent = "›";
-  bagMark.append(bagArrowLeft, createIcon("marker-bag"), bagArrowRight);
-  compass.append(bagMark);
+  const bagDistance = make("span", "", "hud-distance");
+  bagMark.append(bagArrowLeft, createIcon("marker-bag"), bagDistance, bagArrowRight);
+  let bagMetres = -1;
+  const bagRow = make("div", "hud-bag-row");
+  bagRow.hidden = true;
+  bagRow.append(bagMark);
   const storm = make("div", "hud-storm");
   storm.hidden = true;
   const stormIcon = createIcon("warning");
@@ -293,7 +313,7 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
   stormTrack.append(stormFill);
   storm.append(stormIcon, stormText, stormTrack);
   const top = make("div", "hud-top");
-  top.append(compass, storm);
+  top.append(compass, bagRow, storm);
 
   // The shared bar (icon, label and value over a track), filled in as the figure changes.
   const labelledBar = (id: string, icon: IconName): { bar: HTMLElement; name: HTMLElement; nameText: HTMLElement; value: HTMLElement; fill: HTMLElement } => {
@@ -552,13 +572,21 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
       }
       shelter.classList.toggle("storm", inStorm);
     },
-    setCompass(heading, shelterBearing, bagBearing = null): CompassPosition {
-      bagMark.hidden = bagBearing === null;
-      if (bagBearing !== null) {
-        const bagAt = compassPosition(heading, bagBearing);
-        bagMark.style.left = along(bagAt.offset);
+    setCompass(heading, shelterBearing, bag = null) {
+      bagMark.hidden = bag === null;
+      bagRow.hidden = bag === null;
+      let bagAt: CompassPosition | null = null;
+      if (bag !== null) {
+        bagAt = compassPosition(heading, bag.bearing);
+        // Under the place on the strip where the bag's bearing lies; held in from the ends so that it is never cut off.
+        bagMark.style.left = `${(50 + bagAt.offset * BAG_MARK_REACH).toFixed(2)}%`;
         bagArrowLeft.hidden = bagAt.beyond !== -1;
         bagArrowRight.hidden = bagAt.beyond !== 1;
+        const metres = Math.round(bag.metres);
+        if (metres !== bagMetres) {
+          bagMetres = metres;
+          bagDistance.textContent = i18n.t("hud.distance", { metres });
+        }
       }
       for (const point of points) {
         const at = compassPosition(heading, point.bearing);
@@ -571,7 +599,7 @@ export function createHud(ui: Ui, i18n: I18n): Hud {
       shelterMark.style.left = along(at.offset);
       arrowLeft.hidden = at.beyond !== -1;
       arrowRight.hidden = at.beyond !== 1;
-      return at;
+      return { ...at, bag: bagAt };
     },
     setBag(view, key): void {
       renderBag(view, key);

@@ -99,7 +99,6 @@ const showTitle = (): TitleScreen =>
     character,
     onStart: () => dispatch({ type: "start" }),
     onSettings: () => settingsScreen.open(() => {}),
-    onLanguage: (language) => settings.set({ language }),
     introDone: introDone(),
     onCharacter: (id) => {
       character = id;

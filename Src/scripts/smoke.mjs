@@ -67,6 +67,13 @@ try {
   browser = launched.browser;
   // A fixed browser language, so the result does not depend on the machine's settings.
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, locale: "en-US" });
+  // STAY_AWAKE: the game pauses itself when its page loses the focus, and the test browser's
+  // window loses it whenever something else on the machine takes it. This mark, set before
+  // every page's own code runs, tells the game not to; the pause check takes it away.
+  const stayAwake = () => {
+    window.__leesideStayAwake = true;
+  };
+  await page.addInitScript(stayAwake);
 
   const consoleErrors = [];
   page.on("console", (message) => {
@@ -562,14 +569,8 @@ try {
     );
     check("choosing a character does not start the game", (await page.evaluate(() => window.__game.phase)) === "title");
 
-    await page.locator("#title-language-ko").click();
-    const korean = await titleScreen.innerText();
-    await page.locator("#title-language-en").click();
-    const english = await titleScreen.innerText();
-    check(
-      "the language switch changes the title at once",
-      korean.includes("바람이 닿지 않는 곳") && korean.includes("시작") && english.includes("START") && !english.includes("시작"),
-    );
+    // The language is chosen in the settings (checked further down); the title has no switch of its own.
+    check("the title has no language switch of its own", (await page.locator('[id^="title-language"]').count()) === 0 && (await titleScreen.innerText()).includes("START"));
 
     await page.locator("#title-settings").click();
     const settingsWindow = page.locator('[data-window="settings"]');
@@ -1141,7 +1142,7 @@ try {
     const throughWall = await interactionAt("at=275.4,279&face=90");
     check("a cabinet is not reached through the wall from outside", throughWall.target === null && throughWall.inside === null && !throughWall.promptShown, `target ${throughWall.target}`);
     const promptKorean = await interactionAt("lang=ko&at=406.26,115.48&face=350");
-    check("the prompt is in Korean too", promptKorean.promptText === "E 수색 (누르고 있기)" && promptKorean.keyText === "E", `"${promptKorean.promptText}"`);
+    check("the prompt is in Korean too", promptKorean.promptText === "E 수색 (길게 누르기)" && promptKorean.keyText === "E", `"${promptKorean.promptText}"`);
     // The development panel goes to a spot in front of any container: a trunk and a cabinet.
     await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
     await page.keyboard.press("F2");
@@ -2194,7 +2195,18 @@ try {
         window: window.__game.ui.window,
         notes: [...document.querySelectorAll("#death-notes [data-note]")].map((note) => note.textContent),
         bagShown: window.__game.hud.compass.bagShown,
+        bagBeyond: window.__game.hud.compass.bagBeyond,
+        heading: window.__game.hud.compass.heading,
         markHidden: document.querySelector("#hud-compass-bag").hidden,
+        markText: document.querySelector("#hud-compass-bag .hud-distance").textContent,
+        // Whether the whole mark lies within the compass strip, and which of its arrows show.
+        markInside: (() => {
+          const mark = document.querySelector("#hud-compass-bag").getBoundingClientRect();
+          const strip = document.querySelector("#hud-compass").getBoundingClientRect();
+          // Under the strip, not on it, and within its width.
+          return mark.width > 0 && mark.left >= strip.left - 1 && mark.right <= strip.right + 1 && mark.top >= strip.bottom - 1;
+        })(),
+        markArrows: [...document.querySelectorAll("#hud-compass-bag .hud-arrow")].map((arrow) => !arrow.hidden),
         target: window.__game.player.interaction,
         promptText: document.querySelector("#hud-prompt").textContent,
         repair: { ...window.__game.repair },
@@ -2242,6 +2254,26 @@ try {
     await settle();
     const outside = await bagNowDead();
     await page.screenshot({ path: join(outDir, "dropped-bag.png") });
+    // Turning round, the bag is behind: its mark must still be there.
+    await page.mouse.move(640, 360);
+    await page.mouse.down();
+    for (let step = 1; step <= 60; step += 1) {
+      await page.mouse.move(640 + step * 40, 360);
+      await settle();
+      const heading = await page.evaluate(() => window.__game.hud.compass.heading);
+      if (Math.abs(heading - 180) < 25) {
+        break;
+      }
+    }
+    await page.mouse.up();
+    await settle();
+    const turnedAway = await bagNowDead();
+    await page.screenshot({ path: join(outDir, "dropped-bag-behind.png") });
+    // Back to the start, facing north exactly: the bag is straight ahead again.
+    await page.keyboard.press("F2");
+    await page.locator("#dev-place-start").click();
+    await page.keyboard.press("F2");
+    await settle();
     await page.keyboard.down("KeyW");
     await page.waitForFunction(() => window.__game.hud.prompt === "pickup_bag", undefined, { timeout: 15_000 }).catch(() => {});
     await page.keyboard.up("KeyW");
@@ -2251,7 +2283,16 @@ try {
     await page.waitForFunction(() => window.__game.droppedBag === null, undefined, { timeout: 10_000 }).catch(() => {});
     await settle();
     const recovered = await bagNowDead();
-    check("outside, the compass marks where the bag lies", outside.bagShown && !outside.markHidden && outside.piles.includes("dropped_bag_1"), `shown ${outside.bagShown}`);
+    check(
+      "outside, the compass marks where the bag lies and says how far it is",
+      outside.bagShown && !outside.markHidden && outside.piles.includes("dropped_bag_1") && outside.markText === "19 m" && outside.bagBeyond === 0 && outside.markInside && outside.markArrows.join() === "false,false",
+      `"${outside.markText}", beyond ${outside.bagBeyond}, inside ${outside.markInside}`,
+    );
+    check(
+      "with the back turned to the bag its mark stays on the compass, at the end, with an arrow and the distance",
+      Math.abs(turnedAway.heading - 180) < 60 && turnedAway.bagBeyond !== 0 && !turnedAway.markHidden && turnedAway.markInside && turnedAway.markArrows.filter(Boolean).length === 1 && turnedAway.markText === "19 m",
+      `heading ${turnedAway.heading.toFixed(0)}, beyond ${turnedAway.bagBeyond}, inside ${turnedAway.markInside}, arrows ${turnedAway.markArrows.join()}`,
+    );
     check(
       "at the bag E gives everything back, and the bag and its mark are gone",
       atBag.promptText === "E Recover your bag" && atBag.target === "dropped_bag_1" && recovered.bag.slice(0, 2).join() === "scrap 3,water_bottle 1" && recovered.dropped === null && !recovered.bagShown && recovered.markHidden,
@@ -2274,7 +2315,7 @@ try {
     const secondBag = await goOn();
     check(
       "a second death loses the bag left by the first, and the window says so beforehand",
-      firstBag.dropped?.zone === "dry_riverbed" && secondAsk.notes.join("|") === "가방은 쓰러진 자리에 남습니다. 가서 주우면 되찾습니다.|전에 떨어뜨린 가방은 사라집니다." && secondBag.dropped?.zone === "shelter" && secondBag.dropped.items.join() === "tape 1" && secondBag.day === 3,
+      firstBag.dropped?.zone === "dry_riverbed" && secondAsk.notes.join("|") === "가방은 쓰러진 자리에 남아 있습니다. 그곳으로 돌아가 주우면 되찾을 수 있습니다.|전에 떨어뜨린 가방은 사라집니다." && secondBag.dropped?.zone === "shelter" && secondBag.dropped.items.join() === "tape 1" && secondBag.day === 3,
       `${firstBag.dropped?.items.join()} in ${firstBag.dropped?.zone} -> ${secondBag.dropped?.items.join()} in ${secondBag.dropped?.zone}`,
     );
     check("what has gone into the door is not lost by dying", secondBag.repair.scrap === 14 && secondBag.repair.cloth === 7 && secondBag.repair.tape === 2, JSON.stringify(secondBag.repair));
@@ -2358,7 +2399,11 @@ try {
     const bagClosed = await pauseNow();
     check("Escape with the bag open closes the bag and does not pause", !bagClosed.paused && bagClosed.window === null);
     // Looking away from the page pauses by itself.
-    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    // Here, and only here, the game may pause itself when the page is left (see STAY_AWAKE above).
+    await page.evaluate(() => {
+      window.__leesideStayAwake = false;
+      window.dispatchEvent(new Event("blur"));
+    });
     await page.waitForFunction(() => window.__game.paused && window.__game.ui.window === "pause", undefined, { timeout: 5_000 }).catch(() => {});
     const leftPage = await pauseNow();
     await page.keyboard.press("Enter");
@@ -2444,7 +2489,7 @@ try {
       await page.waitForTimeout(200);
       const korean = await settingsNow();
       const titleKorean = await page.locator("#title-screen").innerText();
-      check("choosing a language changes the screen text at once", korean.language === "ko" && korean.title === "설정" && korean.rows[0] === "마우스 감도" && korean.chosen.includes("한국어") && titleKorean.includes("시작"), `"${korean.title}", "${korean.rows[0]}"`);
+      check("choosing a language changes the screen text at once", korean.language === "ko" && korean.title === "설정" && korean.rows[0] === "마우스 감도" && korean.chosen.includes("한국어") && titleKorean.includes("시작") && titleKorean.includes("바람이 닿지 않는 곳"), `"${korean.title}", "${korean.rows[0]}"`);
       await page.screenshot({ path: join(outDir, "settings-ko.png") });
       await page.goto(url, { waitUntil: "load" });
       await page.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
@@ -2874,7 +2919,8 @@ try {
     await targetPage.goto(gameUrl(query), { waitUntil: "load" });
     await targetPage.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS });
     const panel = targetPage.locator("#debug-overlay");
-    await panel.waitFor({ state: "visible", timeout: 5_000 });
+    // The overlay's code is fetched after the game is ready, which under load has taken longer than five seconds.
+    await panel.waitFor({ state: "visible", timeout: 20_000 });
     await targetPage.waitForFunction(() => document.querySelector("#debug-overlay")?.textContent !== "");
     return {
       text: await panel.innerText(),
@@ -2898,6 +2944,7 @@ try {
   );
 
   const koreanBrowser = await browser.newPage({ locale: "ko-KR" });
+  await koreanBrowser.addInitScript(stayAwake);
   const detected = await overlayTextFor(koreanBrowser, "?debug");
   check("a Korean browser starts in Korean", detected.language === "ko" && detected.text.includes("드로우콜"), `language ${detected.language}`);
   const overridden = await overlayTextFor(koreanBrowser, "?debug&lang=en");

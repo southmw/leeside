@@ -1302,6 +1302,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     }
   });
   const pauseOnLeave = (): void => {
+    // Automated checks run in a browser whose window loses the focus whenever something else
+    // on the machine takes it (the screen locking is enough); a game that paused itself then
+    // would stall them at random. They set this mark and take it away where pausing is checked.
+    if (import.meta.env.DEV && (window as { __leesideStayAwake?: boolean }).__leesideStayAwake) {
+      return;
+    }
     const situation = { playing: playing && !bench, centreWindowOpen: ui.centreWindowId !== null, travelling: travel !== undefined || tallyDue !== undefined, paused };
     if (shouldPauseOnLeave(situation)) {
       pause();
@@ -1657,9 +1663,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         const mark = hud.setCompass(
           heading,
           shelterAt ? bearingTo(drawnAt.x, drawnAt.z, shelterAt[0], shelterAt[1]) : null,
-          droppedBagAt ? bearingTo(drawnAt.x, drawnAt.z, droppedBagAt[0], droppedBagAt[1]) : null,
+          droppedBagAt
+            ? { bearing: bearingTo(drawnAt.x, drawnAt.z, droppedBagAt[0], droppedBagAt[1]), metres: Math.hypot(droppedBagAt[0] - drawnAt.x, droppedBagAt[1] - drawnAt.z) }
+            : null,
         );
         debug.hud.compass.bagShown = droppedBagAt !== null;
+        debug.hud.compass.bagBeyond = mark.bag?.beyond ?? 0;
         debug.hud.compass.shelterShown = shelterAt !== null;
         debug.hud.compass.heading = heading;
         debug.hud.compass.shelterOffset = mark.offset;
