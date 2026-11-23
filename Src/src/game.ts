@@ -37,6 +37,7 @@ import {
 import { isItemId, ITEM_IDS } from "./data/items";
 import { broughtBack, countItems, restAtShelter, type ReturnTally } from "./gameplay/expedition";
 import { useRefusal } from "./gameplay/itemUse";
+import { revealAfterStorm, shortfall, stormJustPassed } from "./gameplay/reveal";
 import { createRepair, deliverMaterials, isRepairDone, REPAIR_MATERIALS, repairRows, resetRepair } from "./gameplay/repair";
 import { createTallyScreen } from "./ui/tallyScreen";
 import { clearQuickSlots, createQuickSlots, createQuickUseSystem } from "./gameplay/quickSlots";
@@ -86,7 +87,7 @@ import { stormWallAt } from "./render/stormWall";
 import { createCharacterMesh, createTestScene } from "./render/testScene";
 import { buildingAt, yawFromDegrees } from "./world/building";
 import { numberParam, resolveStart, type StartPoint, zonePlaces } from "./world/startPoint";
-import { heightAt } from "./world/terrain";
+import { createHeightfield, heightAt, type Heightfield } from "./world/terrain";
 import { PROP_SET_IDS, PROP_SETS, type PropSet, type PropSetId, propModelFor, propModelUrls, propSetId } from "./world/propModels";
 import type { ZoneDefinition } from "./world/zoneDefinition";
 import { type LoadedZone, loadZone } from "./world/zoneLoader";
@@ -124,6 +125,8 @@ const DEATH_CAMERA_SECONDS = 1;
 
 /** Mixed into the game's seed for the containers' contents, so they have rolls of their own. */
 const LOOT_SEED_SALT = 0x9e3779b9;
+/** Mixed into the game's seed for what each storm uncovers. */
+const REVEAL_SEED_SALT = 0xc2b2ae35;
 /** Mixed in once more for each zone after the first, so no two zones are filled alike. */
 const ZONE_SEED_STEP = 0x85ebca6b;
 
@@ -586,6 +589,57 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     tape: repair.tape,
     tapeNeed: REPAIR_NEEDS.tape,
   });
+  // What a storm uncovers (prototype design 4.2): when one has passed, materials lie at four
+  // of the riverbed's spots, the ones the repair is short of first. They are piles like the
+  // ones thrown out, laid in the zone's state if the zone is not the one in the world.
+  const terrains = new Map<string, Heightfield>();
+  const terrainOf = (definition: ZoneDefinition): Heightfield => {
+    if (definition.id === zoneDefinition.id) {
+      return zone.terrain;
+    }
+    let terrain = terrains.get(definition.id);
+    if (!terrain) {
+      terrain = createHeightfield(definition.terrain.samples, definition.size, definition.terrain.heights);
+      terrains.set(definition.id, terrain);
+    }
+    return terrain;
+  };
+  let stormsPassed = 0;
+  let lastWeatherPhase = latestWeather.phase;
+  const revealThings = (): void => {
+    stormsPassed += 1;
+    debug.reveals.storms = stormsPassed;
+    debug.reveals.last = [];
+    // Counted once for all zones, so that two zones with spots do not both fill the same gap.
+    const short = shortfall(repair, player.inventory);
+    ZONE_IDS.forEach((id, zoneIndex) => {
+      const definition = zones[id];
+      const seed = (gameSeed ^ REVEAL_SEED_SALT ^ Math.imul(stormsPassed, 0x27d4eb2f) ^ Math.imul(zoneIndex, ZONE_SEED_STEP)) >>> 0;
+      const uncovered = revealAfterStorm(definition.revealSpots.length, short, seed).flatMap((reveal, index) => {
+        const spot = definition.revealSpots[reveal.spot];
+        if (!spot) {
+          return [];
+        }
+        debug.reveals.last.push(`${reveal.item} ${spot[0]},${spot[1]}`);
+        return [
+          {
+            id: `reveal_${stormsPassed}_${index + 1}`,
+            x: spot[0],
+            y: heightAt(terrainOf(definition), spot[0], spot[1]),
+            z: spot[1],
+            rotationY: 0,
+            items: [{ item: reveal.item, count: 1 }],
+          },
+        ];
+      });
+      if (id === zoneDefinition.id) {
+        putPiles(world, uncovered);
+        showPiles();
+      } else {
+        stateOf(id).piles.push(...uncovered);
+      }
+    });
+  };
   /** Set while the tally of a return to the shelter is up. Game time stands still meanwhile. */
   let tally: ReturnTally | undefined;
   /**
@@ -1008,6 +1062,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     outingStart = countItems(player.inventory);
     resetRepair(repair);
     showRepair();
+    stormsPassed = 0;
+    debug.reveals.storms = 0;
+    debug.reveals.last = [];
     clearQuickSlots(player.quickSlots);
     clearPiles();
     Object.assign(player.input, createEmptyActions());
@@ -1265,6 +1322,12 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         benchReading = benchWeather(bench.recorder.progress, benchSeconds);
       }
       showWeather();
+      // A storm that has passed leaves things uncovered: also one that ended while the night
+      // was skipped, or that a development tool called off.
+      if (playing && !bench && stormJustPassed(lastWeatherPhase, latestWeather.phase)) {
+        revealThings();
+      }
+      lastWeatherPhase = latestWeather.phase;
       // The storm hurts in game time: not behind the title, nor while the clock is stopped.
       if (playing && !bench && !tally) {
         exposureSystem(dt * clock.scale);

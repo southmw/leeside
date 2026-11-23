@@ -34,6 +34,9 @@ const MAX_TRIES_PER_ITEM = 30;
 
 type ScatterDefinition = ZoneDefinition["scatter"][number];
 
+/** Rocks keep this far from a spot where a storm may uncover something, in metres. */
+export const REVEAL_SPOT_CLEARANCE = 1.5;
+
 /** A circle to keep clear. */
 interface Clearance {
   x: number;
@@ -58,6 +61,8 @@ function clearances(zone: ZoneDefinition, set: PropSetId): Clearance[] {
         ? [{ x: container.position[0], z: container.position[1], radius: CRATE_RADIUS + CRATE_MARGIN }]
         : [],
     ),
+    // What a storm uncovers must be reachable, not inside a rock.
+    ...zone.revealSpots.map(([x, z]) => ({ x, z, radius: REVEAL_SPOT_CLEARANCE })),
     { x: zone.spawn.position[0], z: zone.spawn.position[1], radius: START_CLEARANCE },
   ];
 }

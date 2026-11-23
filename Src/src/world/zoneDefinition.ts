@@ -165,6 +165,8 @@ export const zoneDefinitionSchema = z
     props: z.array(propSchema).default([]),
     exits: z.array(exitSchema).default([]),
     entries: z.array(entrySchema).default([]),
+    /** Where a storm that has passed may leave something uncovered (gameplay/reveal.ts). */
+    revealSpots: z.array(positionSchema).default([]),
     interior: interiorSchema.optional(),
     scatter: z.array(scatterSchema).default([]),
     containers: z.array(containerSchema).default([]),
@@ -201,6 +203,12 @@ export const zoneDefinitionSchema = z
         }
       });
     }
+
+    zone.revealSpots.forEach((spot, index) => {
+      if (!inside(spot)) {
+        issue(["revealSpots", index], `is outside the zone (0 to ${zone.size})`);
+      }
+    });
 
     zone.buildings.forEach((building, index) => {
       const [width, depth] = building.size;

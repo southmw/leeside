@@ -30,9 +30,14 @@ function smoothstep(from: number, to: number, value: number): number {
   return t * t * (3 - 2 * t);
 }
 
+/** How far east the middle of the river channel runs at a point `z` metres south. */
+export function riverChannelCentre(z: number): number {
+  return CHANNEL_CENTRE_X + CHANNEL_MEANDER * Math.sin(z / CHANNEL_MEANDER_LENGTH);
+}
+
 /** Height of the dry riverbed's terrain at a point, in metres. */
 export function dryRiverbedHeight(x: number, z: number): number {
-  const centre = CHANNEL_CENTRE_X + CHANNEL_MEANDER * Math.sin(z / CHANNEL_MEANDER_LENGTH);
+  const centre = riverChannelCentre(z);
   const distance = Math.abs(x - centre);
   // 1 on the plain, 0 on the channel floor, in between on the banks.
   const outOfChannel = smoothstep(CHANNEL_HALF_WIDTH, CHANNEL_HALF_WIDTH + BANK_WIDTH, distance);

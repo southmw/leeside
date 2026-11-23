@@ -1,5 +1,5 @@
 import { parseZoneDefinition, type ZoneDefinition } from "../zoneDefinition";
-import { DRY_RIVERBED_SAMPLES, DRY_RIVERBED_SIZE, generateDryRiverbedHeights } from "./dryRiverbedTerrain";
+import { DRY_RIVERBED_SAMPLES, DRY_RIVERBED_SIZE, generateDryRiverbedHeights, riverChannelCentre } from "./dryRiverbedTerrain";
 
 /**
  * The dry riverbed, the prototype's one outdoor zone, laid out as in prototype design 5.2.
@@ -82,6 +82,16 @@ const exits = [
 // Coming up out of the shelter: beside the hatch, facing house A's door, the hatch behind.
 const entries = [{ id: "from_shelter", position: [282.5, 281], facing: 90 }];
 
+/**
+ * The twelve spots where a storm that has passed may leave a material uncovered (prototype
+ * design 4.2): down the river channel 50 m apart, each a little to one side of its middle.
+ */
+const revealSpots = Array.from({ length: 12 }, (_, index) => {
+  const south = 85 + index * 50;
+  const side = [-14, 9, -4, 16, -11, 5][index % 6] ?? 0;
+  return [Math.round(riverChannelCentre(south) + side), south];
+});
+
 /** The ground is levelled under each building, a little beyond its corners. */
 const pads = buildings.map(({ position, size }) => ({
   x: position[0] ?? 0,
@@ -100,6 +110,7 @@ const definition = {
   props,
   exits,
   entries,
+  revealSpots,
   scatter: [{ id: "rocks", kind: "rock", count: 1100, seed: 20261116 }],
   containers,
 };

@@ -5,6 +5,8 @@ import { isInsideBuilding } from "../../src/world/building";
 import { exitBox, EXIT_LOOKS, interiorShell, interiorShelterZone } from "../../src/world/interior";
 import { isWithinShelterZone } from "../../src/gameplay/shelter";
 import { parseZoneDefinition } from "../../src/world/zoneDefinition";
+import { REVEAL_SPOT_CLEARANCE, scatterItems } from "../../src/world/scatter";
+import { dryRiverbedHeight } from "../../src/world/zones/dryRiverbedTerrain";
 import { checkZoneLinks, isZoneId, loadZones, ZONE_IDS } from "../../src/world/zones";
 
 const zones = loadZones();
@@ -68,6 +70,50 @@ describe("the way between the riverbed and the shelter", () => {
     // Facing east, the hatch lies to the west: not in view, so not at once a target again.
     expect(arrival.facing).toBe(90);
     expect(hatch.position[0]).toBeLessThan(arrival.position[0]);
+  });
+});
+
+describe("the spots where a storm uncovers things", () => {
+  const riverbed = zones.dry_riverbed;
+
+  it("are twelve, down the floor of the river channel", () => {
+    expect(riverbed.revealSpots).toHaveLength(12);
+    expect(zones.shelter.revealSpots).toEqual([]);
+    for (const [x, z] of riverbed.revealSpots) {
+      // The channel's floor lies about 2.8 m below the plain.
+      expect(dryRiverbedHeight(x, z)).toBeLessThan(1);
+    }
+    const souths = riverbed.revealSpots.map((spot) => spot[1]);
+    expect(Math.min(...souths)).toBeGreaterThan(40);
+    expect(Math.max(...souths)).toBeLessThan(riverbed.size - 40);
+  });
+
+  it("are clear of the props, the buildings and the start, and of each other", () => {
+    for (const [x, z] of riverbed.revealSpots) {
+      for (const thing of [...riverbed.props, ...riverbed.buildings]) {
+        expect(Math.hypot(x - thing.position[0], z - thing.position[1])).toBeGreaterThan(8);
+      }
+      expect(Math.hypot(x - riverbed.spawn.position[0], z - riverbed.spawn.position[1])).toBeGreaterThan(8);
+    }
+    riverbed.revealSpots.forEach((one, index) => {
+      for (const other of riverbed.revealSpots.slice(index + 1)) {
+        expect(Math.hypot(one[0] - other[0], one[1] - other[1])).toBeGreaterThan(30);
+      }
+    });
+  });
+
+  it("are kept clear by the rocks", () => {
+    const rocks = riverbed.scatter.flatMap((entry) => scatterItems(riverbed, entry));
+    for (const [x, z] of riverbed.revealSpots) {
+      for (const rock of rocks) {
+        expect(Math.hypot(x - rock.x, z - rock.z)).toBeGreaterThanOrEqual(REVEAL_SPOT_CLEARANCE + rock.size);
+      }
+    }
+  });
+
+  it("must lie inside the zone", () => {
+    const outside = parseZoneDefinition({ id: "room", nameKey: "zone.room.name", size: 16, terrain: { samples: 2, heights: [0, 0, 0, 0] }, spawn: { position: [8, 8], facing: 0 }, revealSpots: [[8, 99]] });
+    expect(outside.ok).toBe(false);
   });
 });
 

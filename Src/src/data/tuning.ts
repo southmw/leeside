@@ -188,5 +188,8 @@ export const PILE_MERGE_DISTANCE = 1;
 export const SEARCH_SECONDS = 1.5;
 /** What the shelter's door takes to repair (prototype design 2.1). Containers are sure to hold this much. */
 export const REPAIR_NEEDS = { scrap: 15, cloth: 8, tape: 3 } as const;
+/** After a storm (prototype design 4.2): how many things it uncovers, and the weights they are drawn by when the repair is short of nothing. */
+export const REVEAL_COUNT = 4;
+export const REVEAL_WEIGHTS = { scrap: 60, cloth: 25, tape: 15 } as const;
 /** Of the amounts that are sure to be found, no container holds more than this many of one material. */
 export const GUARANTEED_PER_CONTAINER = 3;

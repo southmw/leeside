@@ -188,6 +188,8 @@ export interface GameDebug {
    * in place of another.
    */
   travel: { state: "none" | "closing" | "opening"; count: number };
+  /** What storms have uncovered: how many storms have passed in this game, and what the last one left where ("scrap 346,85"). */
+  reveals: { storms: number; last: string[] };
   /** The tally of a return to the shelter while it is up (what was brought in, as "scrap 2"), or null. */
   tally: { day: number; brought: string[]; healthRestored: number; delivered: string[] } | null;
   /** The repair of the shelter's door: how many of each material are in, and whether it is done. */
@@ -236,6 +238,7 @@ export function installDebugApi(language: Language): GameDebug {
     piles: [],
     travel: { state: "none", count: 0 },
     tally: null,
+    reveals: { storms: 0, last: [] },
     repair: { scrap: 0, cloth: 0, tape: 0, done: false },
     shelterZonesShown: false,
     moveSpeed: 0,

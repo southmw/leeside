@@ -1886,7 +1886,7 @@ try {
     await page.keyboard.press("F2");
     check(
       "after five trips to the shelter and back the counts of geometries, textures, entities and bodies have not grown",
-      JSON.stringify(afterTrips.counts) === JSON.stringify(baseline.counts) && afterTrips.travel.count === baseline.travel.count + 10 && afterTrips.piles.length === 1,
+      JSON.stringify(afterTrips.counts) === JSON.stringify(baseline.counts) && afterTrips.travel.count === baseline.travel.count + 10 && afterTrips.piles.length === baseline.piles.length && baseline.piles.length === 5,
       `${JSON.stringify(baseline.counts)} -> ${JSON.stringify(afterTrips.counts)}`,
     );
     // The panel's places are the riverbed's: from the shelter they lead outside.
@@ -2104,6 +2104,68 @@ try {
     await settle();
     const quitFrom = await zoneNow();
     check("quitting from the shelter goes back to the title in the riverbed, at the start", quitFrom.phase === "title" && quitFrom.zone === "dry_riverbed" && Math.abs(quitFrom.x - 360) < 1 && Math.abs(quitFrom.z - 619) < 1 && quitFrom.day === 1, `${quitFrom.phase}, ${quitFrom.zone} at ${quitFrom.x.toFixed(0)}, ${quitFrom.z.toFixed(0)}`);
+    }
+
+    {
+    // After a storm: materials lie uncovered at four of the riverbed's spots, the ones the
+    // repair is short of, the same for the same seed, also while the player is in the shelter.
+    const revealNow = () =>
+      page.evaluate(() => ({
+        reveals: { storms: window.__game.reveals.storms, last: [...window.__game.reveals.last] },
+        piles: window.__game.piles.map((pile) => `${pile.id} ${pile.items.join("+")} ${pile.x},${pile.z}`),
+        heights: window.__game.piles.map((pile) => pile.y),
+        zone: window.__game.zone.id,
+        weather: window.__game.weather.phase,
+        target: window.__game.player.interaction,
+        promptText: document.querySelector("#hud-prompt").textContent,
+        bag: window.__game.player.bag.map((slot) => (slot ? `${slot.item} ${slot.count}` : "-")),
+      }));
+    /** Opens the game in a storm and calls the storm off with the panel. */
+    const afterStorm = async (query) => {
+      await page.goto(gameUrl(`${query}&storm=now`), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded && window.__game.weather.phase === "storm", undefined, { timeout: READY_TIMEOUT_MS });
+      await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+      const before = await revealNow();
+      await page.keyboard.press("F2");
+      await page.locator("#dev-storm-calm").click();
+      await page.waitForFunction(() => window.__game.reveals.storms === 1, undefined, { timeout: 10_000 }).catch(() => {});
+      await settle();
+      return { before, after: await revealNow() };
+    };
+    const first = await afterStorm("lang=en&seed=1");
+    const items = first.after.reveals.last.map((entry) => entry.split(" ")[0]);
+    check(
+      "when a storm has passed, four materials lie uncovered in the riverbed: the ones the repair is short of",
+      first.before.piles.length === 0 && first.before.reveals.storms === 0 && first.after.piles.length === 4 && first.after.piles.every((pile) => pile.startsWith("reveal_1_")) && items.join() === "scrap,cloth,tape,scrap" && new Set(first.after.reveals.last.map((entry) => entry.split(" ")[1])).size === 4,
+      first.after.reveals.last.join(" | "),
+    );
+    check("they lie on the floor of the river channel", first.after.heights.every((height) => height < 1.5 && height > -1.5), first.after.heights.map((height) => height.toFixed(2)).join());
+    await page.keyboard.press("F2");
+    const again = await afterStorm("lang=en&seed=1");
+    await page.keyboard.press("F2");
+    const other = await afterStorm("lang=en&seed=2");
+    await page.keyboard.press("F2");
+    check("the same seed uncovers the same things in the same places, another seed elsewhere", again.after.reveals.last.join() === first.after.reveals.last.join() && other.after.reveals.last.join() !== first.after.reveals.last.join(), other.after.reveals.last.join(" | "));
+    // Standing at one of the spots: it is picked up like anything else on the ground.
+    const [what, where] = (first.after.reveals.last[0] ?? "scrap 0,0").split(" ");
+    await afterStorm(`lang=en&seed=1&at=${where}`);
+    await page.keyboard.press("F2");
+    await page.waitForFunction(() => window.__game.hud.prompt === "pickup", undefined, { timeout: 10_000 }).catch(() => {});
+    const atSpot = await revealNow();
+    await page.keyboard.press("KeyE");
+    await page.waitForFunction(() => window.__game.piles.length === 3, undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    const picked = await revealNow();
+    check("what a storm uncovered is picked up with E", atSpot.promptText === "E Pick up" && atSpot.target === "reveal_1_1" && picked.bag[0] === `${what} 1` && picked.piles.length === 3, `"${atSpot.promptText}", bag ${picked.bag[0]}`);
+    // In the shelter while the storm passes: the things are outside when one comes up.
+    const inShelter = await afterStorm("lang=en&seed=1&zone=shelter");
+    await page.locator("#dev-zone-dry_riverbed").click();
+    await page.waitForFunction(() => window.__game.zone.id === "dry_riverbed", undefined, { timeout: 10_000 }).catch(() => {});
+    await settle();
+    await page.keyboard.press("F2");
+    const cameUp = await revealNow();
+    check("a storm that passes while one is in the shelter leaves its things in the riverbed all the same", inShelter.after.zone === "shelter" && inShelter.after.piles.length === 0 && inShelter.after.reveals.last.join() === first.after.reveals.last.join() && cameUp.piles.length === 4, `${inShelter.after.piles.length} in the shelter, ${cameUp.piles.length} outside`);
+    await page.screenshot({ path: join(outDir, "reveal.png") });
     }
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.
