@@ -48,6 +48,7 @@ export function createRecordScreen(ui: Ui, i18n: I18n, options: RecordScreenOpti
         ["record.returns", String(record.returns)],
         ["record.deaths", causes ? t("record.deaths_value", { count: record.deaths.length, causes }) : "0"],
         ["record.repair", t("record.repair_value", { ...record.repair, done: yesNo(record.repairDone) })],
+        ["record.load", t("record.load_value", { seconds: (record.loadMs / 1000).toFixed(1) })],
         ["record.avg_fps", String(record.performance.avgFps)],
         ["record.low1_fps", String(record.performance.low1Fps)],
         ["record.long_frames", t("record.long_frames_value", { long: record.performance.longFrames, veryLong: record.performance.veryLongFrames })],

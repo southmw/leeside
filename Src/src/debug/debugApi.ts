@@ -41,6 +41,8 @@ export interface DebugStats {
 export interface GameDebug {
   /** True once the first frame has been rendered. */
   ready: boolean;
+  /** Milliseconds from opening the page until the first frame was drawn, which is when the game can be started. */
+  loadMs: number;
   /** Whether the title screen is up, the player is in control, or a performance measurement is running. */
   phase: "title" | "playing" | "bench";
   /** The player's settings as the game has applied them (app/settings.ts). */
@@ -230,6 +232,7 @@ declare global {
 export function installDebugApi(language: Language): GameDebug {
   const debug: GameDebug = {
     ready: false,
+    loadMs: 0,
     phase: "title",
     paused: false,
     settings: { mouseSensitivity: 1, invertY: false, volume: 0.8, quality: "high", showFps: false, language: null },

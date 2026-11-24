@@ -2796,6 +2796,7 @@ try {
         rows: Object.fromEntries([...document.querySelectorAll("#record-rows .record-value")].map((row) => [row.dataset.row, row.textContent])),
         buttons: [...document.querySelectorAll('[data-window="record"] > .ui-button')].map((button) => button.textContent),
         copied: document.querySelector("#record-copied")?.dataset.result ?? "",
+        loadMs: window.__game.loadMs,
         paused: window.__game.paused,
       }));
     const openGame = async (query) => {
@@ -2852,6 +2853,11 @@ try {
         shown.title === "Play record" && shown.paused && /^\d+:\d\d$/.test(shown.rows["record.time"] ?? "") && shown.rows["record.days"] === "3" && shown.rows["record.tutorial"] === "no" && shown.rows["record.returns"] === "1" &&
           shown.rows["record.deaths"] === "1 (Storm)" && shown.rows["record.repair"] === "scrap 0, cloth 0, tape 1 - done: no" && shown.rows["record.quality"] === "High" && shown.buttons.join() === "Back,Copy the record",
         JSON.stringify(shown.rows),
+      );
+      check(
+        "the game notes how long it took to load, and the record keeps it",
+        shown.loadMs > 0 && shown.loadMs < READY_TIMEOUT_MS && shown.record.loadMs === shown.loadMs && /^\d+\.\d s$/.test(shown.rows["record.load"] ?? ""),
+        `${shown.loadMs} ms, "${shown.rows["record.load"]}"`,
       );
       check(
         "the record sums up how the game ran on this machine",

@@ -44,6 +44,8 @@ export interface PlayRecord {
   startedAt: string;
   userAgent: string;
   language: string;
+  /** Milliseconds from opening the page until the game could be started; 0 if not known. */
+  loadMs: number;
   playSeconds: number;
   day: number;
   tutorialDone: boolean;
@@ -62,6 +64,7 @@ export function createPlayRecord(startedAt: string, userAgent: string, language:
     startedAt,
     userAgent,
     language,
+    loadMs: 0,
     playSeconds: 0,
     day: 1,
     tutorialDone: false,

@@ -156,6 +156,8 @@
   "record.deaths_value": "{count} ({causes})",
   "record.repair": "문 수리",
   "record.repair_value": "고철 {scrap}, 천 {cloth}, 테이프 {tape} - 완료: {done}",
+  "record.load": "로딩 시간",
+  "record.load_value": "{seconds}초",
   "record.avg_fps": "평균 FPS",
   "record.low1_fps": "하위 1% FPS",
   "record.long_frames": "긴 프레임",

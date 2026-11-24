@@ -1235,6 +1235,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     record.playSeconds = Math.round(playSeconds);
     record.day = readClock(clock).day;
     record.language = i18n.language;
+    record.loadMs = debug.loadMs;
     record.performance = { ...recordFrames.summary(), quality: settingsNow.quality, gpu: readDevice(renderer).gpu, buffer: `${canvas.width}x${canvas.height}` };
     const kept = keepRecord(context.recordStorage, record);
     recordSaveIn = RECORD_SAVE_SECONDS;
@@ -1826,6 +1827,10 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       debug.ui.windows = ui.openWindowIds;
       debug.ui.selectedButton = ui.selectedButton;
       debug.phase = bench ? "bench" : playing ? "playing" : "title";
+      // The first frame drawn is when the game can be started: how long the visitor waited for it.
+      if (!debug.ready) {
+        debug.loadMs = Math.round(performance.now());
+      }
       debug.ready = true;
       firstFrameDrawn();
     },

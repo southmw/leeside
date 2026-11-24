@@ -156,6 +156,8 @@
   "record.deaths_value": "{count} ({causes})",
   "record.repair": "Door repair",
   "record.repair_value": "scrap {scrap}, cloth {cloth}, tape {tape} - done: {done}",
+  "record.load": "Time to load",
+  "record.load_value": "{seconds} s",
   "record.avg_fps": "Average FPS",
   "record.low1_fps": "Lowest 1% FPS",
   "record.long_frames": "Long frames",
