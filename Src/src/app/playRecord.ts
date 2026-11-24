@@ -1,7 +1,6 @@
 /**
  * The play record (prototype design 2.6): what happened in a game and how well it ran, kept
- * on the machine so that whoever played can hand it over with their feedback. Nothing is
- * sent anywhere. This is the plain logic: the record, the events that change it, the summary
+ * on the machine and sent as the game goes (app/recordUpload.ts). This is the plain logic: the record, the events that change it, the summary
  * of frame times, and the list kept in the browser.
  */
 
@@ -40,6 +39,8 @@ export interface PerformanceRecord {
 /** One game, from START until it is quit or the page is closed. Plain data. */
 export interface PlayRecord {
   version: 1;
+  /** The game's number: random, made anew for every game (records kept before there was one have none). */
+  id: string;
   /** When the game began, as an ISO date. */
   startedAt: string;
   userAgent: string;
@@ -58,9 +59,10 @@ export interface PlayRecord {
   performance: PerformanceRecord;
 }
 
-export function createPlayRecord(startedAt: string, userAgent: string, language: string): PlayRecord {
+export function createPlayRecord(id: string, startedAt: string, userAgent: string, language: string): PlayRecord {
   return {
     version: 1,
+    id,
     startedAt,
     userAgent,
     language,
@@ -157,7 +159,9 @@ export class FrameSummary {
     const round = (value: number): number => Math.round(value * 10) / 10;
     return {
       avgFps: round(1000 / (this.totalMs / this.frames)),
-      low1Fps: round(1000 / slowMs),
+      // Times are counted up to a longest one, so on a machine slower than that the figure
+      // would come out above the average: the slowest frames are never faster than the average.
+      low1Fps: Math.min(round(1000 / slowMs), round(1000 / (this.totalMs / this.frames))),
       longFrames: this.long,
       veryLongFrames: this.veryLong,
       frames: this.frames,

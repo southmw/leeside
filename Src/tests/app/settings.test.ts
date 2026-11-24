@@ -17,7 +17,7 @@ const memory = (initial: Record<string, string> = {}) => {
 
 describe("the default settings", () => {
   it("are those of the design: middle sensitivity, 80% volume, high quality, the browser's language", () => {
-    expect(DEFAULT_SETTINGS).toEqual({ mouseSensitivity: 1, invertY: false, volume: 0.8, quality: "high", showFps: false, language: null });
+    expect(DEFAULT_SETTINGS).toEqual({ mouseSensitivity: 1, invertY: false, volume: 0.8, quality: "high", showFps: false, language: null, sendRecords: true });
   });
 });
 
@@ -31,7 +31,7 @@ describe("reading settings back", () => {
   });
 
   it("gives back what was written", () => {
-    const settings = { mouseSensitivity: 1.6, invertY: true, volume: 0.25, quality: "low", showFps: true, language: "ko" } as const;
+    const settings = { mouseSensitivity: 1.6, invertY: true, volume: 0.25, quality: "low", showFps: true, language: "ko", sendRecords: false } as const;
     expect(parseSettings(serializeSettings(settings))).toEqual(settings);
   });
 

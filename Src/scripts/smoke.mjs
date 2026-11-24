@@ -2080,7 +2080,8 @@ try {
     // The door is done, so the end screen follows the tally (it has checks of its own further down): past it.
     await page.waitForFunction(() => window.__game.ui.window === "end", undefined, { timeout: 10_000 }).catch(() => {});
     await page.waitForTimeout(300);
-    await page.keyboard.press("Enter");
+    // Escape, not Enter: the first button of the end screen leaves feedback, in a new tab.
+    await page.keyboard.press("Escape");
     await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 10_000 }).catch(() => {});
     await page.keyboard.down("KeyW");
     await page.waitForFunction(() => window.__game.player.interaction === "shelter_door", undefined, { timeout: 10_000 }).catch(() => {});
@@ -2364,7 +2365,7 @@ try {
     const stillPaused = await pauseNow();
     check(
       "Escape pauses: the picture dims and the menu offers to resume, the controls and starting over",
-      !running.paused && justPaused.paused && justPaused.window === "pause" && justPaused.veil && justPaused.title === "Paused" && justPaused.buttons.join() === "Resume,Settings,Controls,Play record,Start over",
+      !running.paused && justPaused.paused && justPaused.window === "pause" && justPaused.veil && justPaused.title === "Paused" && justPaused.buttons.join() === "Resume,Settings,Controls,Play record,Start over,Leave feedback",
       `"${justPaused.title}": ${justPaused.buttons.join(", ")}`,
     );
     check(
@@ -2414,6 +2415,8 @@ try {
     // Starting over asks first, and then goes to the title with the game at its beginning.
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => window.__game.paused, undefined, { timeout: 5_000 }).catch(() => {});
+    // Start over is the last button but one: feedback comes after it.
+    await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__game.ui.window === "restart", undefined, { timeout: 5_000 }).catch(() => {});
@@ -2421,6 +2424,7 @@ try {
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__game.ui.window === "pause", undefined, { timeout: 5_000 }).catch(() => {});
     const declined = await pauseNow();
+    await page.keyboard.press("ArrowUp");
     await page.keyboard.press("ArrowUp");
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__game.ui.window === "restart", undefined, { timeout: 5_000 }).catch(() => {});
@@ -2479,8 +2483,8 @@ try {
       const opened = await settingsNow();
       check(
         "the settings show every item of the design with its default",
-        opened.title === "Settings" && opened.headings.join() === "Controls,Sound,Display,Other" && opened.rows.join() === "Mouse sensitivity,Invert Y,Master volume,Graphics quality,Fullscreen,Show FPS,Language" &&
-          opened.chosen.join() === "Off,High,Off,Off,English" && opened.values.join() === "1.00,80%" && opened.buttons.join() === "Back,Reset to defaults",
+        opened.title === "Settings" && opened.headings.join() === "Controls,Sound,Display,Other" && opened.rows.join() === "Mouse sensitivity,Invert Y,Master volume,Graphics quality,Fullscreen,Show FPS,Language,Send play records" &&
+          opened.chosen.join() === "Off,High,Off,Off,English,On" && opened.values.join() === "1.00,80%" && opened.buttons.join() === "Back,Reset to defaults",
         `${opened.rows.length} rows, chosen ${opened.chosen.join()}, values ${opened.values.join()}`,
       );
       await page.screenshot({ path: join(outDir, "settings.png") });
@@ -2724,7 +2728,8 @@ try {
       await page.waitForFunction(() => window.__game.ui.window === "tally", undefined, { timeout: 10_000 }).catch(() => {});
       await page.keyboard.press("F2");
     };
-    await finishDoor("lang=en&seed=1");
+    // Without the forms for feedback first (`feedback=none`): then the end screen only offers to play on.
+    await finishDoor("lang=en&seed=1&feedback=none");
     const atTally = await endNow();
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => window.__game.ui.window === "end", undefined, { timeout: 10_000 }).catch(() => {});
@@ -2815,6 +2820,13 @@ try {
         began.record?.version === 1 && began.record.returns === 0 && began.record.deaths.length === 0 && !began.record.tutorialDone && began.mine !== null && began.stored[began.stored.length - 1].startedAt === began.record.startedAt,
         `kept ${began.stored.length}`,
       );
+      // The record is sent as the game goes (here only noted: a development build sends nothing).
+      const sentAtStart = await page.evaluate(() => window.__game.uploads);
+      check(
+        "a game that begins sends its record, under a number of its own",
+        sentAtStart.count === 1 && /^[0-9a-f]{12}$/.test(sentAtStart.game) && sentAtStart.game === began.record?.id && sentAtStart.record?.id === sentAtStart.game && sentAtStart.record.returns === 0,
+        `sent ${sentAtStart.count}, game ${sentAtStart.game}`,
+      );
       // A return with a tape for the door, and then a death in the shelter.
       await page.keyboard.press("F2");
       await page.locator("#dev-bag-give-tape").click();
@@ -2837,6 +2849,12 @@ try {
         "the record notes the return, the repair's progress and the death: what of, where and on which day",
         happened.stored.length === began.stored.length && happened.mine?.returns === 1 && happened.mine.repair.tape === 1 && !happened.mine.repairDone && happened.mine.deaths.length === 1 && death.cause === "storm" && death.zone === "shelter" && death.day === 2 && Math.abs(death.east - 8) <= 1,
         JSON.stringify({ returns: happened.mine?.returns, repair: happened.mine?.repair, death }),
+      );
+      const sentLater = await page.evaluate(() => window.__game.uploads);
+      check(
+        "the return and the death are sent too, once each, under the same number",
+        sentLater.count === 3 && sentLater.game === sentAtStart.game && sentLater.record?.returns === 1 && sentLater.record.deaths.length === 1,
+        `sent ${sentLater.count}`,
       );
       // From the pause screen: this game in lines, and a button that copies what is kept.
       await page.keyboard.press("Escape");
@@ -2879,9 +2897,69 @@ try {
       await settle();
       const nextGame = await recordNow();
       check("another game is another record, and the earlier one is kept", nextGame.stored.length === happened.stored.length + 1 && nextGame.stored.some((kept) => kept.startedAt === happened.mine?.startedAt && kept.returns === 1) && nextGame.mine?.returns === 0 && nextGame.mine.language === "ko", `kept ${happened.stored.length} -> ${nextGame.stored.length}`);
+      // Another game has another number. The title says that records are sent; with the
+      // setting off it says they are not, and nothing is sent.
+      const titleRecords = async () => {
+        await page.goto(`${url}?lang=en`, { waitUntil: "load" });
+        await page.locator("#title-start").waitFor({ state: "visible", timeout: READY_TIMEOUT_MS });
+        return page.locator("#title-records").innerText();
+      };
+      const saysSent = await titleRecords();
+      await page.evaluate(() => window.localStorage.setItem("leeside.settings", JSON.stringify({ sendRecords: false })));
+      const saysNotSent = await titleRecords();
+      await openGame("lang=en&seed=1");
+      await settle();
+      const turnedOff = await page.evaluate(() => ({ uploads: window.__game.uploads, record: window.__game.record, setting: window.__game.settings.sendRecords }));
+      check(
+        "another game has another number; the title says records are sent, and with the setting off it says they are not and nothing is",
+        nextGame.record?.id !== happened.mine?.id && /^[0-9a-f]{12}$/.test(nextGame.record?.id ?? "") && saysSent.includes("sent anonymously") && saysNotSent === "Play records are not sent." && turnedOff.setting === false && turnedOff.uploads.count === 0 && turnedOff.record !== null,
+        `"${saysNotSent}", sent ${turnedOff.uploads.count}`,
+      );
     } finally {
-      await page.evaluate(() => window.localStorage.removeItem("leeside.playRecords")).catch(() => {});
+      await page.evaluate(() => {
+        window.localStorage.removeItem("leeside.playRecords");
+        window.localStorage.removeItem("leeside.settings");
+      }).catch(() => {});
     }
+    }
+
+    // An error nothing handles (step 2.27): the error screen comes up over the game, offers to
+    // reload and to copy what happened, and keeps the keys from the game behind it. On a page
+    // of its own, so that the error raised here is not counted among the faults.
+    {
+      const broken = await browser.newPage({ viewport: { width: 1280, height: 720 }, locale: "en-US" });
+      await broken.addInitScript(stayAwake);
+      await broken.goto(gameUrl("lang=ko"), { waitUntil: "load" });
+      await broken.waitForFunction(() => window.__game?.ready === true, undefined, { timeout: READY_TIMEOUT_MS }).catch(() => {});
+      const nothingYet = (await broken.locator("#error-screen").count()) === 0;
+      // The notes a browser makes that are not the game's do not bring it up.
+      await broken.evaluate(() => window.dispatchEvent(new ErrorEvent("error", { message: "ResizeObserver loop completed with undelivered notifications." })));
+      const ignored = (await broken.locator("#error-screen").count()) === 0;
+      await broken.locator("#dev-open").click();
+      await broken.locator("#dev-tool-error").click();
+      const shown = await broken.locator("#error-screen").waitFor({ state: "visible", timeout: 5_000 }).then(() => true, () => false);
+      const said = await broken.locator("#error-screen").innerText().catch(() => "");
+      check(
+        "an unhandled error brings up the error screen, in the game's language",
+        nothingYet && ignored && shown && said.includes("문제가 발생했습니다") && said.includes("Raised from the development panel") && said.includes("새로 고침"),
+        `before ${!nothingYet}, ignored ${ignored}, shown ${shown}`,
+      );
+      // Escape would pause the game, were it to get the key. Down and Enter choose "copy".
+      await broken.keyboard.press("Escape");
+      await broken.keyboard.press("ArrowDown");
+      await broken.keyboard.press("Enter");
+      await broken.waitForFunction(() => document.querySelector("#error-copied")?.dataset.result !== undefined, undefined, { timeout: 5_000 }).catch(() => {});
+      const after = await broken.evaluate(() => ({ paused: window.__game.paused, copied: document.querySelector("#error-copied")?.dataset.result, selected: document.querySelector("#error-screen .ui-button.selected")?.id }));
+      // A second error does not replace the first: that one is the cause.
+      await broken.evaluate(() => window.setTimeout(() => { throw new Error("a later error"); }));
+      await broken.waitForTimeout(300);
+      const still = await broken.locator("#error-message").innerText().catch(() => "");
+      check(
+        "the error screen keeps the keys from the game, copies, and stays on the first error",
+        after.paused === false && ["error.copied", "error.copy_failed"].includes(after.copied) && after.selected === "error-copy" && still.includes("Raised from the development panel") && !still.includes("a later error"),
+        JSON.stringify(after),
+      );
+      await broken.close();
     }
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.

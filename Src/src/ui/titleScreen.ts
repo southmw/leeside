@@ -29,6 +29,7 @@ const css = `
 .title-corner.top-right { top: 1.5em; right: 1.5em; }
 .title-corner.bottom-left { bottom: 1.5em; left: 1.5em; }
 .title-corner.bottom-right { bottom: 1.5em; right: 1.5em; }
+.title-corner.bottom-centre { bottom: 1.5em; left: 50%; transform: translateX(-50%); white-space: nowrap; }
 .title-corner .ui-button { width: auto; margin: 0; padding: 0.35em 0.9em; }
 .title-message { max-width: 30em; font-size: 1.1em; }
 `;
@@ -50,6 +51,8 @@ export interface TitleScreenOptions {
   onCharacter(id: string): void;
   /** Whether the introduction has been played through on this machine: then skipping it is offered. */
   introDone: boolean;
+  /** Whether play records are sent (the player's setting): the title says which. Asked each time the title is drawn. */
+  sendsRecords(): boolean;
 }
 
 export interface TitleScreen {
@@ -168,7 +171,10 @@ export function createTitleScreen(ui: Ui, i18n: I18n, options: TitleScreenOption
 
     const bottomLeft = element("div", "title-corner bottom-left ui-small", t("title.version", { version: options.version }));
     const bottomRight = element("div", "title-corner bottom-right ui-small", t("title.desktop_only"));
-    screen.replaceChildren(topRight, ...middle, bottomLeft, bottomRight);
+    // Said before the game begins, not found out afterwards (prototype design 2.6).
+    const bottomCentre = element("div", "title-corner bottom-centre ui-small", t(options.sendsRecords() ? "title.records_sent" : "title.records_not_sent"));
+    bottomCentre.id = "title-records";
+    screen.replaceChildren(topRight, ...middle, bottomLeft, bottomCentre, bottomRight);
   };
 
   // Enter or Space starts the game and the arrow keys change the character, as long as no

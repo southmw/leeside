@@ -42,7 +42,8 @@ import { createTallyScreen } from "./ui/tallyScreen";
 import { canPause, shouldPauseOnLeave, simulationRuns } from "./app/pause";
 import { QUALITY_PRESETS, type Settings, type SettingsStore } from "./app/settings";
 import { createPauseScreen } from "./ui/pauseScreen";
-import { FEEDBACK_URL } from "./app/links";
+import { feedbackUrlFor, withGameNumber } from "./app/links";
+import { createRecordUploader, GAME_ID_LENGTH, gameIdFrom } from "./app/recordUpload";
 import { createPlayRecord, FrameSummary, keepRecord, type PlayEvent, readRecords, recordEvent, type RecordStorage } from "./app/playRecord";
 import { createRecordScreen } from "./ui/recordScreen";
 import { playSummary } from "./gameplay/summary";
@@ -1000,12 +1001,15 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   };
   // The return (prototype design 2.3): the shelter gives rest at once, the tally says what
   // the outing brought in, and moving on from it is the next morning.
-  // Where feedback is left: not decided yet (app/links.ts). In development `?feedback=address`
-  // stands in for it, so that the buttons can be looked at.
-  const feedbackUrl = FEEDBACK_URL || (import.meta.env.DEV ? (startParams.get("feedback") ?? "") : "");
+  // Where feedback is left: a form for each language (app/links.ts), asked for when a button
+  // is made, because the language can change in the settings. In development
+  // `?feedback=address` stands in for the forms and `?feedback=none` takes them away.
+  const feedbackOverride = import.meta.env.DEV ? (startParams.get("feedback") ?? "") : "";
+  // The form is opened with the game's number filled in, to put the answer beside the record sent.
+  const feedbackUrl = (): string => withGameNumber(feedbackUrlFor(i18n.language, feedbackOverride), recording ? record.id : "");
   // The end (prototype design 2.5): once the door is repaired, the morning after says so,
   // sums the game up and lets the player play on. Once per game.
-  const endScreen = createEndScreen(ui, i18n, feedbackUrl ? { feedbackUrl } : {});
+  const endScreen = createEndScreen(ui, i18n, { feedbackUrl });
   /** Real seconds in play in this game, for the summary. */
   let playSeconds = 0;
   let endShown = false;
@@ -1171,8 +1175,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     endDeath();
     endTravel();
     endTally();
-    // The record of the game that ends here is written a last time; the next START begins another.
-    saveRecord();
+    // The record of the game that ends here is written and sent a last time; the next START begins another.
+    sendRecord();
     recording = false;
     pauseScreen.clear();
     paused = false;
@@ -1223,7 +1227,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   };
   // The play record (prototype design 2.6): what happens in this game and how well it runs,
   // kept in the browser for the player to hand over. A game is from START to quitting.
-  let record = createPlayRecord(new Date().toISOString(), navigator.userAgent, i18n.language);
+  const newGameId = (): string => gameIdFrom(crypto.getRandomValues(new Uint8Array(GAME_ID_LENGTH / 2)));
+  let record = createPlayRecord(newGameId(), new Date().toISOString(), navigator.userAgent, i18n.language);
   let recordFrames = new FrameSummary();
   let recordSaveIn = RECORD_SAVE_SECONDS;
   /** Whether a game is under way whose record is to be kept. */
@@ -1245,16 +1250,52 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     if (recording) {
       recordEvent(record, event, playSeconds, readClock(clock).day);
       saveRecord();
+      queueSend();
     }
   };
   const beginRecord = (): void => {
-    record = createPlayRecord(new Date().toISOString(), navigator.userAgent, i18n.language);
+    record = createPlayRecord(newGameId(), new Date().toISOString(), navigator.userAgent, i18n.language);
     recordFrames = new FrameSummary();
     recording = true;
-    saveRecord();
+    sendRecord();
   };
-  // The page going away is the last chance to write down where the game got to.
-  window.addEventListener("pagehide", saveRecord);
+  // Sending the record (prototype design 2.6): as the game goes, to a form kept for it, unless
+  // the player has turned it off. A development build sends nothing, so that the automated
+  // checks do not fill the form; it only notes what would have gone. Nor does a measurement.
+  const uploader = createRecordUploader({
+    enabled: () => settingsNow.sendRecords && !bench,
+    send: (url, fields) => {
+      debug.uploads = { count: debug.uploads.count + 1, game: record.id, record: { ...record, deaths: record.deaths.map((death) => ({ ...death })) } };
+      if (import.meta.env.PROD) {
+        // A beacon outlives the page, which matters for the last record of a visit. The answer cannot be read (another site's), and is not needed.
+        navigator.sendBeacon(url, new URLSearchParams(fields));
+      }
+    },
+  });
+  function sendRecord(): void {
+    saveRecord();
+    if (recording) {
+      uploader.offer(record);
+    }
+  }
+  // Several things noted in one tick (a return and the repair it brings) go as one record.
+  let sendQueued = false;
+  const queueSend = (): void => {
+    if (!sendQueued) {
+      sendQueued = true;
+      queueMicrotask(() => {
+        sendQueued = false;
+        sendRecord();
+      });
+    }
+  };
+  // The page going away, or out of sight, is the last chance to write down and send where the game got to.
+  window.addEventListener("pagehide", sendRecord);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      sendRecord();
+    }
+  });
   const recordScreen = createRecordScreen(ui, i18n, {
     current: () => {
       saveRecord();
@@ -1329,7 +1370,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   const pauseScreen = createPauseScreen(ui, i18n, {
     openSettings: context.openSettings,
     openRecord: (onBack) => recordScreen.open(onBack),
-    ...(feedbackUrl ? { feedbackUrl } : {}),
+    feedbackUrl,
     onResume: () => {
       paused = false;
       debug.paused = false;

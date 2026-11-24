@@ -14,8 +14,8 @@ const css = `
 `;
 
 export interface EndScreenOptions {
-  /** Where to leave feedback. Without it the button is left out (the address is decided when the prototype is put online). */
-  feedbackUrl?: string;
+  /** Where to leave feedback in the game's language now. Without it, or when it gives "", the button is left out. */
+  feedbackUrl?(): string;
 }
 
 export interface EndScreen {
@@ -71,7 +71,7 @@ export function createEndScreen(ui: Ui, i18n: I18n, options: EndScreenOptions = 
           onKeepPlaying();
         }
       };
-      const { feedbackUrl } = options;
+      const feedbackUrl = options.feedbackUrl?.() ?? "";
       const shown = ui.openWindow({
         id: "end",
         title: i18n.t("end.title"),

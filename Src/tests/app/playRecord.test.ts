@@ -5,7 +5,7 @@ const memory = (initial: Record<string, string> = {}) => {
   const kept = new Map(Object.entries(initial));
   return { kept, getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => void kept.set(key, value) };
 };
-const newRecord = (startedAt = "2026-11-24T09:00:00.000Z") => createPlayRecord(startedAt, "test browser", "ko");
+const newRecord = (startedAt = "2026-11-24T09:00:00.000Z") => createPlayRecord("0123456789ab", startedAt, "test browser", "ko");
 
 describe("a play record", () => {
   it("starts with nothing having happened", () => {
@@ -90,7 +90,8 @@ describe("the summary of frame times", () => {
     }
     expect(frames.summary().frames).toBe(0);
     frames.add(5000);
-    expect(frames.summary()).toMatchObject({ frames: 1, veryLongFrames: 1, low1Fps: 4 });
+    // Times are counted up to a quarter of a second; the slowest frames are still never said to be faster than the average.
+    expect(frames.summary()).toMatchObject({ frames: 1, veryLongFrames: 1, avgFps: 0.2, low1Fps: 0.2 });
   });
 });
 

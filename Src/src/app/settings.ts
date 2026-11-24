@@ -21,6 +21,8 @@ export interface Settings {
   showFps: boolean;
   /** The language chosen; null follows the browser's. */
   language: Language | null;
+  /** Whether the play record is sent as the game goes (prototype design 2.6). */
+  sendRecords: boolean;
 }
 
 export const SENSITIVITY_MIN = 0.25;
@@ -33,6 +35,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   quality: "high",
   showFps: false,
   language: null,
+  sendRecords: true,
 };
 
 /** The name the settings are kept under in the browser. */
@@ -50,6 +53,7 @@ export function sanitizeSettings(value: unknown): Settings {
     quality: QUALITIES.find((quality) => quality === given.quality) ?? DEFAULT_SETTINGS.quality,
     showFps: typeof given.showFps === "boolean" ? given.showFps : DEFAULT_SETTINGS.showFps,
     language: LANGUAGES.find((language) => language === given.language) ?? DEFAULT_SETTINGS.language,
+    sendRecords: typeof given.sendRecords === "boolean" ? given.sendRecords : DEFAULT_SETTINGS.sendRecords,
   };
 }
 

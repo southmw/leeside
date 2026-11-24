@@ -46,7 +46,7 @@ export interface GameDebug {
   /** Whether the title screen is up, the player is in control, or a performance measurement is running. */
   phase: "title" | "playing" | "bench";
   /** The player's settings as the game has applied them (app/settings.ts). */
-  settings: { mouseSensitivity: number; invertY: boolean; volume: number; quality: "low" | "high"; showFps: boolean; language: Language | null };
+  settings: { mouseSensitivity: number; invertY: boolean; volume: number; quality: "low" | "high"; showFps: boolean; language: Language | null; sendRecords: boolean };
   /** Whether the game is paused: the simulation stands still and the pause screen is up. */
   paused: boolean;
   /** Number of frames rendered so far. */
@@ -201,6 +201,11 @@ export interface GameDebug {
   reveals: { storms: number; last: string[] };
   /** The play record of this game as last written (app/playRecord.ts), with how many records the browser keeps; null before a game begins. */
   record: (PlayRecord & { kept: number }) | null;
+  /**
+   * Sending the play record (app/recordUpload.ts): how many times it has been sent in this visit, and the game's
+   * number and the record of the last time. A development build sends nothing: this is what would have gone.
+   */
+  uploads: { count: number; game: string; record: PlayRecord | null };
   /** The end screen: whether this game has shown it, whether it is up, and the summary as it would read now. */
   end: { shown: boolean; open: boolean; time: string; days: number; deaths: number };
   /** The introduction: its step ("done" when there is none), the guidance shown (null for none), whether it still protects, and how long it has run. */
@@ -235,7 +240,7 @@ export function installDebugApi(language: Language): GameDebug {
     loadMs: 0,
     phase: "title",
     paused: false,
-    settings: { mouseSensitivity: 1, invertY: false, volume: 0.8, quality: "high", showFps: false, language: null },
+    settings: { mouseSensitivity: 1, invertY: false, volume: 0.8, quality: "high", showFps: false, language: null, sendRecords: true },
     frame: 0,
     tick: 0,
     simSeconds: 0,
@@ -259,6 +264,7 @@ export function installDebugApi(language: Language): GameDebug {
     intro: { step: "done", guide: null, protects: false, seconds: 0 },
     end: { shown: false, open: false, time: "0:00", days: 1, deaths: 0 },
     record: null,
+    uploads: { count: 0, game: "", record: null },
     reveals: { storms: 0, last: [] },
     droppedBag: null,
     repair: { scrap: 0, cloth: 0, tape: 0, done: false },

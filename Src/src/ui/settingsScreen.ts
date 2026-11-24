@@ -136,6 +136,7 @@ export function createSettingsScreen(ui: Ui, i18n: I18n, store: SettingsStore, o
         i18n.t("settings.language"),
         choice("settings-language", LANGUAGES, i18n.language, (language) => i18n.t(`language.${language}`), (language) => store.set({ language })),
       ),
+      row("settings-row-records", i18n.t("settings.send_records"), onOff("settings-records", settings.sendRecords, (sendRecords) => store.set({ sendRecords }))),
     );
     return content;
   };

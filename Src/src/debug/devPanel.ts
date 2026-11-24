@@ -407,6 +407,12 @@ export function createDevPanel(ui: Ui, i18n: I18n, controls: DevControls): void 
         button("dev-tool-title", t("dev.tools.title"), () => {
           window.location.search = "";
         }),
+        // For looking at the error screen: thrown outside this handler, as an error nothing catches.
+        button("dev-tool-error", t("dev.tools.error"), () => {
+          window.setTimeout(() => {
+            throw new Error("Raised from the development panel");
+          });
+        }),
       ),
     );
     // The parts that follow the clock are filled in at once, not at the next tick.

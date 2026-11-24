@@ -1,0 +1,57 @@
+# Puts the prototype online at https://southmw.github.io/leeside/ (plan step 2.27).
+#
+# Runs only when someone starts it (the Actions tab, or `gh workflow run deploy.yml`):
+# a push does not publish anything. What goes online is the build of the chosen branch,
+# after the same checks as `npm run check` short of the long smoke test, which is run
+# on the developer's machine before this is started.
+name: Deploy to GitHub Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; one that has begun is let finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Src/package-lock.json
+      - run: npm ci
+      - run: npm test
+      # Includes the type check.
+      - run: npm run build
+      - run: npm run size
+      # The build about to go online, opened in the runner's own Chrome.
+      - run: npm run smoke:deployed
+        env:
+          SMOKE_BROWSER_CHANNEL: chrome
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: Src/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

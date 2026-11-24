@@ -24,8 +24,8 @@ export interface PauseScreenOptions {
   openSettings?(onBack: () => void): void;
   /** Opens the play record; `onBack` is to be called when it is closed. Without it there is no such button. */
   openRecord?(onBack: () => void): void;
-  /** Where to leave feedback. Without it there is no such button. */
-  feedbackUrl?: string;
+  /** Where to leave feedback in the game's language now. Without it, or when it gives "", there is no such button. */
+  feedbackUrl?(): string;
 }
 
 export interface PauseScreen {
@@ -121,7 +121,8 @@ export function createPauseScreen(ui: Ui, i18n: I18n, options: PauseScreenOption
     );
   };
   function showMenu(): void {
-    const { openSettings, openRecord, feedbackUrl } = options;
+    const { openSettings, openRecord } = options;
+    const feedbackUrl = options.feedbackUrl?.() ?? "";
     /** A button that hands the screen over to a window of someone else's making, and takes it back afterwards. */
     const handOver = (label: string, open: (onBack: () => void) => void): { label: string; onActivate(): void } => ({
       label,

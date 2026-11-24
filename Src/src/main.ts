@@ -4,6 +4,7 @@ import { checkSupport } from "./app/support";
 import { createSettingsStore, type SettingsStorage } from "./app/settings";
 import { createI18n, detectLanguage } from "./locales/i18n";
 import { chooseCharacter } from "./render/characterCatalog";
+import { createErrorScreen } from "./ui/errorScreen";
 import { createTitleScreen, type TitleScreen } from "./ui/titleScreen";
 import { createSettingsScreen } from "./ui/settingsScreen";
 import { createUi } from "./ui/uiRoot";
@@ -79,6 +80,12 @@ function storeIntroDone(): void {
 let character = chooseCharacter(startParams.get("character"), storedCharacter());
 
 const ui = createUi(i18n);
+
+// An error nothing handled stops the game behind a screen that says so (UI design 13).
+// Set up before the game is fetched, so that it also covers the game's own start.
+const errorScreen = createErrorScreen(ui, i18n, { version, reload: () => window.location.reload() });
+window.addEventListener("error", (event) => errorScreen.show(event.error ?? event.message));
+window.addEventListener("unhandledrejection", (event) => errorScreen.show(event.reason));
 const settingsScreen = createSettingsScreen(ui, i18n, settings, {
   fullscreen: {
     isOn: () => document.fullscreenElement !== null,
@@ -98,7 +105,9 @@ const showTitle = (): TitleScreen =>
     version: version.split(".").slice(0, 2).join("."),
     character,
     onStart: () => dispatch({ type: "start" }),
-    onSettings: () => settingsScreen.open(() => {}),
+    // Back from the settings the title is drawn again: what it says about play records may have changed.
+    onSettings: () => settingsScreen.open(() => title?.setState(flow)),
+    sendsRecords: () => settings.get().sendRecords,
     introDone: introDone(),
     onCharacter: (id) => {
       character = id;
