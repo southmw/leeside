@@ -22,6 +22,8 @@ export interface PauseScreenOptions {
   onRestart(): void;
   /** Opens the settings; `onBack` is to be called when they are closed. Without it there is no Settings button. */
   openSettings?(onBack: () => void): void;
+  /** Opens the play record; `onBack` is to be called when it is closed. Without it there is no such button. */
+  openRecord?(onBack: () => void): void;
   /** Where to leave feedback. Without it there is no such button. */
   feedbackUrl?: string;
 }
@@ -45,6 +47,7 @@ export function createPauseScreen(ui: Ui, i18n: I18n, options: PauseScreenOption
   ui.root.append(veil);
 
   let open = false;
+  const isOpen = (): boolean => open;
   let current: UiWindow | undefined;
   /** Set while one window makes way for another, so that its closing is not taken for the player leaving. */
   let changing = false;
@@ -118,33 +121,31 @@ export function createPauseScreen(ui: Ui, i18n: I18n, options: PauseScreenOption
     );
   };
   function showMenu(): void {
-    const { openSettings, feedbackUrl } = options;
+    const { openSettings, openRecord, feedbackUrl } = options;
+    /** A button that hands the screen over to a window of someone else's making, and takes it back afterwards. */
+    const handOver = (label: string, open: (onBack: () => void) => void): { label: string; onActivate(): void } => ({
+      label,
+      onActivate: () => {
+        changing = true;
+        current?.close();
+        changing = false;
+        current = undefined;
+        open(() => {
+          if (isOpen()) {
+            showMenu();
+          }
+        });
+      },
+    });
     show(
       {
         id: "pause",
         title: i18n.t("pause.title"),
         buttons: [
           { label: i18n.t("pause.resume"), onActivate: resume },
-          ...(openSettings
-            ? [
-                {
-                  label: i18n.t("pause.settings"),
-                  onActivate: () => {
-                    // The settings are a window of their own making: this one makes way for it.
-                    changing = true;
-                    current?.close();
-                    changing = false;
-                    current = undefined;
-                    openSettings(() => {
-                      if (open) {
-                        showMenu();
-                      }
-                    });
-                  },
-                },
-              ]
-            : []),
+          ...(openSettings ? [handOver(i18n.t("pause.settings"), openSettings)] : []),
           { label: i18n.t("pause.controls"), onActivate: showControls },
+          ...(openRecord ? [handOver(i18n.t("pause.record"), openRecord)] : []),
           { label: i18n.t("pause.restart"), onActivate: confirmRestart },
           ...(feedbackUrl ? [{ label: i18n.t("pause.feedback"), onActivate: () => void window.open(feedbackUrl, "_blank", "noopener") }] : []),
         ],

@@ -149,6 +149,7 @@ if (unsupported && !withoutTitle) {
       onProgress: () => dispatch({ type: "step_done" }),
       onQuit: () => dispatch({ type: "quit" }),
       onIntroDone: storeIntroDone,
+      recordStorage: browserStorage(),
     });
     startGame = (skipIntro) => game.start({ skipIntro });
     setGameCharacter = (id) => game.setCharacter(id);

@@ -43,6 +43,8 @@ import { canPause, shouldPauseOnLeave, simulationRuns } from "./app/pause";
 import { QUALITY_PRESETS, type Settings, type SettingsStore } from "./app/settings";
 import { createPauseScreen } from "./ui/pauseScreen";
 import { FEEDBACK_URL } from "./app/links";
+import { createPlayRecord, FrameSummary, keepRecord, type PlayEvent, readRecords, recordEvent, type RecordStorage } from "./app/playRecord";
+import { createRecordScreen } from "./ui/recordScreen";
 import { playSummary } from "./gameplay/summary";
 import { createEndScreen } from "./ui/endScreen";
 import { clearQuickSlots, createQuickSlots, createQuickUseSystem } from "./gameplay/quickSlots";
@@ -106,6 +108,8 @@ import { createZoneVeil } from "./ui/zoneVeil";
 const BENCH_SECONDS = 60;
 const BENCH_CAMERA_HEIGHT = 6;
 const BENCH_LOOK_AHEAD = 40;
+/** How often the play record is written to the browser while nothing in particular happens, in seconds. */
+const RECORD_SAVE_SECONDS = 15;
 /** How often the frame rate shown in the corner (a setting) is brought up to date, in seconds. */
 const FPS_REFRESH_SECONDS = 0.5;
 
@@ -184,6 +188,8 @@ export interface GameContext {
   onQuit(): void;
   /** Called once the player has come through the introduction, down into the shelter. */
   onIntroDone(): void;
+  /** Where the play records are kept (the browser's storage). Without it they last for the visit. */
+  recordStorage?: RecordStorage | undefined;
 }
 
 export interface RunningGame {
@@ -1069,6 +1075,8 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       firstReturn: firstReturnDue,
     };
     firstReturnDue = false;
+    note({ type: "return" });
+    note({ type: "repair", ...repair, done: isRepairDone(repair) });
     showRepair();
     bagWindow.close();
     containerPanel.close();
@@ -1163,6 +1171,9 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     endDeath();
     endTravel();
     endTally();
+    // The record of the game that ends here is written a last time; the next START begins another.
+    saveRecord();
+    recording = false;
     pauseScreen.clear();
     paused = false;
     debug.paused = false;
@@ -1210,6 +1221,47 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     showWeather();
     context.onQuit();
   };
+  // The play record (prototype design 2.6): what happens in this game and how well it runs,
+  // kept in the browser for the player to hand over. A game is from START to quitting.
+  let record = createPlayRecord(new Date().toISOString(), navigator.userAgent, i18n.language);
+  let recordFrames = new FrameSummary();
+  let recordSaveIn = RECORD_SAVE_SECONDS;
+  /** Whether a game is under way whose record is to be kept. */
+  let recording = false;
+  const saveRecord = (): void => {
+    if (!recording) {
+      return;
+    }
+    record.playSeconds = Math.round(playSeconds);
+    record.day = readClock(clock).day;
+    record.language = i18n.language;
+    record.performance = { ...recordFrames.summary(), quality: settingsNow.quality, gpu: readDevice(renderer).gpu, buffer: `${canvas.width}x${canvas.height}` };
+    const kept = keepRecord(context.recordStorage, record);
+    recordSaveIn = RECORD_SAVE_SECONDS;
+    debug.record = { ...record, deaths: record.deaths.map((death) => ({ ...death })), kept: kept.length };
+  };
+  const note = (event: PlayEvent): void => {
+    if (recording) {
+      recordEvent(record, event, playSeconds, readClock(clock).day);
+      saveRecord();
+    }
+  };
+  const beginRecord = (): void => {
+    record = createPlayRecord(new Date().toISOString(), navigator.userAgent, i18n.language);
+    recordFrames = new FrameSummary();
+    recording = true;
+    saveRecord();
+  };
+  // The page going away is the last chance to write down where the game got to.
+  window.addEventListener("pagehide", saveRecord);
+  const recordScreen = createRecordScreen(ui, i18n, {
+    current: () => {
+      saveRecord();
+      return record;
+    },
+    exportText: () => JSON.stringify(readRecords(context.recordStorage), null, 2),
+  });
+
   // The introduction (prototype design 5.4): a storm announced at the start, a line of
   // guidance for each step of the way to the shelter, and two minutes in which the storm
   // cannot kill. It runs for a game begun from the title; `?skipIntro` and the title's own
@@ -1264,6 +1316,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
     );
     if ((intro.step as string) === "done") {
       context.onIntroDone();
+      note({ type: "tutorialDone" });
     }
     showIntro();
   };
@@ -1274,6 +1327,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
   let paused = false;
   const pauseScreen = createPauseScreen(ui, i18n, {
     openSettings: context.openSettings,
+    openRecord: (onBack) => recordScreen.open(onBack),
     ...(feedbackUrl ? { feedbackUrl } : {}),
     onResume: () => {
       paused = false;
@@ -1327,6 +1381,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       containerPanel.close();
       debug.player.deaths += 1;
       debug.player.dead = true;
+      note({ type: "death", cause: player.health.lastHurtBy ?? "storm", zone: zoneDefinition.id, east: player.transform.x, south: player.transform.z });
       deathScreen.darken(DEATH_NOTICE_SECONDS);
     }
     const dying = death;
@@ -1525,6 +1580,14 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
       overlay?.update(nowMs);
       devLog?.update(nowMs);
       // The frame rate in the corner, for those who asked for it: a figure that can be read, not one that flickers.
+      // The play record counts the frames of play, not those behind the title or a pause.
+      if (recording && playing && !paused) {
+        recordFrames.add(frameMs);
+        recordSaveIn -= lastFrameSeconds;
+        if (recordSaveIn <= 0) {
+          saveRecord();
+        }
+      }
       fpsSeconds += lastFrameSeconds;
       if (settingsNow.showFps && fpsSeconds >= FPS_REFRESH_SECONDS) {
         fpsSeconds = 0;
@@ -1776,6 +1839,7 @@ export async function bootGame(context: GameContext): Promise<RunningGame> {
         return;
       }
       playing = true;
+      beginRecord();
       const withIntro = introAllowed && !options.skipIntro;
       if (withIntro) {
         startIntro();

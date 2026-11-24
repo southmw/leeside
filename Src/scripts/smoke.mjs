@@ -1271,6 +1271,8 @@ try {
     await page.waitForFunction((done) => window.__game.commands.done >= done + 4, before, { timeout: 10_000 }).catch(() => {});
     await settle();
     const given = await bagNow();
+    // The panel brings its figures up to date a few times a second: wait for it rather than read it mid-way.
+    await page.waitForFunction(() => document.querySelector("#dev-bag-now")?.textContent === "4 / 8", undefined, { timeout: 5_000 }).catch(() => {});
     const panelBag = await page.locator("#dev-bag-now").innerText();
     check(
       "the panel gives items: a stack is topped up first, then the first empty slot is used",
@@ -2362,7 +2364,7 @@ try {
     const stillPaused = await pauseNow();
     check(
       "Escape pauses: the picture dims and the menu offers to resume, the controls and starting over",
-      !running.paused && justPaused.paused && justPaused.window === "pause" && justPaused.veil && justPaused.title === "Paused" && justPaused.buttons.join() === "Resume,Settings,Controls,Start over",
+      !running.paused && justPaused.paused && justPaused.window === "pause" && justPaused.veil && justPaused.title === "Paused" && justPaused.buttons.join() === "Resume,Settings,Controls,Play record,Start over",
       `"${justPaused.title}": ${justPaused.buttons.join(", ")}`,
     );
     check(
@@ -2775,9 +2777,105 @@ try {
     const pausedWithFeedback = await endNow();
     check(
       "with an address for feedback the end screen offers it first, in Korean too, and so does the pause screen",
-      withFeedback.title === "대피소의 문을 고쳤습니다" && withFeedback.buttons.join() === "의견 남기기,계속 플레이하기" && pausedWithFeedback.pauseButtons.join() === "계속하기,설정,조작 방법,처음부터,의견 남기기",
+      withFeedback.title === "대피소의 문을 고쳤습니다" && withFeedback.buttons.join() === "의견 남기기,계속 플레이하기" && pausedWithFeedback.pauseButtons.join() === "계속하기,설정,조작 방법,플레이 기록,처음부터,의견 남기기",
       `${withFeedback.buttons.join()} / ${pausedWithFeedback.pauseButtons.join()}`,
     );
+    }
+
+    {
+    // The play record: what happened in the game and how it ran, kept in the browser, shown
+    // from the pause screen and copied from there.
+    const recordNow = () =>
+      page.evaluate(() => ({
+        record: window.__game.record && JSON.parse(JSON.stringify(window.__game.record)),
+        stored: JSON.parse(window.localStorage.getItem("leeside.playRecords") ?? "[]"),
+        // This game's own entry among those kept (a page that is left writes its record once more as it goes).
+        mine: JSON.parse(window.localStorage.getItem("leeside.playRecords") ?? "[]").find((kept) => kept.startedAt === window.__game.record?.startedAt) ?? null,
+        window: window.__game.ui.window,
+        title: document.querySelector('[data-window="record"] .ui-title')?.textContent ?? "",
+        rows: Object.fromEntries([...document.querySelectorAll("#record-rows .record-value")].map((row) => [row.dataset.row, row.textContent])),
+        buttons: [...document.querySelectorAll('[data-window="record"] > .ui-button')].map((button) => button.textContent),
+        copied: document.querySelector("#record-copied")?.dataset.result ?? "",
+        paused: window.__game.paused,
+      }));
+    const openGame = async (query) => {
+      await page.goto(gameUrl(query), { waitUntil: "load" });
+      await page.waitForFunction(() => window.__game?.ready === true && window.__game.player.grounded, undefined, { timeout: READY_TIMEOUT_MS });
+      await page.locator("#dev-open").waitFor({ state: "visible", timeout: 10_000 });
+    };
+    try {
+      await openGame("lang=en&seed=1");
+      await page.evaluate(() => window.localStorage.removeItem("leeside.playRecords"));
+      await openGame("lang=en&seed=1");
+      await settle();
+      const began = await recordNow();
+      check(
+        "a game that begins has a record of its own, kept in the browser at once",
+        began.record?.version === 1 && began.record.returns === 0 && began.record.deaths.length === 0 && !began.record.tutorialDone && began.mine !== null && began.stored[began.stored.length - 1].startedAt === began.record.startedAt,
+        `kept ${began.stored.length}`,
+      );
+      // A return with a tape for the door, and then a death in the shelter.
+      await page.keyboard.press("F2");
+      await page.locator("#dev-bag-give-tape").click();
+      await page.waitForFunction(() => window.__game.player.bag[0] !== null, undefined, { timeout: 10_000 }).catch(() => {});
+      await page.locator("#dev-zone-return").click();
+      await page.waitForFunction(() => window.__game.ui.window === "tally", undefined, { timeout: 10_000 }).catch(() => {});
+      await page.keyboard.press("F2");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => window.__game.ui.window === null, undefined, { timeout: 10_000 }).catch(() => {});
+      await page.keyboard.press("F2");
+      await page.locator("#dev-health-zero").click();
+      await page.keyboard.press("F2");
+      await page.waitForFunction(() => window.__game.ui.window === "death", undefined, { timeout: 30_000 }).catch(() => {});
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => !window.__game.player.dead, undefined, { timeout: 10_000 }).catch(() => {});
+      await settle();
+      const happened = await recordNow();
+      const death = happened.mine?.deaths[0];
+      check(
+        "the record notes the return, the repair's progress and the death: what of, where and on which day",
+        happened.stored.length === began.stored.length && happened.mine?.returns === 1 && happened.mine.repair.tape === 1 && !happened.mine.repairDone && happened.mine.deaths.length === 1 && death.cause === "storm" && death.zone === "shelter" && death.day === 2 && Math.abs(death.east - 8) <= 1,
+        JSON.stringify({ returns: happened.mine?.returns, repair: happened.mine?.repair, death }),
+      );
+      // From the pause screen: this game in lines, and a button that copies what is kept.
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => window.__game.ui.window === "pause", undefined, { timeout: 5_000 }).catch(() => {});
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => window.__game.ui.window === "record", undefined, { timeout: 5_000 }).catch(() => {});
+      await page.waitForTimeout(300);
+      const shown = await recordNow();
+      check(
+        "the pause screen shows the record of this game in lines that can be read",
+        shown.title === "Play record" && shown.paused && /^\d+:\d\d$/.test(shown.rows["record.time"] ?? "") && shown.rows["record.days"] === "3" && shown.rows["record.tutorial"] === "no" && shown.rows["record.returns"] === "1" &&
+          shown.rows["record.deaths"] === "1 (Storm)" && shown.rows["record.repair"] === "scrap 0, cloth 0, tape 1 - done: no" && shown.rows["record.quality"] === "High" && shown.buttons.join() === "Back,Copy the record",
+        JSON.stringify(shown.rows),
+      );
+      check(
+        "the record sums up how the game ran on this machine",
+        Number(shown.rows["record.avg_fps"]) > 0 && Number(shown.rows["record.low1_fps"]) > 0 && Number(shown.rows["record.low1_fps"]) <= Number(shown.rows["record.avg_fps"]) && (shown.rows["record.gpu"] ?? "-") !== "-" && shown.record.performance.frames > 0 && /^\d+x\d+$/.test(shown.record.performance.buffer),
+        `avg ${shown.rows["record.avg_fps"]}, low ${shown.rows["record.low1_fps"]}, ${shown.rows["record.gpu"]}`,
+      );
+      await page.screenshot({ path: join(outDir, "record.png") });
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => (document.querySelector("#record-copied")?.dataset.result ?? "") !== "", undefined, { timeout: 5_000 }).catch(() => {});
+      const copied = await recordNow();
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => window.__game.ui.window === "pause", undefined, { timeout: 5_000 }).catch(() => {});
+      const backAtPause = await recordNow();
+      // Whether the browser lets a page copy depends on where it runs; the player is told either way.
+      check("Copy says whether it worked, and Escape goes back to the pause screen", ["record.copied", "record.copy_failed"].includes(copied.copied) && backAtPause.window === "pause" && backAtPause.paused, copied.copied);
+      // Another game is another record; the earlier one stays.
+      await openGame("lang=ko&seed=1");
+      await settle();
+      const nextGame = await recordNow();
+      check("another game is another record, and the earlier one is kept", nextGame.stored.length === happened.stored.length + 1 && nextGame.stored.some((kept) => kept.startedAt === happened.mine?.startedAt && kept.returns === 1) && nextGame.mine?.returns === 0 && nextGame.mine.language === "ko", `kept ${happened.stored.length} -> ${nextGame.stored.length}`);
+    } finally {
+      await page.evaluate(() => window.localStorage.removeItem("leeside.playRecords")).catch(() => {});
+    }
     }
 
     // A phone gets an explanation instead of the game, and nothing is loaded for it.
