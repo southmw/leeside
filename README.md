@@ -1,102 +1,109 @@
 # LEESIDE
 
-**바람이 닿지 않는 곳** — 날씨가 가장 큰 적이 된 세계에서 살아남는 3인칭 생존 액션 RPG
+**English** | [한국어](README.ko.md)
 
-> A third-person survival action RPG for desktop browsers, built with Three.js.
-> The weather is your greatest enemy. *Prototype in early development.*
->
-> **Play the prototype: https://southmw.github.io/leeside/** (desktop browser, keyboard and mouse)
+**A third-person survival action RPG for desktop browsers, in a world where the weather is your greatest enemy.** Built with Three.js.
 
-기후 붕괴로 문명이 무너진 세계. 폭풍이 오기 전에 폐허를 수색하고, 숨을 곳을 찾아 버티고, 주운 것으로 버려진 대피소를 되살린다. 제목 LEESIDE는 "바람을 등진 쪽"이라는 뜻이다.
+> **Play the prototype: https://southmw.github.io/leeside/** (desktop browser, keyboard and mouse; nothing to install, no account)
 
-## 현재 상태
+Civilisation has fallen to climate collapse. You search the ruins before the storm arrives, find somewhere to sit it out, and bring an abandoned shelter back to life with what you carried home. "Leeside" is the side sheltered from the wind.
 
-**10분짜리 시제품을 다 만들었고(M0~M2), 다음은 사람들에게 플레이시켜 보는 검증 단계(G1)다.** 타이틀 화면에서 시작해 구역을 돌아다닐 수 있고, 날마다 폭풍이 오며, 체력·체온·갈증과 화면 표시(나침반, 폭풍 경고)가 있다. 상자 14개를 뒤져(E를 누르고 있기) 물건을 8칸짜리 가방에 담고, 물병과 붕대를 쓸 수 있다(가방 창에서 쓰거나, 빠른 사용 칸에 지정해 숫자 키 1~4로). 폐가 A 바닥의 덮개로 대피소(방 하나)에 내려가면 귀환 정산이 나오고(가져온 수리 재료가 대피소 문 수리에 들어가고 체력이 회복된다) 다음 날 아침이 된다. 수색하고 돌아와 문을 고치는 한 바퀴는 돌지만, 쓰러지면 가방이 그 자리에 남아 다음 날 되찾으러 가야 한다. Esc로 일시정지하고 설정(감도, 음량, 품질, 언어 등)을 바꿀 수 있다. 처음 2분은 도입부가 안내하고, 문을 다 고치면 끝 화면이 나온다. 도입부부터 문 수리까지 한 판을 끝까지 할 수 있고, 한 판의 기록(진행과 성능)이 기기 안에 남는다. 오류가 나면 오류 화면이 내용을 복사할 수 있게 해 준다. 끝 화면과 일시정지 창에서 의견 설문을 열 수 있고, 플레이 기록(진행과 성능. 개인을 알아볼 것은 없다)은 배포한 게임에서 익명으로 전송된다(설정에서 끌 수 있다). 시제품은 https://southmw.github.io/leeside/ 에서 플레이할 수 있다(데스크톱 브라우저). 
+## Status
 
-| 단계 | 상태 |
+**The ten-minute prototype is finished (milestones M0 to M2). Next comes the playtest that decides whether the rest gets built (G1).**
+
+| Stage | Status |
 |---|---|
-| 기획과 설계 | 완료 |
-| 시제품 (핵심 루프 10분) | 완료 (2026-11-24. https://southmw.github.io/leeside/) |
-| 플레이 테스트 | 다음 단계 |
-| 수직 슬라이스 (30분 분량) | — |
+| Design | Done |
+| Prototype (ten minutes of the core loop) | Done (2026-11-24, https://southmw.github.io/leeside/) |
+| Playtest | Next |
+| Vertical slice (thirty minutes) | Not started |
 
-## 어떤 게임인가
+What the prototype has:
 
-| 항목 | 내용 |
+- A title screen, four characters to choose from, and a two-minute tutorial that leads to the shelter.
+- A zone to walk through (the dry riverbed) and a shelter underneath it.
+- A storm every day. A wall of dust comes up from the south, the view closes in, and anyone still outside loses health.
+- Health, temperature (the nights are cold) and thirst, with a compass and a storm warning on screen.
+- Fourteen containers to search (hold E), an eight-slot bag, and four quick slots for water and bandages.
+- A goal: bring back enough scrap, cloth and tape to repair the shelter's door. Each return shows what the outing brought in and moves on to the next morning.
+- Falling leaves the bag where you fell. You wake in the shelter the next day and have to go back for it.
+- Pause, settings (sensitivity, volume, graphics quality, language and more), English and Korean.
+- An end screen once the door is repaired, with a link to a short feedback form.
+
+About data: the game keeps a record of each game (how far it went and how well it ran) in your browser. The published game also sends that record anonymously as you play. It holds nothing that identifies you, and the settings can turn it off.
+
+## The game
+
+| | |
 |---|---|
-| 장르 | 3인칭 생존 액션 RPG |
-| 플랫폼 | 데스크톱 웹 브라우저. 설치와 가입 없이 바로 시작 (모바일 미지원) |
-| 조작 | 키보드/마우스, 게임패드 |
-| 언어 | 영어, 한국어 |
-| 플레이 방식 | 싱글플레이. 이후 2~4인 협동 추가 예정 |
+| Genre | Third-person survival action RPG |
+| Platform | Desktop web browsers. No install, no sign-up. Mobile is not supported |
+| Controls | Keyboard and mouse; gamepad planned |
+| Languages | English, Korean |
+| Players | Single player first, then co-op for two to four |
 
-### 핵심
+### What it is about
 
-- **날씨가 가장 큰 적이다.** 폭염, 모래폭풍, 한파가 언제 나갈지, 어디까지 갈지를 정한다. 적보다 하늘을 먼저 본다.
-- **수색의 긴장감.** 가방은 좁고 날씨는 곧 바뀐다. 상자를 하나 더 열지, 지금 돌아갈지를 계속 고민하게 된다.
-- **주운 것이 곧 힘이다.** 성장은 레벨보다 직접 만든 장비와 되살린 시설에서 온다.
-- **짧게 해도 남는다.** 10분만 해도 진전이 있다.
+- **The weather is the greatest enemy.** Heat, sandstorms and cold decide when you go out and how far. You watch the sky before you watch for enemies.
+- **The tension of scavenging.** The bag is small and the weather is about to turn. One more container, or head back now?
+- **What you carry home is your strength.** You grow through the gear you make and the facilities you restore, more than through levels.
+- **Ten minutes is enough.** A short session still moves things forward.
 
-### 세계
+### The world
 
-지역마다 다른 재앙이 자리 잡았다. 각 지역의 핵심 시설을 되찾아 대피소의 시설을 하나씩 복구하는 것이 큰 목표다.
+Each region has its own disaster. The long-term goal is to retake a key facility in each one and restore a part of the shelter with it.
 
-| 지역 | 재앙 | 되찾을 시설 | 복구되는 것 |
+| Region | Disaster | Facility to retake | What it restores |
 |---|---|---|---|
-| 가뭄 평원 | 가뭄, 폭염, 모래폭풍 | 양수장 | 정수 시설 |
-| 침수 도시 | 폭우, 침수 | 변전소 | 발전기 |
-| 한파 지대 | 혹한, 눈보라 | 기상 관측소 | 온실과 날씨 예보 |
+| Drought plains | Drought, heat, sandstorms | Pumping station | Water purification |
+| Flooded city | Heavy rain, flooding | Substation | Generator |
+| Frozen zone | Severe cold, blizzards | Weather station | Greenhouse and forecasts |
 
-## 먼저 만들 것: 시제품
+## Why a prototype first
 
-전체를 만들기 전에 **"폭풍을 피해 가며 수색하고 돌아오는 것이 재미있는가"** 를 확인하는 10분짜리 시제품을 먼저 만든다. 사람들에게 플레이시킨 결과를 보고 나머지를 만들지 정한다.
+Before building the whole game, the prototype asks one question: **is it fun to scavenge with a storm on the way, and do you want to go out one more time?** What people do when they play it decides whether the rest is built.
 
-- 구역 하나(마른 강바닥)와 대피소
-- 폭풍, 밤의 추위, 갈증
-- 상자 수색과 8칸짜리 가방
-- 목표: 재료를 모아 대피소의 문을 고친다
-- 전투, 제작, 저장은 넣지 않는다
+It has one zone and the shelter, the storm, the cold of night and thirst, containers and a small bag, and one goal. Combat, crafting and saving are left out.
 
-## 문서
+## Documents
 
-모든 설계는 [DOC/](DOC/) 폴더에 있다.
+All the design is in [DOC/](DOC/). The documents are written in Korean.
 
-| 문서 | 내용 |
+| Document | Contents |
 |---|---|
-| [게임 기획서](DOC/01-게임기획서.md) | 게임 전체의 설계: 세계관, 전투, 생존, 제작, 월드, 설정 메뉴 |
-| [기술 설계서](DOC/02-기술설계서.md) | 기술 스택, 구조, 구역 시스템, 날씨와 체온, 저장, 성능 예산 |
-| [개발 로드맵](DOC/03-개발로드맵.md) | 마일스톤과 진행 현황 |
-| [기획 검증 보고서](DOC/04-기획검증.md) | 시장 자료로 기획을 점검한 결과와 그 뒤의 결정 |
-| [시제품 개발 계획](DOC/05-시제품개발계획.md) | 시제품을 57개 단계로 나눈 실행 계획과 단계별 검증 방법 |
-| [시제품 설계](DOC/06-시제품설계.md) | 시제품의 목표, 구역 배치, 수치, 물건 |
-| [UI 설계](DOC/07-UI설계.md) | 화면 흐름, 화면별 배치, 키 배치, 아이콘 |
-| [에셋 후보](DOC/08-에셋후보.md) | 무료(CC0) 에셋 후보와 고르는 기준 |
+| [Game design](DOC/01-게임기획서.md) | The whole game: world, combat, survival, crafting, zones, settings |
+| [Technical design](DOC/02-기술설계서.md) | Stack, structure, zone system, weather and temperature, saving, performance budget |
+| [Roadmap](DOC/03-개발로드맵.md) | Milestones and progress |
+| [Design review](DOC/04-기획검증.md) | The design checked against market data, and the decisions that followed |
+| [Prototype plan](DOC/05-시제품개발계획.md) | The prototype in 57 steps, each with a way to verify it |
+| [Prototype design](DOC/06-시제품설계.md) | The prototype's goal, zone layout, numbers and items |
+| [UI design](DOC/07-UI설계.md) | Screen flow, layouts, key bindings, icons |
+| [Asset candidates](DOC/08-에셋후보.md) | Free (CC0) assets considered and how they are chosen |
 
-처음이라면 게임 기획서의 1~4장을 읽고, 시제품 설계로 넘어가는 순서를 권한다.
+The eighteen icons are in [DOC/icons/](DOC/icons/). Open `DOC/icons/preview.html` in a browser to see them all.
 
-아이콘 18종은 [DOC/icons/](DOC/icons/)에 있다. 저장소를 받은 뒤 `DOC/icons/preview.html`을 브라우저로 열면 전체를 볼 수 있다.
+## Technology
 
-## 기술
-
-| 영역 | 선택 |
+| Area | Choice |
 |---|---|
-| 언어와 빌드 | TypeScript, Vite |
-| 렌더링 | Three.js |
-| 물리 | Rapier |
-| 구조 | ECS (miniplex) |
-| 테스트 | Vitest |
+| Language and build | TypeScript, Vite |
+| Rendering | Three.js |
+| Physics | Rapier |
+| Structure | ECS (miniplex) |
+| Tests | Vitest, and a smoke test that opens the game in a real browser |
 
-## 개발 방식
+## How it is made
 
-- 구현 전에 설계를 문서로 먼저 적는다.
-- 작은 단계로 나누어 진행하고, 단계마다 검증 방법을 둔다.
-- 재미를 먼저 검증한다. 시제품의 플레이 테스트 결과에 따라 방향을 정한다.
+- Design is written down before anything is implemented.
+- Work goes in small steps, and every step has a way to verify it.
+- Fun is tested first: the prototype's playtest decides the direction.
 
-작업 규칙과 확정된 결정의 요약은 [CLAUDE.md](CLAUDE.md)에 있다.
+The working rules and a summary of the decisions are in [CLAUDE.md](CLAUDE.md) (in Korean).
 
-## 실행 방법
+## Running it locally
 
-Node.js 20 이상이 필요하다.
+Node.js 20 or later.
 
 ```
 cd Src
@@ -104,17 +111,18 @@ npm install
 npm run dev
 ```
 
-표시되는 주소를 브라우저로 열면 타이틀 화면이 나오고, 캐릭터 4명 중 하나를 골라 START를 누르면 시작한다. 지금은 지형, 폐가, 차량, 바위가 놓인 구역을 돌아다닐 수 있다. WASD로 이동하고 Space로 점프하며, 마우스 버튼을 누른 채 움직이면 시점이 돌고 휠로 카메라 거리를 바꾼다. F3을 누르면 성능 수치가 보이고, 주소 뒤에 `?skipTitle`을 붙이면 타이틀 없이 바로 시작한다.
+Open the address it prints. Pick a character and press START. Move with WASD, jump with Space, hold a mouse button and move the mouse to look around, and zoom with the wheel. F3 shows performance figures, and adding `?skipTitle` to the address starts without the title screen.
 
-## 사용한 에셋
+## Assets
 
-| 에셋 | 제작자 | 라이선스 |
+| Asset | Author | License |
 |---|---|---|
-| 플레이어 캐릭터 4종 (Zombie Apocalypse Kit) | Quaternius | CC0 1.0 |
-| 바람 소리 (Mild Wind Background Noise) | Bashar3A | CC0 1.0 |
+| Four player characters, vehicles and props (Zombie Apocalypse Kit) | Quaternius | CC0 1.0 |
+| Rocks (Stylized Nature MegaKit, free version) | Quaternius | CC0 1.0 |
+| Wind (Mild Wind Background Noise) | Bashar3A | CC0 1.0 |
 
-자세한 출처는 [Src/public/models/CREDITS.md](Src/public/models/CREDITS.md)(모델)와 [Src/public/sounds/CREDITS.md](Src/public/sounds/CREDITS.md)(소리)에 있다.
+Details are in [Src/public/models/CREDITS.md](Src/public/models/CREDITS.md) and [Src/public/sounds/CREDITS.md](Src/public/sounds/CREDITS.md).
 
-## 라이선스
+## License
 
-아직 정하지 않았다.
+Not decided yet.
